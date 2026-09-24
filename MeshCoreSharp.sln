@@ -6,12 +6,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshCoreSharp", "src\MeshCo
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshCoreSharp.Console", "samples\MeshCoreSharp.Console\MeshCoreSharp.Console.csproj", "{7FD5AA75-2BB5-47C0-B88F-94FF6DAE71BC}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MeshCoreSharp.Tests", "tests\MeshCoreSharp.Tests\MeshCoreSharp.Tests.csproj", "{8E99FB54-DC95-48A2-91EF-7023C36E1476}"
+EndProject
 Global
     GlobalSection(SolutionConfigurationPlatforms) = preSolution
         Debug|Any CPU = Debug|Any CPU
         Release|Any CPU = Release|Any CPU
     EndGlobalSection
     GlobalSection(ProjectConfigurationPlatforms) = postSolution
+        {8E99FB54-DC95-48A2-91EF-7023C36E1476}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+        {8E99FB54-DC95-48A2-91EF-7023C36E1476}.Debug|Any CPU.Build.0 = Debug|Any CPU
+        {8E99FB54-DC95-48A2-91EF-7023C36E1476}.Release|Any CPU.ActiveCfg = Release|Any CPU
+        {8E99FB54-DC95-48A2-91EF-7023C36E1476}.Release|Any CPU.Build.0 = Release|Any CPU
         {128A6F46-6CA4-43E9-B78D-A56D36C6B910}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
         {128A6F46-6CA4-43E9-B78D-A56D36C6B910}.Debug|Any CPU.Build.0 = Debug|Any CPU
         {128A6F46-6CA4-43E9-B78D-A56D36C6B910}.Release|Any CPU.ActiveCfg = Release|Any CPU

@@ -17,6 +17,9 @@ internal sealed class CompanionPacketDecoder
             new CurrentTimePacketParser(),
             new BatteryAndStoragePacketParser(),
             new DeviceInfoPacketParser(),
+            new ContactStartPacketParser(),
+            new ContactPacketParser(),
+            new ContactEndPacketParser(),
         ];
 
         _parsers = parsers.ToDictionary(parser => parser.Type);

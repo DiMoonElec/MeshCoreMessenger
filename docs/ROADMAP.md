@@ -33,7 +33,7 @@ TCP communication has been confirmed against a real Companion node by the projec
 
 ## M1 — Contacts multi-frame transaction
 
-Implement:
+Implemented (automated regression tests and local TCP self-test; real-device validation pending):
 
 - contact wire model/parser;
 - `CONTACT_START` parser;

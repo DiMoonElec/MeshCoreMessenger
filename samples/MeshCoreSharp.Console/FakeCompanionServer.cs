@@ -27,6 +27,11 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         await ExpectAndReplyAsync(stream, CommandType.DeviceQuery, BuildDeviceInfo());
         await ExpectAndReplyAsync(stream, CommandType.GetDeviceTime, BuildCurrentTime());
         await ExpectAndReplyAsync(stream, CommandType.GetBatteryAndStorage, BuildBattery());
+        await ExpectAndReplyAsync(stream, CommandType.GetContacts, BuildContactBoundary(PacketType.ContactStart, 2));
+        await WriteFrameAsync(stream, 0x3E, BuildContact("Alice", 0xA1));
+        await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
+        await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
+        await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
 
         // Give the sample time to perform its explicit disconnect instead of
         // making the fake server look like an unexpected connection loss.
@@ -110,6 +115,27 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(1, 2), 4080);
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(3, 4), 128);
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(7, 4), 1024);
+        return frame;
+    }
+
+    private static byte[] BuildContactBoundary(PacketType type, uint value)
+    {
+        var frame = new byte[5];
+        frame[0] = (byte)type;
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(1), value);
+        return frame;
+    }
+
+    private static byte[] BuildContact(string name, byte key)
+    {
+        var frame = new byte[148];
+        frame[0] = (byte)PacketType.Contact;
+        frame.AsSpan(1, 32).Fill(key);
+        frame[33] = 1; // chat
+        frame[35] = 0xFF; // unknown path
+        WriteFixed(frame.AsSpan(100, 32), name);
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(132), 1_700_000_000);
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(144), 1_700_000_123);
         return frame;
     }
 

@@ -16,6 +16,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private readonly CompanionPacketDecoder _decoder = new();
     private readonly PacketRouter _router = new();
     private readonly CommandDispatcher _dispatcher;
+    private readonly ClientEventQueue _events;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private CancellationTokenSource? _receiveCts;
@@ -35,8 +36,11 @@ public sealed class MeshCoreClient : IAsyncDisposable
             throw new ArgumentException("Application name must not be empty.", nameof(options));
         if (_options.CommandTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(options), "Command timeout must be positive.");
+        ValidateContactsTimeout(_options.ContactsInactivityTimeout, nameof(MeshCoreClientOptions.ContactsInactivityTimeout));
+        ValidateContactsTimeout(_options.ContactsAbsoluteTimeout, nameof(MeshCoreClientOptions.ContactsAbsoluteTimeout));
 
         _dispatcher = new CommandDispatcher(_transport, _router);
+        _events = new ClientEventQueue();
     }
 
     public MeshCoreConnectionState State => _state;
@@ -150,6 +154,17 @@ public sealed class MeshCoreClient : IAsyncDisposable
         return packet.Info;
     }
 
+    /// <summary>Reads contacts until CONTACT_END. Unrelated push packets remain available through events.</summary>
+    public Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        return _dispatcher.SendContactsAsync(
+            CompanionCommands.GetContacts(),
+            _options.ContactsInactivityTimeout,
+            _options.ContactsAbsoluteTimeout,
+            cancellationToken);
+    }
+
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -164,6 +179,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
             SetState(MeshCoreConnectionState.Disconnecting);
             _started = false;
             SelfInfo = null;
+
+            _router.FailCurrent(new MeshCoreTransportException("MeshCore client disconnected."));
 
             if (_receiveCts is not null)
                 await _receiveCts.CancelAsync().ConfigureAwait(false);
@@ -200,6 +217,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 }
                 catch (Exception ex) when (ex is MeshCoreProtocolException or ArgumentException)
                 {
+                    if (!frame.IsEmpty)
+                        _router.RouteMalformed((PacketType)frame.Span[0], ex);
                     RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex));
                     continue;
                 }
@@ -270,17 +289,20 @@ public sealed class MeshCoreClient : IAsyncDisposable
         if (handler is null)
             return;
 
-        foreach (EventHandler<TEventArgs> subscriber in handler.GetInvocationList())
+        _events.Post(() =>
         {
-            try
+            foreach (EventHandler<TEventArgs> subscriber in handler.GetInvocationList())
             {
-                subscriber(this, args);
+                try
+                {
+                    subscriber(this, args);
+                }
+                catch
+                {
+                    // A consumer event handler must never terminate event delivery.
+                }
             }
-            catch
-            {
-                // A consumer event handler must never terminate the protocol receive loop.
-            }
-        }
+        });
     }
 
     public async ValueTask DisposeAsync()
@@ -296,6 +318,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         {
             _disposed = true;
             _dispatcher.Dispose();
+            _events.Dispose();
             await _transport.DisposeAsync().ConfigureAwait(false);
             _lifecycleGate.Dispose();
         }
@@ -304,5 +327,11 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private void ThrowIfDisposed()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+    }
+
+    private static void ValidateContactsTimeout(TimeSpan timeout, string name)
+    {
+        if (timeout < TimeSpan.FromMilliseconds(1) || timeout.TotalMilliseconds > uint.MaxValue - 1)
+            throw new ArgumentOutOfRangeException(name, "Contacts timeout must be between 1 ms and 4294967294 ms.");
     }
 }

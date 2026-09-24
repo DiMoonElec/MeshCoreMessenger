@@ -1,4 +1,5 @@
 using MeshCoreSharp.Exceptions;
+using MeshCoreSharp.Models;
 using MeshCoreSharp.Protocol;
 using MeshCoreSharp.Protocol.Packets;
 using MeshCoreSharp.Runtime.Transactions;
@@ -76,6 +77,38 @@ internal sealed class CommandDispatcher : IDisposable
         finally
         {
             _router.Unregister(transaction);
+            _commandGate.Release();
+        }
+    }
+
+    public async Task<IReadOnlyList<Contact>> SendContactsAsync(
+        ReadOnlyMemory<byte> command,
+        TimeSpan inactivityTimeout,
+        TimeSpan absoluteTimeout,
+        CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        ContactsTransaction? transaction = null;
+        try
+        {
+            transaction = new ContactsTransaction(inactivityTimeout, absoluteTimeout);
+            _router.Register(transaction);
+            await _transport.SendAsync(command, cancellationToken).ConfigureAwait(false);
+
+            var response = await transaction.Completion.WaitAsync(cancellationToken).ConfigureAwait(false);
+            if (response is ErrorPacket error)
+                throw new MeshCoreCommandException(CommandType.GetContacts, error.ErrorCode);
+
+            return transaction.GetContacts();
+        }
+        finally
+        {
+            if (transaction is not null)
+            {
+                _router.Unregister(transaction);
+                transaction.Dispose();
+            }
             _commandGate.Release();
         }
     }

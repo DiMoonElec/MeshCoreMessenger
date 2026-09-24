@@ -2,6 +2,10 @@ namespace MeshCoreSharp.Protocol;
 
 public static class ProtocolLimits
 {
+    public const int PublicKeySize = 32;
+    public const int ContactPathSize = 64;
+    public const int ContactNameSize = 32;
+
     public const int CurrentFirmwareMaxFrameSize = 176;
 
     // meshcore_py currently uses 300 as a defensive receive-side framing ceiling.

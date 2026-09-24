@@ -1,3 +1,4 @@
+using MeshCoreSharp.Protocol;
 using MeshCoreSharp.Protocol.Packets;
 using MeshCoreSharp.Runtime.Transactions;
 
@@ -48,5 +49,14 @@ internal sealed class PacketRouter
         }
 
         transaction?.Fail(exception);
+    }
+
+    public void RouteMalformed(PacketType type, Exception exception)
+    {
+        ICommandTransaction? transaction;
+        lock (_sync)
+            transaction = _currentCommand;
+
+        transaction?.TryFailMalformed(type, exception);
     }
 }

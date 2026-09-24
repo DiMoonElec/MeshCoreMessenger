@@ -81,6 +81,11 @@ static async Task RunAsync(string host, int port, int observeSeconds)
     if (battery.UsedStorageKb.HasValue && battery.TotalStorageKb.HasValue)
         Console.WriteLine($"Storage: {battery.UsedStorageKb} / {battery.TotalStorageKb} KB");
 
+    var contacts = await client.GetContactsAsync();
+    Console.WriteLine($"Contacts: {contacts.Count}");
+    foreach (var contact in contacts)
+        Console.WriteLine($"  {contact.Name} ({contact.AdvertisementType}) {contact.PublicKeyHex}");
+
     if (observeSeconds > 0)
     {
         Console.WriteLine($"Observing asynchronous packets for {observeSeconds} s...");
