@@ -55,7 +55,7 @@ internal ref struct PacketReader
         return result;
     }
 
-    public string ReadFixedUtf8(int count)
+    public string ReadFixedUtf8(int count, bool trimWhitespace = true)
     {
         EnsureAvailable(count);
         var bytes = _buffer.Slice(_offset, count);
@@ -65,7 +65,8 @@ internal ref struct PacketReader
         if (nul >= 0)
             bytes = bytes[..nul];
 
-        return System.Text.Encoding.UTF8.GetString(bytes).Trim();
+        var text = System.Text.Encoding.UTF8.GetString(bytes);
+        return trimWhitespace ? text.Trim() : text;
     }
 
     public string ReadUtf8ToEnd(bool trimWhitespace = true)

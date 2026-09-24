@@ -112,7 +112,7 @@ Internal concurrency and transaction machinery:
 - `CommandDispatcher`;
 - `PacketRouter`;
 - transaction state machines;
-- future ACK/deferred Mesh trackers;
+- ACK tracker and future deferred Mesh trackers;
 - incoming-message pump.
 
 Keep this namespace internal unless a type is clearly required in the public API.
@@ -216,11 +216,41 @@ release MeshRequestGate
 
 Do not hold `CommandGate` during the entire radio wait; unrelated immediate local commands should remain possible when safe.
 
-### Future AckTracker
+### Local channel and statistics reads
+
+Channel reads use the existing single-packet transaction with an optional typed
+predicate matching the requested slot index. Statistics use distinct typed packets
+for core/radio/packet subtypes. Mismatched replies remain visible as unhandled packets.
+The malformed-response type matcher fails known truncated replies without terminating
+the connection. GetChannelsAsync reads DEVICE_INFO, then all slots sequentially;
+other commands may run between slots. It returns no partial result on failure.
+
+### AckTracker
 
 `SEND_TXT_MSG` may return `MSG_SENT` with `expected_ack`. Delivery confirmation comes later as push `ACK (0x82)`.
 
-ACK waiting is separate from the immediate command transaction and should be keyed by the expected ACK value. Beware of a race where a very fast ACK can arrive before a caller registers a waiter; design registration/retention to avoid losing it.
+The implemented single-packet transaction invokes an internal non-blocking hook on RX
+before completing MSG_SENT. It binds the ACK tag to a pending send, so an ACK in the
+next logical frame is retained even if transport.SendAsync has not returned yet.
+ACK routing runs before public callbacks; it never waits for application code. This
+relies on firmware's MSG_SENT-before-ACK order; unsolicited ACKs are not cached for
+future commands. Duplicate active tags fail both ambiguous operations.
+
+SendTextAsync returns on MSG_SENT with a separate Delivery task. The task returns
+Confirmed/TimedOut/NotExpected; caller cancellation cancels it, connection shutdown
+faults it. ACK deadlines use a bounded firmware suggestion plus margin, measured from
+MSG_SENT. Cleanup unregisters the tag on every terminal path. Reconnection creates a
+fresh tracker. Distinct increasing timestamps avoid deterministic collisions for the
+same text sent to different contacts in the same second (ACK hashes omit recipient).
+
+An independent private-text send gate covers admission and the immediate exchange,
+not ACK waiting. The tracker keeps a window of at most eight attempted sends since
+the oldest still-pending operation. Completed newer entries remain in the window:
+just limiting the number of live waiters would not protect a firmware circular table
+from overwriting an older waiter. Capacity waiting happens before CommandGate, so
+other operations can continue. Failed attempts count conservatively until the window
+advances; no automatic retransmission is performed. This assumes this client is the
+only source of private-send commands on the connection.
 
 ## Incoming message pump
 

@@ -149,7 +149,7 @@ internal static class MessageTests
         await Expect(transport, CommandType.SyncNextMessage); // No tickle: read offline backlog at startup.
         var time = client.GetDeviceTimeAsync(); // Must wait until this one message response arrives.
         for (var n = 0; n < 100; n++) transport.Emit([(byte)PacketType.MessagesWaiting]);
-        transport.Emit([(byte)PacketType.Advertisement, 0xAB]);
+        transport.Emit(Fixtures.Advertisement(0xAB));
         for (var n = 0; n < 101; n++) await pushes.Reader.ReadAsync();
         Check(!transport.Sent.Reader.TryRead(out _), "Parallel sync/normal command while waiting for a response");
         var frames = new[]

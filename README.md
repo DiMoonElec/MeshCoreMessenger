@@ -33,6 +33,9 @@
   - `CURRENT_TIME`;
   - `BATT_AND_STORAGE`;
   - `DEVICE_INFO`.
+  - `CHANNEL_INFO`, `STATS` (core/radio/packets).
+  - `MSG_SENT`, `ACK`.
+  - `ADVERT`, `NEW_ADVERT`.
   - `CONTACT_START`, `CONTACT`, `CONTACT_END`.
   - Личные и канальные сообщения legacy/V3, канальные данные и `NO_MORE_MESSAGES`.
 - Raw packet fallback для пока не реализованных типов, включая push packets.
@@ -48,6 +51,10 @@
   - `GetDeviceInfoAsync()`;
   - `GetBatteryAndStorageAsync()`;
   - `GetContactsAsync()`;
+  - `GetChannelAsync(index)`, `GetChannelsAsync()`;
+  - `GetCoreStatsAsync()`, `GetRadioStatsAsync()`, `GetPacketStatsAsync()`;
+  - `SendTextAsync(publicKey, text)`, `SendChannelTextAsync(channelIndex, text)`;
+  - `SendAdvertisementAsync(mode)` и событие `AdvertisementReceived`;
   - `DisconnectAsync()`.
 
 ## Пример
@@ -111,6 +118,107 @@ foreach (var contact in contacts)
 Обработчики должны завершаться своевременно, чтобы не задерживать следующие события.
 `DisposeAsync` закрывает очередь событий, но не ждёт выполнения пользовательского кода;
 уже поставленные в очередь события могут быть доставлены после его завершения.
+
+## Каналы и статистика
+
+После `ConnectAsync` и `StartAsync`:
+
+```csharp
+var channels = await client.GetChannelsAsync(ct);
+foreach (var channel in channels.Where(channel => !channel.IsEmpty))
+    Console.WriteLine($"{channel.Index}: {channel.Name}");
+
+var core = await client.GetCoreStatsAsync(ct);
+var radio = await client.GetRadioStatsAsync(ct);
+var packets = await client.GetPacketStatsAsync(ct);
+Console.WriteLine($"Uptime: {core.UptimeSeconds} s; RX: {packets.Received}; TX: {packets.Sent}");
+```
+
+`GetChannelAsync(byte index, CancellationToken)` возвращает один слот.
+`GetChannelsAsync(CancellationToken)` запрашивает ёмкость через `DEVICE_QUERY`
+и читает все слоты по порядку, включая пустые. Пустое имя означает `IsEmpty`;
+наличие пустого слота не прекращает обход. Это последовательность чтений,
+не атомарный снимок. Для старой прошивки без `MaxChannels` метод выбрасывает
+`NotSupportedException`; отдельные слоты можно запрашивать явно.
+
+`ChannelInfo.Secret` содержит 16 байт ключа. `ToString()` не выводит ключ,
+но низкоуровневый `ChannelInfoPacket.RawFrame` его содержит — не журналируйте
+такой кадр целиком.
+
+Статистика доступна в прошивках с протоколом v8+ и возвращается тремя моделями:
+`CoreStats` (батарея, uptime, флаги ошибок, очередь), `RadioStats` (шум, RSSI, SNR,
+эфирное время в целых секундах), `PacketStats` (TX/RX, flood/direct, ошибки RX).
+Счётчики могут переполниться или сброситься после перезагрузки. Неизвестные подтипы
+статистики сохраняются как raw-пакеты. Команды используют общую очередь клиента;
+ошибки устройства, отмена и тайм-ауты передаются вызывающему коду.
+
+## Отправка текста
+
+Личное сообщение отправляется один раз. `SendTextAsync` принимает полный публичный
+ключ контакта (32 байта) и возвращает результат после `MSG_SENT` от Companion.
+Подтверждение доставки ожидается отдельно и не занимает очередь команд:
+
+```csharp
+var sent = await client.SendTextAsync(contact.PublicKey, "Привет!", ct);
+Console.WriteLine($"Принято нодой, flood={sent.Accepted.IsFlood}");
+
+var delivery = await sent.Delivery;
+if (delivery.Status == MessageDeliveryStatus.Confirmed)
+    Console.WriteLine($"Доставлено, RTT={delivery.Acknowledgement!.RoundTripTimeMilliseconds} мс");
+else
+    Console.WriteLine($"Подтверждения нет: {delivery.Status}");
+```
+
+Статус `TimedOut` означает отсутствие ACK за отведённое время, а не доказанную
+потерю сообщения. `NotExpected` означает, что прошивка вернула нулевой ACK.
+Токен отправки действует и на `Delivery`: отмена завершает ожидание с
+`OperationCanceledException`, потеря соединения — с `MeshCoreTransportException`.
+Отмена после записи команды не отменяет радиопередачу. Ошибка/тайм-аут непосредственного
+ответа также не гарантирует, что передача не состоялась. Автоматических повторов нет.
+
+Время ожидания ACK: предложение прошивки плюс `AckTimeoutMargin` (2 с), ограниченное
+`MinimumAckTimeout` (1 с) и `MaximumAckTimeout` (2 мин). Ожидание начинается от
+`MSG_SENT`. Новые личные отправки могут ждать освобождения кольцевой таблицы ACK
+прошивки (8 записей); чтение состояния и другие локальные команды продолжают работать.
+Трекер создаётся заново при подключении. ACK остаются доступны в событиях пакетов.
+
+Отправка в канал завершается по локальному `OK`; подтверждения доставки у неё нет:
+
+```csharp
+var channel = (await client.GetChannelsAsync(ct)).Single(c => c.Name == "#test");
+var accepted = await client.SendChannelTextAsync(channel.Index, "Тест разработки", ct);
+```
+
+Текст должен быть непустым, корректным UTF-8, без NUL. Лимит личного сообщения —
+160 байт UTF-8; у канального сообщения из этого лимита вычитается имя отправителя
+и `": "`. Превышение лимита отклоняется до отправки, без обрезания текста.
+Имя берётся из `SELF_INFO`; после изменения имени другим приложением повторите
+`StartAsync`. Метки времени генерируются по часам ПК и возрастают для каждого
+вызова на данном клиенте, чтобы одинаковые тексты не получали одинаковый ACK.
+Прошивке передаются первые 6 байт ключа получателя; неоднозначность такого префикса
+в её таблице контактов библиотека устранить не может.
+
+## Адверты
+
+```csharp
+client.AdvertisementReceived += (_, e) =>
+    Console.WriteLine($"Advert: {e.Advertisement.PublicKeyHex}, {e.Advertisement.DiscoveredContact?.Name}");
+
+await client.SendAdvertisementAsync(AdvertisementMode.Flood, ct);
+```
+
+`ZeroHop` (по умолчанию) отправляет адверт соседним нодам без пересылки;
+`Flood` разрешает пересылку с учётом настроенного на ноде flood scope.
+Метод завершается по локальному `OK`, который не подтверждает приём другими нодами.
+Используются существующие имя и политика публикации координат, настройки не меняются.
+Автоматической периодической отправки и повторов нет.
+
+`AdvertisementReceived` приходит для обоих уведомлений прошивки: `ADVERT` содержит
+только публичный ключ, `NEW_ADVERT` — полные данные в `DiscoveredContact`.
+`IsNew` не гарантирует сохранение контакта в таблицу: это зависит от настроек ноды.
+Библиотека не добавляет контакт и не запрашивает его данные автоматически.
+Адверты остаются доступны и через события пакетов; во время `GetContactsAsync`
+они не включаются в возвращаемый список и не продлевают тайм-аут его чтения.
 
 ## Подключение через Serial
 
@@ -258,15 +366,40 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-read-only 
 ```
 
 Тест разрешает только фиксированные `APP_START`, `DEVICE_QUERY`, `GET_DEVICE_TIME`,
-`GET_BATT_AND_STORAGE`, `GET_CONTACTS` и `GET_STATS` (счётчики пакетов).
+`GET_BATT_AND_STORAGE`, `GET_CONTACTS`, `GET_CHANNEL` и `GET_STATS` (все три группы).
+Он использует публичный `MeshCoreClient`, выводит имена каналов без ключей.
 Автоматический приём сообщений не запускается; DTR/RTS отключены. Счётчики
-радиопередач сравниваются до и после трёх циклов чтения. Нужна прошивка с поддержкой
+радиопередач сравниваются после `APP_START` и в конце проверки. Нужна прошивка с поддержкой
 `GET_STATS`; сам тест не отключает возможные автономные передачи прошивки.
 Результат аппаратной проверки: [Heltec V3, 24.09.2026](docs/testing/serial-usb-2026-09-24.md).
 
+Отдельный тест **с реальной передачей** ровно одного фиксированного сообщения
+`Тестовая отправка при разработке MeshCoreSharp. Ответ не требуется` в канал `#test`:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-send-test /dev/cu.usbserial-0001
+```
+
+Канал выбирается по точному имени. Тест не меняет настройки, запрещает повторную
+передачу и проверяет увеличение счётчика TX. При неопределённом результате сам
+не повторяет отправку. [Результат проверки на Heltec V3](docs/testing/serial-send-2026-09-24.md).
+
+Тест **с передачей одного Flood-адверта и ожиданием личного сообщения до 10 минут**:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-advert-test /dev/cu.usbserial-0001
+```
+
+Сначала он читает накопленную очередь, затем отправляет адверт и ожидает новое
+личное сообщение через `MessageReceived`. Сам тест не отправляет текстовых ответов;
+прошивка может автоматически передавать ACK и служебные пакеты при приёме.
+Повторный запуск передаст новый адверт. [Аппаратная проверка](docs/testing/serial-advert-2026-09-24.md).
+
 ## Следующий этап
 
-Следующая вертикаль — отправка текста (`SEND_TXT_MSG` / `MSG_SENT`) и отслеживание `ACK`.
+Далее — управление каналами и контактами, затем удалённые запросы статуса и телеметрии.
+Личная доставка с ACK пока проверена автоматическими тестами; аппаратно подтверждена
+одна канальная передача в `#test`.
 
 ## Контекст для Codex / VS Code
 

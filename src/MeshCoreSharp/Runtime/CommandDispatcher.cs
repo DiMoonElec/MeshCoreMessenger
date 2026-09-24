@@ -27,7 +27,9 @@ internal sealed class CommandDispatcher : IDisposable
         string operationName,
         TimeSpan timeout,
         CancellationToken cancellationToken = default,
-        Func<PacketType, bool>? acceptsType = null)
+        Func<PacketType, bool>? acceptsType = null,
+        Func<TPacket, bool>? acceptsPacket = null,
+        Action<TPacket>? onAccepted = null)
         where TPacket : CompanionPacket
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -43,7 +45,7 @@ internal sealed class CommandDispatcher : IDisposable
             throw new ArgumentOutOfRangeException(nameof(timeout));
 
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var transaction = new SinglePacketTransaction<TPacket>(acceptsType);
+        var transaction = new SinglePacketTransaction<TPacket>(acceptsType, acceptsPacket, onAccepted);
 
         try
         {

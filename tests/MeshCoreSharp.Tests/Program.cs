@@ -8,6 +8,18 @@ using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Runtime.Transactions;
 
+if (args.Length == 2 && args[0] == "--serial-advert-test")
+{
+    await HardwareAdvertisementTest.RunAsync(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-send-test")
+{
+    await HardwareSendTest.RunAsync(args[1]);
+    return 0;
+}
+
 if (args.Length == 2 && args[0] == "--serial-read-only")
 {
     await HardwareReadOnlyTest.RunAsync(args[1]);
@@ -42,7 +54,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Timeout option validation", OptionValidation),
 };
 var failed = 0;
-var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).ToArray();
+var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat(ChannelStatsTests.Cases)
+    .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try
@@ -110,7 +123,7 @@ static async Task InterleavedPackets()
     t.TryAccept(Decode(Fixtures.Start(10))); // Firmware count is advisory, not a completion condition.
     t.TryAccept(Decode(Fixtures.Contact("First")));
     Check(!t.TryAccept(Decode([(byte)PacketType.MessagesWaiting])));
-    Check(!t.TryAccept(Decode([(byte)PacketType.NewAdvertisement, 0xAA])));
+    Check(!t.TryAccept(Decode(Fixtures.NewAdvertisement())));
     Check(!t.TryAccept(Decode(Fixtures.Number(PacketType.CurrentTime, 42))));
     t.TryAccept(Decode(Fixtures.Contact("Second", 0xBB)));
     Check(!t.Completion.IsCompleted);

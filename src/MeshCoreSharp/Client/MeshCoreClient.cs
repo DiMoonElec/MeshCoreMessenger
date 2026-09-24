@@ -22,6 +22,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
     private MessagePump? _messagePump;
+    private AckTracker? _ackTracker;
+    private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
     private bool _disposed;
@@ -39,6 +41,9 @@ public sealed class MeshCoreClient : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(options), "Command timeout must be positive.");
         ValidateContactsTimeout(_options.ContactsInactivityTimeout, nameof(MeshCoreClientOptions.ContactsInactivityTimeout));
         ValidateContactsTimeout(_options.ContactsAbsoluteTimeout, nameof(MeshCoreClientOptions.ContactsAbsoluteTimeout));
+        if (_options.MinimumAckTimeout <= TimeSpan.Zero || _options.MaximumAckTimeout < _options.MinimumAckTimeout ||
+            _options.MaximumAckTimeout.TotalMilliseconds > uint.MaxValue - 1 || _options.AckTimeoutMargin < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(options), "Invalid ACK timeout bounds or margin.");
 
         _dispatcher = new CommandDispatcher(_transport, _router);
         _events = new ClientEventQueue();
@@ -55,6 +60,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
     public event EventHandler<MeshCoreClientErrorEventArgs>? BackgroundError;
     public event EventHandler<MessageReceivedEventArgs>? MessageReceived;
+    public event EventHandler<AdvertisementReceivedEventArgs>? AdvertisementReceived;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -84,6 +90,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
             {
                 await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 _receiveCts = new CancellationTokenSource();
+                _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;
                 _messagePump = _options.AutoReceiveMessages
@@ -92,7 +99,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
                         ex => RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex)),
                         _receiveCts.Token)
                     : null;
-                _receiveTask = ReceiveLoopAsync(_receiveCts.Token, _messagePump);
+                _receiveTask = ReceiveLoopAsync(_receiveCts.Token, _messagePump, _ackTracker);
                 SetState(MeshCoreConnectionState.Connected);
             }
             catch
@@ -189,6 +196,124 @@ public sealed class MeshCoreClient : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Reads one local channel slot, including an empty slot. Invalid indices produce a firmware error.</summary>
+    public async Task<ChannelInfo> GetChannelAsync(byte index, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var packet = await _dispatcher.SendAsync<ChannelInfoPacket>(CommandType.GetChannel,
+            CompanionCommands.GetChannel(index), nameof(GetChannelAsync), _options.CommandTimeout, cancellationToken,
+            type => type == PacketType.ChannelInfo, packet => packet.Info.Index == index).ConfigureAwait(false);
+        return packet.Info;
+    }
+
+    /// <summary>Reads all channel slots, including empty slots, using the capacity reported by DEVICE_INFO.</summary>
+    /// <remarks>This is a sequence of local reads, not an atomic snapshot. Older firmware without a capacity is unsupported.</remarks>
+    public async Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default)
+    {
+        var device = await GetDeviceInfoAsync(cancellationToken).ConfigureAwait(false);
+        if (device.MaxChannels is not { } count)
+            throw new NotSupportedException("Firmware does not report channel capacity. Read individual slots with GetChannelAsync().");
+        var channels = new List<ChannelInfo>(count);
+        for (var index = 0; index < count; index++)
+            channels.Add(await GetChannelAsync((byte)index, cancellationToken).ConfigureAwait(false));
+        return channels.AsReadOnly();
+    }
+
+    /// <summary>Reads battery, uptime, error flags and outbound queue length (firmware protocol v8+).</summary>
+    public async Task<CoreStats> GetCoreStatsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var packet = await _dispatcher.SendAsync<CoreStatsPacket>(CommandType.GetStats,
+            CompanionCommands.GetStats(StatsType.Core), nameof(GetCoreStatsAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.Stats).ConfigureAwait(false);
+        return packet.Info;
+    }
+
+    /// <summary>Reads local radio measurements and airtime counters (firmware protocol v8+).</summary>
+    public async Task<RadioStats> GetRadioStatsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var packet = await _dispatcher.SendAsync<RadioStatsPacket>(CommandType.GetStats,
+            CompanionCommands.GetStats(StatsType.Radio), nameof(GetRadioStatsAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.Stats).ConfigureAwait(false);
+        return packet.Info;
+    }
+
+    /// <summary>Reads local radio packet counters (firmware protocol v8+).</summary>
+    public async Task<PacketStats> GetPacketStatsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var packet = await _dispatcher.SendAsync<PacketStatsPacket>(CommandType.GetStats,
+            CompanionCommands.GetStats(StatsType.Packets), nameof(GetPacketStatsAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.Stats).ConfigureAwait(false);
+        return packet.Info;
+    }
+
+    /// <summary>Sends one self advertisement using the node's existing name/location policy. Completes on local OK.</summary>
+    /// <remarks>No periodic advertising or retries. Cancellation after writing cannot retract the radio transmission.</remarks>
+    public async Task SendAdvertisementAsync(AdvertisementMode mode = AdvertisementMode.ZeroHop,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var command = CompanionCommands.SendAdvertisement(mode);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SendSelfAdvertisement, command,
+            nameof(SendAdvertisementAsync), _options.CommandTimeout, linked.Token,
+            type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
+    /// <summary>Sends plain text once. Returns on Companion acceptance; await Delivery for the separate ACK result.</summary>
+    /// <remarks>The cancellation token also governs Delivery. Cancellation/timeout never retracts or retries a radio send.</remarks>
+    public async Task<TextMessageSendResult> SendTextAsync(
+        ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var tracker = _ackTracker!;
+        var timestamp = NextMessageTimestamp();
+        var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp);
+        var pending = await tracker.BeginAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var sent = await _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendTextMessage, command,
+                nameof(SendTextAsync), _options.CommandTimeout, pending.Token,
+                type => type == PacketType.MessageSent, onAccepted: packet => pending.Bind(packet.Info)).ConfigureAwait(false);
+            pending.ReleaseSendGate();
+            return new TextMessageSendResult(timestamp, sent.Info, pending.WaitForDeliveryAsync());
+        }
+        catch
+        {
+            pending.Dispose();
+            throw;
+        }
+    }
+
+    /// <summary>Sends plain channel text once and waits for local OK. This does not confirm remote delivery.</summary>
+    public async Task<ChannelMessageSendResult> SendChannelTextAsync(
+        byte channelIndex, string text, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var timestamp = NextMessageTimestamp();
+        var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
+            nameof(SendChannelTextAsync), _options.CommandTimeout, linked.Token,
+            type => type == PacketType.Ok).ConfigureAwait(false);
+        return new ChannelMessageSendResult(channelIndex, timestamp);
+    }
+
+    private uint NextMessageTimestamp()
+    {
+        // ACK hashes omit the recipient. Distinct timestamps prevent identical text sent to
+        // different contacts in the same second from sharing a tag; no automatic retry is used.
+        while (true)
+        {
+            var previous = Interlocked.Read(ref _lastMessageTimestamp);
+            var next = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeSeconds(), previous + 1);
+            if (next > uint.MaxValue) throw new InvalidOperationException("Message timestamp exceeds the protocol range.");
+            if (Interlocked.CompareExchange(ref _lastMessageTimestamp, next, previous) == previous) return (uint)next;
+        }
+    }
+
     public async Task DisconnectAsync(CancellationToken cancellationToken = default)
     {
         if (_disposed)
@@ -205,6 +330,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
             SelfInfo = null;
 
             _messagePump?.Stop();
+            _ackTracker?.Stop();
             _router.FailCurrent(new MeshCoreTransportException("MeshCore client disconnected."));
 
             if (_receiveCts is not null)
@@ -233,7 +359,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         }
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken, MessagePump? messagePump)
+    private async Task ReceiveLoopAsync(CancellationToken cancellationToken, MessagePump? messagePump, AckTracker ackTracker)
     {
         try
         {
@@ -252,6 +378,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
                     continue;
                 }
 
+                if (packet is AckPacket ack) ackTracker.Handle(ack.Info);
                 var matched = _router.Route(packet);
                 var args = new CompanionPacketEventArgs(packet);
 
@@ -259,6 +386,9 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
                 if (packet is ReceivedMessagePacket received)
                     RaiseSafely(MessageReceived, new MessageReceivedEventArgs(received.Message));
+
+                if (packet is AdvertisementPacket advert)
+                    RaiseSafely(AdvertisementReceived, new AdvertisementReceivedEventArgs(advert.Info));
 
                 if (packet.Type == PacketType.MessagesWaiting)
                     messagePump?.Notify();
@@ -297,6 +427,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         finally
         {
             messagePump?.Stop();
+            ackTracker.Stop();
         }
     }
 

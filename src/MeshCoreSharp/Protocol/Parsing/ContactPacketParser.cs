@@ -8,10 +8,12 @@ internal sealed class ContactPacketParser : IPacketParser
 {
     public PacketType Type => PacketType.Contact;
 
-    public CompanionPacket Parse(ReadOnlyMemory<byte> frame)
+    public CompanionPacket Parse(ReadOnlyMemory<byte> frame) => new ContactPacket(frame, ReadContact(frame.Span[1..]));
+
+    internal static Contact ReadContact(ReadOnlySpan<byte> payload)
     {
-        var reader = new PacketReader(frame.Span[1..]);
-        var contact = new Contact(
+        var reader = new PacketReader(payload);
+        return new Contact(
             reader.ReadBytes(ProtocolLimits.PublicKeySize),
             (AdvertisementType)reader.ReadByte(),
             reader.ReadByte(),
@@ -23,6 +25,5 @@ internal sealed class ContactPacketParser : IPacketParser
             reader.ReadInt32LittleEndian() / 1_000_000d,
             reader.ReadUInt32LittleEndian());
 
-        return new ContactPacket(frame, contact);
     }
 }

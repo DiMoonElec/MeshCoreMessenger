@@ -168,6 +168,57 @@ Examples already implemented in MeshCoreSharp:
 - `DEVICE_QUERY -> DEVICE_INFO`
 - `GET_BATT_AND_STORAGE -> BATT_AND_STORAGE`
 
+## Local channel reads and statistics
+
+Verified against firmware handlers `CMD_GET_CHANNEL`, `CMD_GET_STATS` in
+[MyMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp)
+and slot lookup in [BaseChatMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.cpp).
+
+`GET_CHANNEL (31)` takes one index byte. `CHANNEL_INFO (0x12)` contains index (1),
+NUL-terminated/padded UTF-8 name (32), shared secret (16): 50 bytes total.
+Names retain whitespace. Raw frames contain key material. An empty slot still
+returns CHANNEL_INFO; an out-of-range index returns NOT_FOUND. Enumeration reads
+all slots up to DEVICE_INFO.MaxChannels, including holes, without assuming a fixed
+capacity or probing until an error. Legacy devices without capacity require explicit
+single-slot reads. Each request holds CommandGate only until its own response;
+enumeration is not an atomic snapshot. Responses must match the requested index.
+
+`GET_STATS (56)` takes subtype 0/1/2 (protocol v8+). `STATS (0x18)` echoes subtype:
+
+| Subtype | Fields after type and subtype | Minimum total bytes |
+| --- | --- | --- |
+| Core (0) | battery u16 mV, uptime u32 seconds, error flags u16, outbound queue u8 | 11 |
+| Radio (1) | noise i16 dBm, last RSSI i8 dBm, last SNR i8 / 4 dB, TX/RX airtime u32 seconds each | 14 |
+| Packets (2) | RX, TX, TX flood, TX direct, RX flood, RX direct, RX errors: seven u32 counters | 30 |
+
+Multi-byte values are little-endian. Typed packet classes distinguish the three
+responses so a different subtype cannot complete the active request. Unknown
+subtypes preserve the raw frame. Known truncated responses raise protocol errors;
+malformed CHANNEL_INFO/STATS fail an active operation expecting that outer packet
+type. Trailing extension bytes are accepted. No configuration writes or RF sends
+are part of these operations.
+
+## Advertisements
+
+Verified against `CMD_SEND_SELF_ADVERT` and `onDiscoveredContact` in
+[MyMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp).
+
+`SEND_SELF_ADVERT (7)` takes mode byte 0 (zero hop) or 1 (flood); the library sends
+the explicit mode. Firmware uses its existing name, location policy and default
+scope. Response is local OK/ERROR, with no delivery confirmation. No retry is safe
+to infer from a timeout. Queued sends are cancelled with the connection.
+
+`ADVERT (0x80)` is type + 32-byte public key (33 bytes total).
+`NEW_ADVERT (0x8A)` has the same body as CONTACT (148 bytes total), parsed by the
+shared contact-body reader but represented as a separate AdvertisementPacket.
+It cannot be consumed as a GET_CONTACTS response. Known truncated pushes raise
+diagnostics without failing unrelated commands; extension bytes are retained.
+Neither push is an acknowledgement of sending our own advert.
+
+High-level AdvertisementReceived is dispatched through the usual event queue,
+without automatic contact lookups or configuration writes. A new discovery does
+not necessarily mean the firmware saved the contact (manual-add policy applies).
+
 ## Multi-frame command: contacts
 
 `GET_CONTACTS` is a stream transaction:
@@ -303,6 +354,29 @@ SEND_TXT_MSG ->
 The `MSG_SENT` payload contains fields including an expected ACK/tag and a suggested timeout. The later `ACK` is an asynchronous push and should be tracked separately from the immediate command transaction.
 
 The current firmware maintains a finite table of pending text ACKs (previous analysis found 8 entries in the examined baseline firmware). Therefore multiple ACK waits may coexist after their immediate commands have completed, but the table is not unlimited.
+
+Implemented plain-text wire format, verified against
+[MyMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp)
+and [BaseChatMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/src/helpers/BaseChatMesh.cpp):
+
+- `SEND_TXT_MSG`: `02 | type=0 | attempt=0 | timestamp u32 LE | key prefix (6) | UTF-8 text`.
+- `MSG_SENT`: `06 | flood (0/1) | expected_ack u32 LE | suggested_timeout_ms u32 LE` (10 bytes).
+- `ACK`: `82 | expected_ack u32 LE | round_trip_ms u32 LE` (9 bytes).
+- `SEND_CHANNEL_TXT_MSG`: `03 | type=0 | channel u8 | timestamp u32 LE | UTF-8 text`.
+  Response is `OK/ERROR`, with no delivery ACK.
+
+Private text is limited to 160 UTF-8 bytes. Channel payload additionally includes
+the firmware-generated `sender_name + ": "` prefix, which shares that limit. Library
+validation rejects oversize, empty, NUL-containing or invalid UTF-16 input rather
+than relying on firmware truncation. Commands contain no trailing NUL. Received
+MSG_SENT/ACK require their full minimum layouts and tolerate extension bytes.
+
+The ACK digest is a four-byte SHA-256 prefix over timestamp/text/attempt and sender
+public key, with no recipient in the digest. Client-generated monotonically increasing
+timestamps prevent same-second identical-text collisions within the client instance.
+It does not compute the expected tag locally; the authoritative value comes from
+MSG_SENT. The firmware only registers nonzero ACKs. Its table is circular, not a pool
+of reusable free slots; the client admission window respects that distinction.
 
 Do not keep the global immediate `CommandGate` locked while waiting for a remote text ACK.
 

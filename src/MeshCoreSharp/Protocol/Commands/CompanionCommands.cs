@@ -1,4 +1,5 @@
 using MeshCoreSharp.Protocol.Encoding;
+using MeshCoreSharp.Models;
 
 namespace MeshCoreSharp.Protocol.Commands;
 
@@ -20,7 +21,60 @@ internal static class CompanionCommands
 
     public static byte[] GetContacts() => [(byte)CommandType.GetContacts];
 
+    public static byte[] SendAdvertisement(AdvertisementMode mode)
+    {
+        if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
+        return [(byte)CommandType.SendSelfAdvertisement, (byte)mode];
+    }
+
+    public static byte[] GetChannel(byte index) => [(byte)CommandType.GetChannel, index];
+
+    public static byte[] GetStats(StatsType type)
+    {
+        if (!Enum.IsDefined(type)) throw new ArgumentOutOfRangeException(nameof(type));
+        return [(byte)CommandType.GetStats, (byte)type];
+    }
+
     public static byte[] SyncNextMessage() => [(byte)CommandType.SyncNextMessage];
+
+    public static byte[] SendText(ReadOnlySpan<byte> publicKey, string text, uint timestamp)
+    {
+        if (publicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException("A full 32-byte recipient public key is required.", nameof(publicKey));
+        var bytes = EncodeText(text, ProtocolLimits.MaxTextBytes);
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.SendTextMessage);
+        writer.WriteByte(0); // Plain text.
+        writer.WriteByte(0); // First attempt; no automatic retries.
+        writer.WriteUInt32LittleEndian(timestamp);
+        writer.WriteBytes(publicKey[..ProtocolLimits.MessageContactPrefixSize]);
+        writer.WriteBytes(bytes);
+        return Validate(writer.ToArray());
+    }
+
+    public static byte[] SendChannelText(byte channelIndex, string senderName, string text, uint timestamp)
+    {
+        ArgumentNullException.ThrowIfNull(senderName);
+        var prefixBytes = System.Text.Encoding.UTF8.GetByteCount(senderName) + 2; // "name: " inserted by firmware.
+        var bytes = EncodeText(text, ProtocolLimits.MaxTextBytes - prefixBytes);
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.SendChannelTextMessage);
+        writer.WriteByte(0);
+        writer.WriteByte(channelIndex);
+        writer.WriteUInt32LittleEndian(timestamp);
+        writer.WriteBytes(bytes);
+        return Validate(writer.ToArray());
+    }
+
+    private static byte[] EncodeText(string text, int maxBytes)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(text);
+        if (text.Contains('\0')) throw new ArgumentException("Text must not contain NUL.", nameof(text));
+        var bytes = new System.Text.UTF8Encoding(false, true).GetBytes(text);
+        if (bytes.Length > maxBytes)
+            throw new ArgumentOutOfRangeException(nameof(text), $"Text exceeds the {maxBytes}-byte UTF-8 limit.");
+        return bytes;
+    }
 
     public static byte[] SetDeviceTime(DateTimeOffset value)
     {

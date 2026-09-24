@@ -5,6 +5,13 @@ using MeshCoreSharp.Protocol;
 internal static class Fixtures
 {
     public static byte[] Start(uint count) => Number(PacketType.ContactStart, count);
+    public static byte[] Advertisement(byte key = 0xA5) => [0x80, .. Enumerable.Repeat(key, 32)];
+    public static byte[] NewAdvertisement()
+    {
+        var frame = Contact("Discovered node");
+        frame[0] = 0x8A;
+        return frame;
+    }
     public static byte[] End(uint lastModified = 1_700_000_123) => Number(PacketType.ContactEnd, lastModified);
 
     public static byte[] Number(PacketType type, uint value)

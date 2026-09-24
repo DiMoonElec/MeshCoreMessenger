@@ -12,6 +12,11 @@ public sealed record MeshCoreClientOptions
     /// <summary>Drain incoming messages after APP_START and on MESSAGES_WAITING notifications.</summary>
     public bool AutoReceiveMessages { get; init; } = true;
 
+    /// <summary>Added to the firmware's suggested delivery timeout.</summary>
+    public TimeSpan AckTimeoutMargin { get; init; } = TimeSpan.FromSeconds(2);
+    public TimeSpan MinimumAckTimeout { get; init; } = TimeSpan.FromSeconds(1);
+    public TimeSpan MaximumAckTimeout { get; init; } = TimeSpan.FromMinutes(2);
+
     /// <summary>Maximum silence between accepted contact stream frames.</summary>
     public TimeSpan ContactsInactivityTimeout { get; init; } = TimeSpan.FromSeconds(5);
 

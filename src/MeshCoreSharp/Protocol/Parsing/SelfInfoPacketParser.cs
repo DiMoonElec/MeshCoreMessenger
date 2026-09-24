@@ -29,7 +29,7 @@ internal sealed class SelfInfoPacketParser : IPacketParser
         var bandwidthKhz = reader.ReadUInt32LittleEndian() / 1000d;
         var spreadingFactor = reader.ReadByte();
         var codingRate = reader.ReadByte();
-        var name = reader.ReadUtf8ToEnd();
+        var name = reader.ReadUtf8ToEnd(trimWhitespace: false);
 
         var info = new SelfInfo(
             advertisementType,

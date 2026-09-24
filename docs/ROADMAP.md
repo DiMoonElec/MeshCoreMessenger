@@ -61,7 +61,9 @@ returns the complete contact collection and publishes the push packets without b
 
 ## M2 — Incoming messages and message pump
 
-Implemented (automated regression tests and local TCP self-test; real-device message reception pending).
+Implemented (automated regression tests and local TCP self-test). Real-device private
+message reception verified on Heltec V3 after a Flood advertisement: the message
+was delivered through MessageReceived on 2026-09-24. See [report](testing/serial-advert-2026-09-24.md).
 
 Packet parsers for:
 
@@ -90,24 +92,46 @@ It stops with the connection and reports errors without automatic retry loops.
 
 ## M3 — Outgoing text and ACK tracking
 
-Implement:
+Implemented (65 regression tests in total and TCP self-test pass):
 
 - `SEND_TXT_MSG` encoder;
 - `MSG_SENT` parser;
 - `ACK` parser;
 - `AckTracker` keyed by expected ACK;
-- high-level send result distinguishing “radio send accepted” from “delivery confirmed”;
+- `SendTextAsync` returns immediate acceptance plus independent `Delivery` task;
 - timeout/cancellation behavior for ACK waits;
 - race handling for an ACK that arrives very quickly after `MSG_SENT`.
 
-Do not hold `CommandGate` while waiting for delivery ACK.
+CommandGate is released before the delivery wait. Registration happens synchronously
+on RX when MSG_SENT is accepted, before processing a following ACK. A per-connection
+eight-send window protects the firmware's circular table, including when newer sends
+complete before an older one. No automatic retransmission. Text length is checked in
+UTF-8 bytes; channel length accounts for the sender-name prefix.
+
+Channel text (`SendChannelTextAsync`, OK/ERROR) is also implemented and physically
+tested on Heltec V3: one message in #test, TX/flood counters 0 -> 1. Private text/ACK
+hardware validation requires a chosen recipient; currently covered by automated tests.
 
 ## M4 — Channels and contact mutation APIs
 
-Implement local immediate operations such as:
+Advertisements implemented: `SendAdvertisementAsync(ZeroHop/Flood)`, typed ADVERT /
+NEW_ADVERT pushes and `AdvertisementReceived`. New discoveries remain separate from
+contacts transactions. One Flood advertisement verified on Heltec V3 (TX 0 -> 1);
+the subsequent private message was received successfully through MessageReceived.
+71 regression tests pass.
 
-- get/set channel;
-- send channel text/data;
+Implemented ahead of M3: local channel reads (`GetChannelAsync`, `GetChannelsAsync`)
+and core/radio/packet statistics. Channel enumeration includes empty slots and uses
+DEVICE_INFO capacity. Regression tests cover parsing, index/subtype matching,
+errors, cancellation and timeout recovery.
+Verified on the physical Heltec V3: 40 slots, 3 named channels, all three statistics
+groups and 76 contacts. See the [hardware report](testing/serial-usb-2026-09-24.md),
+including a first-attempt APP_START timeout followed by a successful explicit retry.
+
+Remaining operations:
+
+- set channel;
+- send channel data;
 - get contact by key;
 - add/update/remove/share/export/import contact;
 - reset path;
@@ -140,7 +164,7 @@ Implemented ahead of M3–M5 at the project owner's request:
 - Regression tests with a fake byte port and native macOS arm64 pseudo-terminal smoke test.
 
 Physical USB read-only validation passed on macOS arm64 with Heltec V3, firmware
-v1.17.1-d929643: 13 local commands, three time/battery/empty-contact-list cycles,
+v1.17.1-d929643: both empty lists and 75-contact lists in three consecutive cycles,
 radio TX counters unchanged at zero. See [hardware report](testing/serial-usb-2026-09-24.md).
 Windows/Linux validation remains pending.
 
