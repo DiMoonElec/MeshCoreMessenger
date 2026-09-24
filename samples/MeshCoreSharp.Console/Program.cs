@@ -1,13 +1,37 @@
 using MeshCoreSharp;
 using MeshCoreSharp.Models;
+using MeshCoreSharp.Transport;
+using MeshCoreSharp.Transport.Serial;
 using MeshCoreSharp.Transport.Tcp;
+
+if (args.Length == 1 && args[0] == "--list-ports")
+{
+    foreach (var name in SerialMeshCoreTransport.GetPortNames())
+        Console.WriteLine(name);
+    return 0;
+}
+
+if (args.Length >= 2 && args[0] == "--serial")
+{
+    var baudRate = 115200;
+    var serialObserveSeconds = 10;
+    if (args.Length > 4 ||
+        (args.Length >= 3 && (!int.TryParse(args[2], out baudRate) || baudRate <= 0)) ||
+        (args.Length >= 4 && (!int.TryParse(args[3], out serialObserveSeconds) || serialObserveSeconds < 0)))
+    {
+        Console.Error.WriteLine("Usage: --serial <portName> [baudRate=115200] [observeSeconds=10]");
+        return 2;
+    }
+    await RunAsync(new SerialMeshCoreTransport(args[1], baudRate), args[1], serialObserveSeconds);
+    return 0;
+}
 
 if (args.Length == 1 && args[0] == "--self-test")
 {
     await using var server = new FakeCompanionServer();
     server.Start();
     Console.WriteLine($"Fake companion: 127.0.0.1:{server.Port}");
-    await RunAsync("127.0.0.1", server.Port, 0, expectedMessages: 3);
+    await RunAsync(new TcpMeshCoreTransport("127.0.0.1", server.Port), $"127.0.0.1:{server.Port}", 0, expectedMessages: 3);
     await server.Completion;
     Console.WriteLine("SELF-TEST PASSED");
     return 0;
@@ -17,6 +41,8 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
 {
     Console.WriteLine("Real companion:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- <host> <port> [observeSeconds]");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --serial <portName> [baudRate] [observeSeconds]");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --list-ports");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");
@@ -25,12 +51,11 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
 
 var host = args[0];
 var observeSeconds = args.Length >= 3 && int.TryParse(args[2], out var value) ? value : 10;
-await RunAsync(host, port, observeSeconds);
+await RunAsync(new TcpMeshCoreTransport(host, port), $"{host}:{port}", observeSeconds);
 return 0;
 
-static async Task RunAsync(string host, int port, int observeSeconds, int expectedMessages = 0)
+static async Task RunAsync(IMeshCoreTransport transport, string destination, int observeSeconds, int expectedMessages = 0)
 {
-    await using var transport = new TcpMeshCoreTransport(host, port);
     await using var client = new MeshCoreClient(
         transport,
         new MeshCoreClientOptions
@@ -75,7 +100,7 @@ static async Task RunAsync(string host, int port, int observeSeconds, int expect
         Console.Error.WriteLine($"BACKGROUND ERROR: {e.Exception}");
     };
 
-    Console.WriteLine($"Connecting to {host}:{port}...");
+    Console.WriteLine($"Connecting to {destination}...");
     await client.ConnectAsync();
 
     var self = await client.StartAsync();

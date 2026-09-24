@@ -78,6 +78,13 @@ The stream framing has no separate CRC/checksum field.
 
 TCP is a byte stream: a read may contain half a frame, exactly one frame, multiple frames, or the end of one frame plus part of another.
 
+The implemented Serial transport uses this same framing and handles arbitrary read
+boundaries. Defaults are 115200 baud, 8N1, no flow control, DTR on, RTS off, with a
+200 ms opening delay. Speed, DTR/RTS and delay are configurable. These defaults were
+checked against the [meshcore_py serial connection](https://github.com/meshcore-dev/meshcore_py/blob/main/src/meshcore/serial_cx.py)
+and [connection example](https://github.com/meshcore-dev/meshcore_py#connecting-to-your-device).
+Signal settings may need adjustment for a particular board's reset wiring.
+
 ## BLE framing
 
 BLE should be modeled as delivering logical Companion frames without the `0x3C/0x3E + UInt16` stream wrapper. Keep BLE-specific details inside the transport implementation.

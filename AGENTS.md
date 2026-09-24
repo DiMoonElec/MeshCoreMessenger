@@ -24,7 +24,7 @@ Preserve working behavior while extending the protocol surface.
 - `MeshCoreSharp.Protocol.Parsing` — packet parsers/decoder.
 - `MeshCoreSharp.Transport` — transport abstraction.
 - `MeshCoreSharp.Transport.Tcp` — TCP transport.
-- `MeshCoreSharp.Transport.Serial` — future serial transport.
+- `MeshCoreSharp.Transport.Serial` — serial transport via `System.IO.Ports`, sharing stream framing with TCP.
 - `MeshCoreSharp.Transport.Ble` — future BLE transport.
 - `MeshCoreSharp.Runtime` — dispatcher/router/transaction machinery; keep internal unless there is a compelling API reason otherwise.
 

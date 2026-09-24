@@ -8,6 +8,18 @@ using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Runtime.Transactions;
 
+if (args.Length == 2 && args[0] == "--serial-read-only")
+{
+    await HardwareReadOnlyTest.RunAsync(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-pty")
+{
+    await SerialTests.PtySmokeAsync(args[1]);
+    return 0;
+}
+
 var tests = new (string Name, Func<Task> Run)[]
 {
     ("Contact wire fields and raw fallback", DecodeFields),
@@ -30,7 +42,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Timeout option validation", OptionValidation),
 };
 var failed = 0;
-var allTests = tests.Concat(MessageTests.Cases).ToArray();
+var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try

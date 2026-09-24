@@ -132,9 +132,20 @@ Use `MSG_SENT.suggested_timeout` plus client safety policy for final Mesh respon
 
 ## M6 — Serial transport
 
-Implement `SerialMeshCoreTransport` using the same logical transport contract and shared stream framing code.
+Implemented ahead of M3–M5 at the project owner's request:
 
-Success criterion: no changes should be required in `MeshCoreClient`, packet parsing, transactions, or public operation APIs merely to switch from TCP to Serial.
+- `SerialMeshCoreTransport` / options, backed by `System.IO.Ports`.
+- Shared stream framing, serialized writes, finite read/write timeouts, clean disconnect/reconnect.
+- Console `--serial` and `--list-ports` modes.
+- Regression tests with a fake byte port and native macOS arm64 pseudo-terminal smoke test.
+
+Physical USB read-only validation passed on macOS arm64 with Heltec V3, firmware
+v1.17.1-d929643: 13 local commands, three time/battery/empty-contact-list cycles,
+radio TX counters unchanged at zero. See [hardware report](testing/serial-usb-2026-09-24.md).
+Windows/Linux validation remains pending.
+
+No changes to `MeshCoreClient`, packet parsing, transactions, or public operation APIs
+were required to switch from TCP to Serial.
 
 ## M7 — BLE transport
 
