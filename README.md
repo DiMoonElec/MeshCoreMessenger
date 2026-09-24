@@ -87,3 +87,15 @@ dotnet run --project samples/MeshCoreSharp.Console -- 192.168.1.100 5000 30
 ## Следующий этап
 
 Следующая вертикаль — `GET_CONTACTS` как multi-frame transaction (`CONTACT_START -> CONTACT* -> CONTACT_END`). После неё — `MESSAGES_WAITING` / `SYNC_NEXT_MESSAGE` и message pump.
+
+## Контекст для Codex / VS Code
+
+Для продолжения разработки в Codex контекст проекта хранится прямо в репозитории:
+
+- [`AGENTS.md`](AGENTS.md) — обязательные архитектурные и инженерные правила для coding agents;
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — runtime-архитектура, transaction/router/gate модель;
+- [`docs/COMPANION_PROTOCOL.md`](docs/COMPANION_PROTOCOL.md) — особенности Companion Protocol и известные расхождения источников;
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) — текущий статус и порядок дальнейшей реализации;
+- [`docs/CODEX_START.md`](docs/CODEX_START.md) — готовый стартовый prompt для новой Codex-сессии.
+
+Открывайте в VS Code корень репозитория, содержащий `MeshCoreSharp.sln` и `AGENTS.md`.
