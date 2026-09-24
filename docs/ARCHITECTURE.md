@@ -242,6 +242,8 @@ faults it. ACK deadlines use a bounded firmware suggestion plus margin, measured
 MSG_SENT. Cleanup unregisters the tag on every terminal path. Reconnection creates a
 fresh tracker. Distinct increasing timestamps avoid deterministic collisions for the
 same text sent to different contacts in the same second (ACK hashes omit recipient).
+The public overload taking `Contact` forwards its complete key to the same encoder;
+the firmware command itself carries the protocol-defined six-byte prefix.
 
 An independent private-text send gate covers admission and the immediate exchange,
 not ACK waiting. The tracker keeps a window of at most eight attempted sends since

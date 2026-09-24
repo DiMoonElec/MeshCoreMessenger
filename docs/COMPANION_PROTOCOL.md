@@ -380,6 +380,12 @@ of reusable free slots; the client admission window respects that distinction.
 
 Do not keep the global immediate `CommandGate` locked while waiting for a remote text ACK.
 
+Physical validation on 2026-09-25 used one direct message from Heltec V3 to a
+contact selected by its unique six-byte prefix. Firmware returned MSG_SENT with
+tag `0x8E451AF8` and suggested timeout 14178 ms; the matching ACK arrived with
+reported RTT 2775 ms. Packet counters changed TX/direct 0 → 1 and RX 0 → 1.
+See [hardware report](testing/serial-private-send-2026-09-25.md).
+
 ## Remote Mesh requests and the future `MeshRequestGate`
 
 Several remote operations follow:

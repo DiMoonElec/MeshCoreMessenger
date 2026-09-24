@@ -92,13 +92,14 @@ It stops with the connection and reports errors without automatic retry loops.
 
 ## M3 — Outgoing text and ACK tracking
 
-Implemented (65 regression tests in total and TCP self-test pass):
+Implemented (72 regression tests in total and TCP self-test pass):
 
 - `SEND_TXT_MSG` encoder;
 - `MSG_SENT` parser;
 - `ACK` parser;
 - `AckTracker` keyed by expected ACK;
 - `SendTextAsync` returns immediate acceptance plus independent `Delivery` task;
+- overloads accept either a typed `Contact` or a full 32-byte public key;
 - timeout/cancellation behavior for ACK waits;
 - race handling for an ACK that arrives very quickly after `MSG_SENT`.
 
@@ -110,7 +111,8 @@ UTF-8 bytes; channel length accounts for the sender-name prefix.
 
 Channel text (`SendChannelTextAsync`, OK/ERROR) is also implemented and physically
 tested on Heltec V3: one message in #test, TX/flood counters 0 -> 1. Private text/ACK
-hardware validation requires a chosen recipient; currently covered by automated tests.
+was then verified against contact `RnD Mesh01`: a single direct send, matching ACK,
+RTT 2775 ms, TX/direct 0 -> 1. See [report](testing/serial-private-send-2026-09-25.md).
 
 ## M4 — Channels and contact mutation APIs
 
@@ -118,7 +120,7 @@ Advertisements implemented: `SendAdvertisementAsync(ZeroHop/Flood)`, typed ADVER
 NEW_ADVERT pushes and `AdvertisementReceived`. New discoveries remain separate from
 contacts transactions. One Flood advertisement verified on Heltec V3 (TX 0 -> 1);
 the subsequent private message was received successfully through MessageReceived.
-71 regression tests pass.
+72 regression tests pass.
 
 Implemented ahead of M3: local channel reads (`GetChannelAsync`, `GetChannelsAsync`)
 and core/radio/packet statistics. Channel enumeration includes empty slots and uses

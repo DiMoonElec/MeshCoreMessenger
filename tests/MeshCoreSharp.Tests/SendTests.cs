@@ -24,6 +24,7 @@ internal static class SendTests
         ("Channel text waits for OK and never promises delivery", ChannelSend),
         ("Duplicate expected ACK fails ambiguous deliveries", DuplicateTag),
         ("Blocked user callbacks do not block ACK completion", BlockedCallback),
+        ("Contact overload uses the complete contact key", ContactOverload),
     ];
 
     private static readonly byte[] Key = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
@@ -327,5 +328,20 @@ internal static class SendTests
             Check((await sent.Delivery).Status == MessageDeliveryStatus.Confirmed);
         }
         finally { release.Set(); }
+    }
+
+    private static async Task ContactOverload()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        var contact = ((ContactPacket)new CompanionPacketDecoder().Decode(Fixtures.Contact())).Contact;
+        var sending = client.SendTextAsync(contact, "contact overload");
+        var frame = await Sent(transport);
+        Check(frame.AsSpan(7, 6).SequenceEqual(contact.PublicKey.Span[..6]));
+        transport.Emit(SentFrame(0));
+        var sent = await sending;
+        Check((await sent.Delivery).Status == MessageDeliveryStatus.NotExpected);
+        await Throws<ArgumentNullException>(() => client.SendTextAsync((Contact)null!, "test"));
     }
 }

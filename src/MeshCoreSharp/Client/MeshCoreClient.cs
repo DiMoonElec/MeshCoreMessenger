@@ -264,6 +264,15 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
     /// <summary>Sends plain text once. Returns on Companion acceptance; await Delivery for the separate ACK result.</summary>
     /// <remarks>The cancellation token also governs Delivery. Cancellation/timeout never retracts or retries a radio send.</remarks>
+    public Task<TextMessageSendResult> SendTextAsync(
+        Contact recipient, string text, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipient);
+        return SendTextAsync(recipient.PublicKey, text, cancellationToken);
+    }
+
+    /// <summary>Sends plain text once using a full 32-byte recipient public key.</summary>
+    /// <remarks>The cancellation token also governs Delivery. Cancellation/timeout never retracts or retries a radio send.</remarks>
     public async Task<TextMessageSendResult> SendTextAsync(
         ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default)
     {

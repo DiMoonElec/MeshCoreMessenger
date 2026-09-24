@@ -8,6 +8,12 @@ using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Runtime.Transactions;
 
+if (args.Length == 2 && args[0] == "--serial-private-send-test")
+{
+    await HardwarePrivateMessageTest.RunAsync(args[1]);
+    return 0;
+}
+
 if (args.Length == 2 && args[0] == "--serial-advert-test")
 {
     await HardwareAdvertisementTest.RunAsync(args[1]);
