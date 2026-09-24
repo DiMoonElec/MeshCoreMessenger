@@ -21,6 +21,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
     private CancellationTokenSource? _receiveCts;
     private Task? _receiveTask;
+    private MessagePump? _messagePump;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
     private bool _disposed;
@@ -53,6 +54,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public event EventHandler<CompanionPacketEventArgs>? UnhandledPacketReceived;
     public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
     public event EventHandler<MeshCoreClientErrorEventArgs>? BackgroundError;
+    public event EventHandler<MessageReceivedEventArgs>? MessageReceived;
 
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -63,14 +65,34 @@ public sealed class MeshCoreClient : IAsyncDisposable
             if (_state == MeshCoreConnectionState.Connected)
                 return;
 
+            // An explicitly requested connection after a fault starts a fresh pump/session.
+            if (_receiveCts is not null)
+            {
+                await _receiveCts.CancelAsync().ConfigureAwait(false);
+                if (_messagePump is not null)
+                    await _messagePump.DisposeAsync().ConfigureAwait(false);
+                if (_receiveTask is not null)
+                    await _receiveTask.ConfigureAwait(false);
+                _receiveCts.Dispose();
+                _messagePump = null;
+                _receiveTask = null;
+                _receiveCts = null;
+            }
+
             SetState(MeshCoreConnectionState.Connecting);
             try
             {
                 await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 _receiveCts = new CancellationTokenSource();
-                _receiveTask = ReceiveLoopAsync(_receiveCts.Token);
                 _started = false;
                 SelfInfo = null;
+                _messagePump = _options.AutoReceiveMessages
+                    ? new MessagePump(
+                        ct => _dispatcher.SyncNextMessageAsync(_options.CommandTimeout, ct),
+                        ex => RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex)),
+                        _receiveCts.Token)
+                    : null;
+                _receiveTask = ReceiveLoopAsync(_receiveCts.Token, _messagePump);
                 SetState(MeshCoreConnectionState.Connected);
             }
             catch
@@ -88,6 +110,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public async Task<SelfInfo> StartAsync(CancellationToken cancellationToken = default)
     {
         EnsureConnected();
+        var messagePump = _messagePump;
 
         var packet = await _dispatcher.SendAsync<SelfInfoPacket>(
             CommandType.AppStart,
@@ -98,6 +121,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
         SelfInfo = packet.Info;
         _started = true;
+        messagePump?.Start();
         return packet.Info;
     }
 
@@ -180,10 +204,15 @@ public sealed class MeshCoreClient : IAsyncDisposable
             _started = false;
             SelfInfo = null;
 
+            _messagePump?.Stop();
             _router.FailCurrent(new MeshCoreTransportException("MeshCore client disconnected."));
 
             if (_receiveCts is not null)
                 await _receiveCts.CancelAsync().ConfigureAwait(false);
+
+            if (_messagePump is not null)
+                await _messagePump.DisposeAsync().ConfigureAwait(false);
+            _messagePump = null;
 
             await _transport.DisconnectAsync(cancellationToken).ConfigureAwait(false);
 
@@ -204,7 +233,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         }
     }
 
-    private async Task ReceiveLoopAsync(CancellationToken cancellationToken)
+    private async Task ReceiveLoopAsync(CancellationToken cancellationToken, MessagePump? messagePump)
     {
         try
         {
@@ -228,6 +257,12 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
                 RaiseSafely(PacketReceived, args);
 
+                if (packet is ReceivedMessagePacket received)
+                    RaiseSafely(MessageReceived, new MessageReceivedEventArgs(received.Message));
+
+                if (packet.Type == PacketType.MessagesWaiting)
+                    messagePump?.Notify();
+
                 if (packet.IsPush)
                     RaiseSafely(PushPacketReceived, args);
                 else if (!matched)
@@ -237,7 +272,9 @@ public sealed class MeshCoreClient : IAsyncDisposable
             if (!cancellationToken.IsCancellationRequested)
             {
                 var exception = new MeshCoreTransportException("MeshCore transport closed the receive stream.");
+                messagePump?.Stop();
                 _router.FailCurrent(exception);
+                _started = false;
                 SetState(MeshCoreConnectionState.Faulted);
                 RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(exception));
             }
@@ -248,12 +285,18 @@ public sealed class MeshCoreClient : IAsyncDisposable
         }
         catch (Exception ex)
         {
+            messagePump?.Stop();
             _router.FailCurrent(ex);
+            _started = false;
             if (!cancellationToken.IsCancellationRequested)
             {
                 SetState(MeshCoreConnectionState.Faulted);
                 RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex));
             }
+        }
+        finally
+        {
+            messagePump?.Stop();
         }
     }
 

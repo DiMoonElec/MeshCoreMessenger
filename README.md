@@ -18,7 +18,7 @@
 - `MeshCoreSharp.Transport.Tcp` — TCP transport.
 - `MeshCoreSharp.Runtime` — internal command/router runtime.
 
-## Реализовано в первой итерации
+## Реализовано
 
 - TCP подключение.
 - Stream framing, совместимый с `meshcore_py` TCP/Serial:
@@ -33,10 +33,12 @@
   - `BATT_AND_STORAGE`;
   - `DEVICE_INFO`.
   - `CONTACT_START`, `CONTACT`, `CONTACT_END`.
+  - Личные и канальные сообщения legacy/V3, канальные данные и `NO_MORE_MESSAGES`.
 - Raw packet fallback для пока не реализованных типов, включая push packets.
 - Последовательный `CommandDispatcher`.
 - Subscribe-before-send: transaction регистрируется в `PacketRouter` до записи команды.
 - Push packets могут приходить между command и response и не завершают transaction, если их тип не соответствует ожидаемому ответу.
+- Автоматическое чтение входящей очереди через `SYNC_NEXT_MESSAGE` и событие `MessageReceived`.
 - Public API:
   - `ConnectAsync()`;
   - `StartAsync()`;
@@ -51,6 +53,7 @@
 
 ```csharp
 using MeshCoreSharp;
+using MeshCoreSharp.Models;
 using MeshCoreSharp.Transport.Tcp;
 
 await using var transport = new TcpMeshCoreTransport("192.168.1.100", 5000);
@@ -58,6 +61,23 @@ await using var client = new MeshCoreClient(transport);
 
 client.PushPacketReceived += (_, e) =>
     Console.WriteLine($"Push: 0x{e.Packet.RawType:X2}");
+
+// Подписывайтесь до StartAsync: на устройстве уже могут быть накопленные сообщения.
+client.MessageReceived += (_, e) =>
+{
+    switch (e.Message)
+    {
+        case ContactMessage message:
+            Console.WriteLine($"Личное от {message.ContactPublicKeyPrefixHex}: {message.Text}");
+            break;
+        case ChannelMessage message:
+            Console.WriteLine($"Канал {message.ChannelIndex}: {message.Text}");
+            break;
+        case ChannelDataMessage message:
+            Console.WriteLine($"Данные канала {message.ChannelIndex}: {Convert.ToHexString(message.Data.Span)}");
+            break;
+    }
+};
 
 await client.ConnectAsync();
 
@@ -91,9 +111,43 @@ foreach (var contact in contacts)
 `DisposeAsync` закрывает очередь событий, но не ждёт выполнения пользовательского кода;
 уже поставленные в очередь события могут быть доставлены после его завершения.
 
+## Приём сообщений
+
+По умолчанию `AutoReceiveMessages = true`. После успешного `StartAsync` клиент
+читает накопленные сообщения, затем запускает чтение по `MESSAGES_WAITING`.
+Каждый `SYNC_NEXT_MESSAGE` возвращает одно сообщение; чтение продолжается до
+`NO_MORE_MESSAGES`. Повторные уведомления объединяются. Обычные команды получают
+доступ к диспетчеру между запросами сообщений, а получение контактов удерживает
+его до конца списка. RX loop и обработчики событий работают независимо.
+
+`MessageReceived` передаёт один из трёх типов:
+
+- `ContactMessage`: шестибайтный префикс ключа контакта, тип текста, время и текст.
+  Для room-постов `SignedPlain` дополнительно сохраняется четырёхбайтный `SenderPrefix` автора.
+- `ChannelMessage`: индекс канала, время, тип и текст, включая префикс имени отправителя.
+- `ChannelDataMessage`: индекс канала, `DataType` и исходные байты `Data`; времени в этом пакете нет.
+
+`SnrDb` заполнен для V3 и канальных данных, для legacy равен `null`.
+`PathLength` сохраняет кодированный байт протокола; `0xFF` означает прямую доставку.
+Текст сохраняет пробелы и переводы строк. Полного публичного ключа отправителя
+в сообщении нет: сопоставление префикса со списком контактов выполняет приложение.
+
+Ошибки команды и тайм-ауты (`CommandTimeout`) поступают в `BackgroundError`.
+Ошибочный кадр также вызывает диагностику и останавливает текущий проход.
+Следующее уведомление запускает новый проход; бесконечных автоматических повторов нет.
+Запоздалый корректный пакет сообщения всё равно вызывает `MessageReceived`.
+При отключении фоновое чтение отменяется, при следующем подключении и `StartAsync`
+создаётся новый приёмник. Автоматического переподключения нет.
+
+Для диагностических приложений автоматические запросы можно отключить через
+`new MeshCoreClientOptions { AutoReceiveMessages = false }`.
+Сообщения из очереди удаляются прошивкой при чтении; библиотека не сохраняет их
+на диск и не выполняет дедупликацию. Подпишитесь на событие до запуска приёма.
+
 ## Запуск sample
 
-Локальный self-test специально вставляет `MESSAGES_WAITING` между каждым запросом и ответом:
+Локальный self-test вставляет `MESSAGES_WAITING` в обычные ответы и между контактами,
+а также проверяет получение личного сообщения, канального текста и бинарных данных:
 
 ```bash
 dotnet run --project samples/MeshCoreSharp.Console -- --self-test
@@ -121,12 +175,13 @@ dotnet run --project samples/MeshCoreSharp.Console -c Release -- --self-test
 
 Тестовый проект запускается через `dotnet run` и возвращает ненулевой код при ошибке.
 Он проверяет разбор полей и усечённых кадров, push-пакеты между контактами, порядок
-кадров, оба тайм-аута, отмену, ошибки и освобождение очереди. TCP self-test
-также получает два контакта с push-пакетом между ними.
+кадров, оба тайм-аута, отмену, ошибки и освобождение очереди, все форматы сообщений,
+объединение уведомлений и отключение/перезапуск приёмника. TCP self-test получает
+два контакта и три сообщения.
 
 ## Следующий этап
 
-Следующая вертикаль — `MESSAGES_WAITING` / `SYNC_NEXT_MESSAGE` и message pump.
+Следующая вертикаль — отправка текста (`SEND_TXT_MSG` / `MSG_SENT`) и отслеживание `ACK`.
 
 ## Контекст для Codex / VS Code
 

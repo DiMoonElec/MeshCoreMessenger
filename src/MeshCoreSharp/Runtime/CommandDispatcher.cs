@@ -1,6 +1,7 @@
 using MeshCoreSharp.Exceptions;
 using MeshCoreSharp.Models;
 using MeshCoreSharp.Protocol;
+using MeshCoreSharp.Protocol.Commands;
 using MeshCoreSharp.Protocol.Packets;
 using MeshCoreSharp.Runtime.Transactions;
 using MeshCoreSharp.Transport;
@@ -25,7 +26,8 @@ internal sealed class CommandDispatcher : IDisposable
         ReadOnlyMemory<byte> command,
         string operationName,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        Func<PacketType, bool>? acceptsType = null)
         where TPacket : CompanionPacket
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -41,7 +43,7 @@ internal sealed class CommandDispatcher : IDisposable
             throw new ArgumentOutOfRangeException(nameof(timeout));
 
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        var transaction = new SinglePacketTransaction<TPacket>();
+        var transaction = new SinglePacketTransaction<TPacket>(acceptsType);
 
         try
         {
@@ -80,6 +82,10 @@ internal sealed class CommandDispatcher : IDisposable
             _commandGate.Release();
         }
     }
+
+    public Task<MessageQueuePacket> SyncNextMessageAsync(TimeSpan timeout, CancellationToken cancellationToken) =>
+        SendAsync<MessageQueuePacket>(CommandType.SyncNextMessage, CompanionCommands.SyncNextMessage(),
+            nameof(SyncNextMessageAsync), timeout, cancellationToken, MessageQueuePacket.IsResponseType);
 
     public async Task<IReadOnlyList<Contact>> SendContactsAsync(
         ReadOnlyMemory<byte> command,

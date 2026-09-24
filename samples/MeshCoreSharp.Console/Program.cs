@@ -1,4 +1,5 @@
 using MeshCoreSharp;
+using MeshCoreSharp.Models;
 using MeshCoreSharp.Transport.Tcp;
 
 if (args.Length == 1 && args[0] == "--self-test")
@@ -6,7 +7,7 @@ if (args.Length == 1 && args[0] == "--self-test")
     await using var server = new FakeCompanionServer();
     server.Start();
     Console.WriteLine($"Fake companion: 127.0.0.1:{server.Port}");
-    await RunAsync("127.0.0.1", server.Port, 0);
+    await RunAsync("127.0.0.1", server.Port, 0, expectedMessages: 3);
     await server.Completion;
     Console.WriteLine("SELF-TEST PASSED");
     return 0;
@@ -27,7 +28,7 @@ var observeSeconds = args.Length >= 3 && int.TryParse(args[2], out var value) ? 
 await RunAsync(host, port, observeSeconds);
 return 0;
 
-static async Task RunAsync(string host, int port, int observeSeconds)
+static async Task RunAsync(string host, int port, int observeSeconds, int expectedMessages = 0)
 {
     await using var transport = new TcpMeshCoreTransport(host, port);
     await using var client = new MeshCoreClient(
@@ -38,6 +39,21 @@ static async Task RunAsync(string host, int port, int observeSeconds)
             ApplicationProtocolVersion = 3,
             CommandTimeout = TimeSpan.FromSeconds(5),
         });
+
+    var messageCount = 0;
+    var allMessages = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    client.MessageReceived += (_, e) =>
+    {
+        Console.WriteLine(e.Message switch
+        {
+            ContactMessage message => $"PRIVATE {message.ContactPublicKeyPrefixHex}: {message.Text}",
+            ChannelMessage message => $"CHANNEL {message.ChannelIndex}: {message.Text}",
+            ChannelDataMessage message => $"DATA channel={message.ChannelIndex}, type=0x{message.DataType:X4}: {Convert.ToHexString(message.Data.Span)}",
+            _ => $"MESSAGE {e.Message}",
+        });
+        if (Interlocked.Increment(ref messageCount) == expectedMessages)
+            allMessages.TrySetResult();
+    };
 
     client.PacketReceived += (_, e) =>
     {
@@ -90,6 +106,13 @@ static async Task RunAsync(string host, int port, int observeSeconds)
     {
         Console.WriteLine($"Observing asynchronous packets for {observeSeconds} s...");
         await Task.Delay(TimeSpan.FromSeconds(observeSeconds));
+    }
+
+    if (expectedMessages > 0)
+    {
+        await allMessages.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        if (messageCount != expectedMessages)
+            throw new InvalidDataException($"Expected {expectedMessages} messages, received {messageCount}.");
     }
 
     await client.DisconnectAsync();

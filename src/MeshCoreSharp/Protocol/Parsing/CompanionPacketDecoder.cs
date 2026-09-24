@@ -20,6 +20,12 @@ internal sealed class CompanionPacketDecoder
             new ContactStartPacketParser(),
             new ContactPacketParser(),
             new ContactEndPacketParser(),
+            new MessageQueuePacketParser(PacketType.ContactMessageReceived),
+            new MessageQueuePacketParser(PacketType.ContactMessageReceivedV3),
+            new MessageQueuePacketParser(PacketType.ChannelMessageReceived),
+            new MessageQueuePacketParser(PacketType.ChannelMessageReceivedV3),
+            new MessageQueuePacketParser(PacketType.ChannelDataReceived),
+            new MessageQueuePacketParser(PacketType.NoMoreMessages),
         ];
 
         _parsers = parsers.ToDictionary(parser => parser.Type);

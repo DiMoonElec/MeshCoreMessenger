@@ -3,6 +3,8 @@ namespace MeshCoreSharp.Protocol;
 public static class ProtocolLimits
 {
     public const int PublicKeySize = 32;
+    public const int MessageContactPrefixSize = 6;
+    public const int MessageSenderPrefixSize = 4;
     public const int ContactPathSize = 64;
     public const int ContactNameSize = 32;
 

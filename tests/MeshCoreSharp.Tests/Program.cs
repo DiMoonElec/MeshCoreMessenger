@@ -30,7 +30,8 @@ var tests = new (string Name, Func<Task> Run)[]
     ("Timeout option validation", OptionValidation),
 };
 var failed = 0;
-foreach (var test in tests)
+var allTests = tests.Concat(MessageTests.Cases).ToArray();
+foreach (var test in allTests)
 {
     try
     {
@@ -43,7 +44,7 @@ foreach (var test in tests)
         Console.Error.WriteLine($"FAIL {test.Name}: {ex}");
     }
 }
-Console.WriteLine($"{tests.Length - failed}/{tests.Length} passed");
+Console.WriteLine($"{allTests.Length - failed}/{allTests.Length} passed");
 return failed == 0 ? 0 : 1;
 
 static CompanionPacket Decode(byte[] frame) => new CompanionPacketDecoder().Decode(frame);

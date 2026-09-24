@@ -102,7 +102,7 @@ Internal concurrency and transaction machinery:
 - `PacketRouter`;
 - transaction state machines;
 - future ACK/deferred Mesh trackers;
-- future incoming-message pump.
+- incoming-message pump.
 
 Keep this namespace internal unless a type is clearly required in the public API.
 
@@ -215,7 +215,7 @@ ACK waiting is separate from the immediate command transaction and should be key
 
 `MESSAGES_WAITING (0x83)` is a notification, not the message body.
 
-High-level message delivery should eventually be:
+Implemented high-level message delivery is:
 
 ```text
 MESSAGES_WAITING
@@ -236,6 +236,22 @@ Important constraints:
 - repeated `MESSAGES_WAITING` notifications should coalesce rather than start parallel drains;
 - actual messages should be published as high-level events/models;
 - low-level packet events may still be retained for diagnostics.
+
+One pump is created per connection, gated on successful APP_START. It performs an
+initial drain for the offline backlog. A bounded one-item wake channel coalesces
+notifications; each query consumes notifications received before it, retaining
+any tickle arriving during the final query. Every query uses CommandDispatcher
+and releases CommandGate after its single message/NO_MORE_MESSAGES response.
+
+The receive loop publishes decoded message models through the event queue even
+if a response arrives after its request timed out. This avoids dropping already
+dequeued firmware messages while ensuring a late message cannot complete an
+unrelated command. Delivery is once per received frame, not durable or deduplicated.
+Malformed known message responses fail the matching transaction and surface RX
+diagnostics. Other command failures are reported by the pump. The current drain
+stops on failure and waits for a later notification. Disconnect/fault cancels the
+pump, including queries still waiting for CommandGate; explicit reconnection
+creates a fresh pump without retained notifications.
 
 ## Timeout model
 

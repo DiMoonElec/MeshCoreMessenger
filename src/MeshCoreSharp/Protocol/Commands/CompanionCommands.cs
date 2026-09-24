@@ -20,6 +20,8 @@ internal static class CompanionCommands
 
     public static byte[] GetContacts() => [(byte)CommandType.GetContacts];
 
+    public static byte[] SyncNextMessage() => [(byte)CommandType.SyncNextMessage];
+
     public static byte[] SetDeviceTime(DateTimeOffset value)
     {
         var unixSeconds = value.ToUnixTimeSeconds();

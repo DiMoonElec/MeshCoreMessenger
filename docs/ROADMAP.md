@@ -33,7 +33,7 @@ TCP communication has been confirmed against a real Companion node by the projec
 
 ## M1 — Contacts multi-frame transaction
 
-Implemented (automated regression tests and local TCP self-test; real-device validation pending):
+Implemented (automated regression tests, local TCP self-test, and real-device contacts retrieval confirmed by the project owner):
 
 - contact wire model/parser;
 - `CONTACT_START` parser;
@@ -61,7 +61,9 @@ returns the complete contact collection and publishes the push packets without b
 
 ## M2 — Incoming messages and message pump
 
-Implement packet parsers for:
+Implemented (automated regression tests and local TCP self-test; real-device message reception pending).
+
+Packet parsers for:
 
 - legacy private/contact message;
 - legacy channel message;
@@ -70,7 +72,7 @@ Implement packet parsers for:
 - channel data;
 - `NO_MORE_MESSAGES`.
 
-Implement a coalescing internal `MessagePump`:
+Coalescing internal `MessagePump`:
 
 ```text
 MESSAGES_WAITING
@@ -80,7 +82,11 @@ MESSAGES_WAITING
   -> stop on NO_MORE_MESSAGES
 ```
 
-Add public high-level message events/models while preserving optional low-level packet diagnostics.
+Public `MessageReceived` delivers `ContactMessage`, `ChannelMessage`, or `ChannelDataMessage`,
+while low-level packet diagnostics remain available. The pump starts after successful APP_START,
+reads the offline queue once, and responds to subsequent MESSAGES_WAITING notifications.
+It stops with the connection and reports errors without automatic retry loops.
+`AutoReceiveMessages` can disable automatic requests for diagnostic applications.
 
 ## M3 — Outgoing text and ACK tracking
 

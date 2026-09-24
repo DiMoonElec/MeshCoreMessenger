@@ -9,6 +9,9 @@ public sealed record MeshCoreClientOptions
 
     public TimeSpan CommandTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
+    /// <summary>Drain incoming messages after APP_START and on MESSAGES_WAITING notifications.</summary>
+    public bool AutoReceiveMessages { get; init; } = true;
+
     /// <summary>Maximum silence between accepted contact stream frames.</summary>
     public TimeSpan ContactsInactivityTimeout { get; init; } = TimeSpan.FromSeconds(5);
 

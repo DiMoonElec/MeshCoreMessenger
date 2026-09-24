@@ -23,37 +23,65 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         using var client = await _listener.AcceptTcpClientAsync();
         await using var stream = client.GetStream();
 
-        await ExpectAndReplyAsync(stream, CommandType.AppStart, BuildSelfInfo());
-        await ExpectAndReplyAsync(stream, CommandType.DeviceQuery, BuildDeviceInfo());
-        await ExpectAndReplyAsync(stream, CommandType.GetDeviceTime, BuildCurrentTime());
-        await ExpectAndReplyAsync(stream, CommandType.GetBatteryAndStorage, BuildBattery());
-        await ExpectAndReplyAsync(stream, CommandType.GetContacts, BuildContactBoundary(PacketType.ContactStart, 2));
-        await WriteFrameAsync(stream, 0x3E, BuildContact("Alice", 0xA1));
-        await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
-        await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
-        await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
+        var messages = new Queue<byte[]>(
+        [
+            BuildMessage(PacketType.ContactMessageReceivedV3, "Hello from Alice"),
+            BuildMessage(PacketType.ChannelMessageReceivedV3, "Bob: Hello channel"),
+            [(byte)PacketType.ChannelDataReceived, 0xE3, 0, 0, 0, 0xFF, 0xFF, 0xFF, 3, 0, 1, 255],
+        ]);
+        while (true)
+        {
+            byte[] command;
+            try { command = await ReadFrameAsync(stream, 0x3C); }
+            catch (EndOfStreamException) { return; }
+            if (command.Length == 0) throw new InvalidDataException("Empty command.");
+            var type = (CommandType)command[0];
 
-        // Give the sample time to perform its explicit disconnect instead of
-        // making the fake server look like an unexpected connection loss.
-        await Task.Delay(500);
+            if (type == CommandType.SyncNextMessage)
+            {
+                await WriteFrameAsync(stream, 0x3E, messages.TryDequeue(out var message)
+                    ? message : [(byte)PacketType.NoMoreMessages]);
+                continue;
+            }
+
+            // A tickle can arrive while a completely different command owns the dispatcher.
+            await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
+            if (type == CommandType.GetContacts)
+            {
+                await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactStart, 2));
+                await WriteFrameAsync(stream, 0x3E, BuildContact("Alice", 0xA1));
+                await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
+                await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
+                await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
+                continue;
+            }
+
+            var response = type switch
+            {
+                CommandType.AppStart => BuildSelfInfo(),
+                CommandType.DeviceQuery => BuildDeviceInfo(),
+                CommandType.GetDeviceTime => BuildCurrentTime(),
+                CommandType.GetBatteryAndStorage => BuildBattery(),
+                _ => throw new InvalidDataException($"Unexpected command: {type}"),
+            };
+            await WriteFrameAsync(stream, 0x3E, response);
+        }
     }
 
-    private static async Task ExpectAndReplyAsync(
-        NetworkStream stream,
-        CommandType expectedCommand,
-        byte[] response)
+    private static byte[] BuildMessage(PacketType type, string text)
     {
-        var command = await ReadFrameAsync(stream, 0x3C);
-        if (command.Length == 0 || command[0] != (byte)expectedCommand)
-        {
-            throw new InvalidDataException(
-                $"Expected command {expectedCommand} (0x{(byte)expectedCommand:X2}), got {Convert.ToHexString(command)}.");
-        }
-
-        // Deliberately interleave an unsolicited push before every response.
-        await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
-        await Task.Delay(10);
-        await WriteFrameAsync(stream, 0x3E, response);
+        var contact = type == PacketType.ContactMessageReceivedV3;
+        var bytes = Encoding.UTF8.GetBytes(text);
+        var headerSize = contact ? 16 : 11;
+        var frame = new byte[headerSize + bytes.Length];
+        frame[0] = (byte)type;
+        frame[1] = 0xE3; // SNR -7.25 dB
+        if (contact) frame.AsSpan(4, 6).Fill(0xA1);
+        var offset = contact ? 10 : 5;
+        frame[offset] = 0xFF; // direct route
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(offset + 2), 1_700_000_123);
+        bytes.CopyTo(frame.AsSpan(headerSize));
+        return frame;
     }
 
     private static byte[] BuildSelfInfo()

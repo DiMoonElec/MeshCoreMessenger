@@ -68,7 +68,7 @@ internal ref struct PacketReader
         return System.Text.Encoding.UTF8.GetString(bytes).Trim();
     }
 
-    public string ReadUtf8ToEnd()
+    public string ReadUtf8ToEnd(bool trimWhitespace = true)
     {
         var bytes = _buffer[_offset..];
         _offset = _buffer.Length;
@@ -77,7 +77,8 @@ internal ref struct PacketReader
         if (nul >= 0)
             bytes = bytes[..nul];
 
-        return System.Text.Encoding.UTF8.GetString(bytes).Trim();
+        var text = System.Text.Encoding.UTF8.GetString(bytes);
+        return trimWhitespace ? text.Trim() : text;
     }
 
     public void Skip(int count)

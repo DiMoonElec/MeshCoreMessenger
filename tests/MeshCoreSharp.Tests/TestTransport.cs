@@ -4,13 +4,16 @@ using MeshCoreSharp.Transport;
 
 internal sealed class TestTransport : IMeshCoreTransport
 {
-    private readonly Channel<ReadOnlyMemory<byte>> _received = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
+    private Channel<ReadOnlyMemory<byte>> _received = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
     public Channel<byte[]> Sent { get; } = Channel.CreateUnbounded<byte[]>();
     public Func<ReadOnlyMemory<byte>, CancellationToken, ValueTask>? OnSend { get; set; }
     public bool IsConnected { get; private set; }
+    public bool AutoReplyToMessageSync { get; set; } = true;
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
+        if (_received.Reader.Completion.IsCompleted)
+            _received = Channel.CreateUnbounded<ReadOnlyMemory<byte>>();
         IsConnected = true;
         return Task.CompletedTask;
     }
@@ -37,6 +40,8 @@ internal sealed class TestTransport : IMeshCoreTransport
             self[0] = (byte)PacketType.SelfInfo;
             Emit(self);
         }
+        else if (AutoReplyToMessageSync && (CommandType)companionFrame.Span[0] == CommandType.SyncNextMessage)
+            Emit([(byte)PacketType.NoMoreMessages]);
         else
             Sent.Writer.TryWrite(companionFrame.ToArray());
         return ValueTask.CompletedTask;
