@@ -1,8 +1,9 @@
 using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
-using MeshCoreMessenger.Core.Application;
+using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
 using MeshCoreMessenger.Desktop.Platform;
+using MeshCoreMessenger.Desktop.ViewModels;
 
 namespace MeshCoreMessenger.Desktop;
 
@@ -10,17 +11,45 @@ internal static class Program
 {
     private const int AlreadyRunningExitCode = 2;
     private const int DataDirectoryUnavailableExitCode = 3;
+    private const int LocalStorageUnavailableExitCode = 4;
 
     [STAThread]
     public static int Main(string[] args)
     {
         try
         {
-            using var services = AppBootstrap.CreateServiceProvider();
-            var paths = services.GetRequiredService<IAppPaths>();
+            var paths = DesktopAppPaths.CreateDefault();
             using var instanceLock = ApplicationInstanceLock.Acquire(paths);
-            App.Services = services;
-            return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+            LocalStorage storage;
+            try
+            {
+                storage = LocalStorage.OpenAsync(paths).GetAwaiter().GetResult();
+            }
+            catch (Exception exception) when (IsLocalStorageOpenError(exception))
+            {
+                Console.Error.WriteLine($"MeshCoreMessenger could not open local storage: {exception.Message}");
+                return LocalStorageUnavailableExitCode;
+            }
+
+            try
+            {
+                using var services = AppBootstrap.CreateServiceProvider(paths, storage);
+                var viewModel = services.GetRequiredService<MainWindowViewModel>();
+                viewModel.LoadAsync().GetAwaiter().GetResult();
+                App.Services = services;
+                try
+                {
+                    return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+                }
+                finally
+                {
+                    viewModel.StopAsync().GetAwaiter().GetResult();
+                }
+            }
+            finally
+            {
+                storage.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
         }
         catch (ApplicationInstanceAlreadyRunningException exception)
         {
@@ -33,6 +62,9 @@ internal static class Program
             return DataDirectoryUnavailableExitCode;
         }
     }
+
+    private static bool IsLocalStorageOpenError(Exception exception) =>
+        exception is DatabaseStorageException or IOException or UnauthorizedAccessException;
 
     public static AppBuilder BuildAvaloniaApp() =>
         AppBuilder.Configure<App>()

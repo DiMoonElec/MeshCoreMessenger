@@ -18,19 +18,40 @@ public sealed class LocalStorage : IAsyncDisposable
         var reader = new DatabaseReader(databasePath);
         Settings = new SqliteSettingsStore(writer, reader);
         ConnectionProfiles = new SqliteConnectionProfileStore(writer, reader);
+        History = new SqliteLocalHistoryReader(reader);
     }
 
     public ISettingsStore Settings { get; }
     public IConnectionProfileStore ConnectionProfiles { get; }
+    public ILocalHistoryReader History { get; }
 
     public static async Task<LocalStorage> OpenAsync(IAppPaths paths, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(paths);
         var databasePath = Path.GetFullPath(paths.DatabasePath);
-        Directory.CreateDirectory(Path.GetFullPath(paths.DataDirectory));
-        Directory.CreateDirectory(Path.GetFullPath(paths.BackupsDirectory));
-        var writer = await DatabaseWorker.OpenAsync(databasePath, cancellationToken).ConfigureAwait(false);
-        return new LocalStorage(databasePath, writer);
+        try
+        {
+            Directory.CreateDirectory(Path.GetFullPath(paths.DataDirectory));
+            Directory.CreateDirectory(Path.GetFullPath(paths.BackupsDirectory));
+            var writer = await DatabaseWorker.OpenAsync(databasePath, cancellationToken).ConfigureAwait(false);
+            return new LocalStorage(databasePath, writer);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DatabaseStorageException)
+        {
+            throw;
+        }
+        catch (Exception exception) when (
+            exception is SqliteException or IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            throw new DatabaseStorageException(
+                $"Could not open local SQLite database '{databasePath}'. " +
+                "The database was not deleted or automatically recreated.",
+                exception);
+        }
     }
 
     public async Task BackupAsync(string destinationPath, CancellationToken cancellationToken = default)
