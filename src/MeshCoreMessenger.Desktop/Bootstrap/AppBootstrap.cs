@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Persistence;
+using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
 
@@ -29,6 +30,11 @@ public static class AppBootstrap
         services.AddSingleton(storage.Settings);
         services.AddSingleton(storage.ConnectionProfiles);
         services.AddSingleton(storage.History);
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
+        services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
+        services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
+        services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient(provider => new MainWindow
         {

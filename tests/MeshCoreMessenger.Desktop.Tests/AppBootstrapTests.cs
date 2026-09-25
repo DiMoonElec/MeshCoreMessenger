@@ -27,6 +27,12 @@ public sealed class AppBootstrapTests
         Assert.Same(paths, services.GetRequiredService<IAppPaths>());
         Assert.Same(storage, services.GetRequiredService<LocalStorage>());
         Assert.Same(storage.History, services.GetRequiredService<ILocalHistoryReader>());
+        Assert.NotNull(services.GetRequiredService<IConnectionProfileManager>());
+        Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
+        Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());
+        Assert.Same(
+            services.GetRequiredService<ConnectionProfilesViewModel>(),
+            viewModel.Profiles);
         Assert.Equal("Не подключено", viewModel.ConnectionStatus);
         await viewModel.StopAsync();
     }

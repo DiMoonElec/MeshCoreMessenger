@@ -6,6 +6,25 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, DatabaseReader reader) : IConnectionProfileStore
 {
+    public Task<IReadOnlyList<ConnectionProfile>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        reader.ExecuteAsync<IReadOnlyList<ConnectionProfile>>(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = $"""
+                {SelectColumns}
+                ORDER BY Name COLLATE NOCASE, Id;
+                """;
+
+            var profiles = new List<ConnectionProfile>();
+            using var result = command.ExecuteReader();
+            while (result.Read())
+            {
+                profiles.Add(ReadProfile(result));
+            }
+
+            return profiles;
+        }, cancellationToken);
+
     public Task<ConnectionProfile?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)
@@ -16,12 +35,8 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
         return reader.ExecuteAsync(connection =>
         {
             using var command = connection.CreateCommand();
-            command.CommandText = """
-                SELECT Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
-                       DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-                       AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
-                       ExpectedNodePublicKey, CreatedUtc, UpdatedUtc
-                FROM ConnectionProfiles
+            command.CommandText = $"""
+                {SelectColumns}
                 WHERE Id = $id;
                 """;
             command.Parameters.AddWithValue("$id", id.ToString("D"));
@@ -32,32 +47,13 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
                 return null;
             }
 
-            return new ConnectionProfile
-            {
-                Id = Guid.Parse(result.GetString(0)),
-                Name = result.GetString(1),
-                Transport = (ConnectionTransportKind)result.GetInt32(2),
-                TcpHost = result.IsDBNull(3) ? null : result.GetString(3),
-                TcpPort = result.IsDBNull(4) ? null : result.GetInt32(4),
-                SerialPortName = result.IsDBNull(5) ? null : result.GetString(5),
-                BaudRate = result.IsDBNull(6) ? null : result.GetInt32(6),
-                DtrEnable = result.GetBoolean(7),
-                RtsEnable = result.GetBoolean(8),
-                OpenDelayMilliseconds = result.GetInt32(9),
-                CommandTimeoutMilliseconds = result.GetInt32(10),
-                AcknowledgementTimeoutMilliseconds = result.GetInt32(11),
-                AutoConnect = result.GetBoolean(12),
-                Reconnect = result.GetBoolean(13),
-                ExpectedNodePublicKey = result.IsDBNull(14) ? null : (byte[])result.GetValue(14),
-                CreatedUtc = DateTimeOffset.Parse(result.GetString(15), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-                UpdatedUtc = DateTimeOffset.Parse(result.GetString(16), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-            };
+            return ReadProfile(result);
         }, cancellationToken);
     }
 
     public Task SaveAsync(ConnectionProfile profile, CancellationToken cancellationToken = default)
     {
-        Validate(profile);
+        ConnectionProfileValidator.Validate(profile);
 
         return writer.ExecuteAsync(connection =>
         {
@@ -113,42 +109,32 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
         }, cancellationToken);
     }
 
-    private static void Validate(ConnectionProfile profile)
+    private static ConnectionProfile ReadProfile(SqliteDataReader result) => new()
     {
-        ArgumentNullException.ThrowIfNull(profile);
-        if (profile.Id == Guid.Empty)
-        {
-            throw new ArgumentException("Connection profile ID must not be empty.", nameof(profile));
-        }
+        Id = Guid.Parse(result.GetString(0)),
+        Name = result.GetString(1),
+        Transport = (ConnectionTransportKind)result.GetInt32(2),
+        TcpHost = result.IsDBNull(3) ? null : result.GetString(3),
+        TcpPort = result.IsDBNull(4) ? null : result.GetInt32(4),
+        SerialPortName = result.IsDBNull(5) ? null : result.GetString(5),
+        BaudRate = result.IsDBNull(6) ? null : result.GetInt32(6),
+        DtrEnable = result.GetBoolean(7),
+        RtsEnable = result.GetBoolean(8),
+        OpenDelayMilliseconds = result.GetInt32(9),
+        CommandTimeoutMilliseconds = result.GetInt32(10),
+        AcknowledgementTimeoutMilliseconds = result.GetInt32(11),
+        AutoConnect = result.GetBoolean(12),
+        Reconnect = result.GetBoolean(13),
+        ExpectedNodePublicKey = result.IsDBNull(14) ? null : (byte[])result.GetValue(14),
+        CreatedUtc = DateTimeOffset.Parse(result.GetString(15), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        UpdatedUtc = DateTimeOffset.Parse(result.GetString(16), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+    };
 
-        ArgumentException.ThrowIfNullOrWhiteSpace(profile.Name);
-        if (profile.OpenDelayMilliseconds < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(profile), "Open delay must not be negative.");
-        }
-
-        if (profile.CommandTimeoutMilliseconds <= 0 || profile.AcknowledgementTimeoutMilliseconds <= 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(profile), "Connection timeouts must be positive.");
-        }
-
-        if (profile.ExpectedNodePublicKey is { Length: not 32 })
-        {
-            throw new ArgumentException("Expected node public key must contain exactly 32 bytes.", nameof(profile));
-        }
-
-        switch (profile.Transport)
-        {
-            case ConnectionTransportKind.Tcp when
-                !string.IsNullOrWhiteSpace(profile.TcpHost) &&
-                profile.TcpPort is >= 1 and <= 65_535 &&
-                profile.SerialPortName is null && profile.BaudRate is null:
-            case ConnectionTransportKind.Serial when
-                !string.IsNullOrWhiteSpace(profile.SerialPortName) &&
-                profile.BaudRate > 0 && profile.TcpHost is null && profile.TcpPort is null:
-                return;
-            default:
-                throw new ArgumentException("Connection profile contains invalid or mixed transport settings.", nameof(profile));
-        }
-    }
+    private const string SelectColumns = """
+        SELECT Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
+               DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
+               AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
+               ExpectedNodePublicKey, CreatedUtc, UpdatedUtc
+        FROM ConnectionProfiles
+        """;
 }

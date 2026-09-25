@@ -27,14 +27,17 @@ public sealed class MainWindowViewModel : ObservableObject
 
     public MainWindowViewModel(
         ILocalHistoryReader history,
+        ConnectionProfilesViewModel profiles,
         ILogger<MainWindowViewModel> logger)
     {
         _history = history;
+        Profiles = profiles;
         _logger = logger;
     }
 
     public string Title => AppInformation.ProductName;
     public string ConnectionStatus => "Не подключено";
+    public ConnectionProfilesViewModel Profiles { get; }
     public ObservableCollection<ConversationListItem> Conversations { get; } = [];
     public ObservableCollection<HistoryMessageListItem> Messages { get; } = [];
 
@@ -81,6 +84,7 @@ public sealed class MainWindowViewModel : ObservableObject
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
+            await Profiles.LoadAsync(linkedCancellation.Token);
             var summaries = await _history.GetConversationsAsync(
                 ConversationPageSize,
                 linkedCancellation.Token);
@@ -161,6 +165,7 @@ public sealed class MainWindowViewModel : ObservableObject
         }
 
         _lifetimeCancellation.Cancel();
+        await Profiles.StopAsync().ConfigureAwait(false);
         Task[] pending;
         lock (_pendingLoadsGate)
         {

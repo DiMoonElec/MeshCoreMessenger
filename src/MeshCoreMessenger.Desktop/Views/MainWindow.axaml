@@ -38,32 +38,129 @@
       <Border Grid.Column="0"
               BorderBrush="{DynamicResource ThemeBorderLowBrush}"
               BorderThickness="0,0,1,0">
-        <ListBox ItemsSource="{Binding Conversations}"
-                 SelectedItem="{Binding SelectedConversation, Mode=OneWay}"
-                 SelectionChanged="OnConversationSelectionChanged"
-                 Padding="8">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:ConversationListItem">
-              <Grid Margin="4,7" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                <TextBlock Grid.Row="0"
-                           Text="{Binding Title}"
-                           FontWeight="SemiBold"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Row="0"
-                           Grid.Column="1"
-                           Margin="8,0,0,0"
-                           Text="{Binding ActivityTime}"
-                           FontSize="11"
-                           Opacity="0.6" />
-                <TextBlock Grid.Row="1"
-                           Grid.ColumnSpan="2"
-                           Text="{Binding Preview}"
-                           TextTrimming="CharacterEllipsis"
+        <Grid RowDefinitions="Auto,*">
+          <Expander Grid.Row="0"
+                    Header="Профиль подключения"
+                    Margin="8">
+            <ScrollViewer MaxHeight="430">
+              <StackPanel Margin="0,8,0,0" Spacing="7">
+                <ComboBox ItemsSource="{Binding Profiles.AvailableProfiles}"
+                          SelectedItem="{Binding Profiles.SelectedProfile, Mode=TwoWay}"
+                          PlaceholderText="Сохранённые профили">
+                  <ComboBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ConnectionProfileListItem">
+                      <TextBlock Text="{Binding DisplayName}" />
+                    </DataTemplate>
+                  </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Button Content="Новый профиль"
+                        Command="{Binding Profiles.NewProfileCommand}"
+                        HorizontalAlignment="Left" />
+
+                <TextBlock Text="Название" />
+                <TextBox Text="{Binding Profiles.ProfileName, Mode=TwoWay}"
+                         PlaceholderText="Например, USB-нода" />
+
+                <TextBlock Text="Транспорт" />
+                <ComboBox ItemsSource="{Binding Profiles.TransportKinds}"
+                          SelectedItem="{Binding Profiles.SelectedTransport, Mode=TwoWay}" />
+
+                <Grid IsVisible="{Binding Profiles.IsTcp}"
+                      ColumnDefinitions="100,*"
+                      RowDefinitions="Auto,Auto"
+                      RowSpacing="6">
+                  <TextBlock Grid.Row="0" Text="Host" VerticalAlignment="Center" />
+                  <TextBox Grid.Row="0" Grid.Column="1"
+                           Text="{Binding Profiles.TcpHost, Mode=TwoWay}" />
+                  <TextBlock Grid.Row="1" Text="Port" VerticalAlignment="Center" />
+                  <TextBox Grid.Row="1" Grid.Column="1"
+                           Text="{Binding Profiles.TcpPort, Mode=TwoWay}" />
+                </Grid>
+
+                <StackPanel IsVisible="{Binding Profiles.IsSerial}" Spacing="6">
+                  <Grid ColumnDefinitions="100,*">
+                    <TextBlock Text="Serial port" VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="1"
+                              ItemsSource="{Binding Profiles.AvailableSerialPorts}"
+                              Text="{Binding Profiles.SerialPortName, Mode=TwoWay}"
+                              IsEditable="True"
+                              PlaceholderText="/dev/cu… или COM…" />
+                  </Grid>
+                  <Button Content="Обновить порты"
+                          Command="{Binding Profiles.RefreshPortsCommand}"
+                          HorizontalAlignment="Right" />
+                  <Grid ColumnDefinitions="100,*"
+                        RowDefinitions="Auto,Auto"
+                        RowSpacing="6">
+                    <TextBlock Grid.Row="0" Text="Baud rate" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="0" Grid.Column="1"
+                             Text="{Binding Profiles.BaudRate, Mode=TwoWay}" />
+                    <TextBlock Grid.Row="1" Text="Open delay, ms" VerticalAlignment="Center" />
+                    <TextBox Grid.Row="1" Grid.Column="1"
+                             Text="{Binding Profiles.OpenDelayMilliseconds, Mode=TwoWay}" />
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Spacing="12">
+                    <CheckBox Content="DTR" IsChecked="{Binding Profiles.DtrEnable, Mode=TwoWay}" />
+                    <CheckBox Content="RTS" IsChecked="{Binding Profiles.RtsEnable, Mode=TwoWay}" />
+                  </StackPanel>
+                </StackPanel>
+
+                <Grid ColumnDefinitions="140,*"
+                      RowDefinitions="Auto,Auto"
+                      RowSpacing="6">
+                  <TextBlock Grid.Row="0" Text="Command timeout, ms" VerticalAlignment="Center" />
+                  <TextBox Grid.Row="0" Grid.Column="1"
+                           Text="{Binding Profiles.CommandTimeoutMilliseconds, Mode=TwoWay}" />
+                  <TextBlock Grid.Row="1" Text="ACK timeout, ms" VerticalAlignment="Center" />
+                  <TextBox Grid.Row="1" Grid.Column="1"
+                           Text="{Binding Profiles.AcknowledgementTimeoutMilliseconds, Mode=TwoWay}" />
+                </Grid>
+                <CheckBox Content="Автоподключение при запуске"
+                          IsChecked="{Binding Profiles.AutoConnect, Mode=TwoWay}" />
+                <CheckBox Content="Повторять подключение после обрыва"
+                          IsChecked="{Binding Profiles.Reconnect, Mode=TwoWay}" />
+                <Button Content="Сохранить и выбрать"
+                        Command="{Binding Profiles.SaveAndSelectCommand}"
+                        HorizontalAlignment="Stretch" />
+                <TextBlock Text="{Binding Profiles.Status}"
+                           TextWrapping="Wrap"
                            Opacity="0.7" />
-              </Grid>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
+                <TextBlock Text="{Binding Profiles.ErrorMessage}"
+                           IsVisible="{Binding Profiles.HasError}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}" />
+              </StackPanel>
+            </ScrollViewer>
+          </Expander>
+
+          <ListBox Grid.Row="1"
+                   ItemsSource="{Binding Conversations}"
+                   SelectedItem="{Binding SelectedConversation, Mode=OneWay}"
+                   SelectionChanged="OnConversationSelectionChanged"
+                   Padding="8">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:ConversationListItem">
+                <Grid Margin="4,7" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                  <TextBlock Grid.Row="0"
+                             Text="{Binding Title}"
+                             FontWeight="SemiBold"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Grid.Row="0"
+                             Grid.Column="1"
+                             Margin="8,0,0,0"
+                             Text="{Binding ActivityTime}"
+                             FontSize="11"
+                             Opacity="0.6" />
+                  <TextBlock Grid.Row="1"
+                             Grid.ColumnSpan="2"
+                             Text="{Binding Preview}"
+                             TextTrimming="CharacterEllipsis"
+                             Opacity="0.7" />
+                </Grid>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
+        </Grid>
       </Border>
 
       <Grid Grid.Column="1" RowDefinitions="Auto,*">

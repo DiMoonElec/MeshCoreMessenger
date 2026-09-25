@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.ViewModels;
@@ -92,8 +93,14 @@ public sealed class MainWindowViewModelTests
         await viewModel.StopAsync();
     }
 
-    private static MainWindowViewModel CreateViewModel(ILocalHistoryReader history) =>
-        new(history, NullLogger<MainWindowViewModel>.Instance);
+    private static MainWindowViewModel CreateViewModel(ILocalHistoryReader history)
+    {
+        var profiles = new ConnectionProfilesViewModel(
+            new EmptyProfileManager(),
+            new EmptySerialPortCatalog(),
+            NullLogger<ConnectionProfilesViewModel>.Instance);
+        return new MainWindowViewModel(history, profiles, NullLogger<MainWindowViewModel>.Instance);
+    }
 
     private static ConversationSummary CreateSummary(Guid id, string title, string preview, long sequence) =>
         new(
@@ -159,5 +166,28 @@ public sealed class MainWindowViewModelTests
                 : [];
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class EmptyProfileManager : IConnectionProfileManager
+    {
+        public Task<IReadOnlyList<ConnectionProfile>> GetProfilesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<ConnectionProfile>>([]);
+
+        public Task<ConnectionProfile?> GetSelectedProfileAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<ConnectionProfile?>(null);
+
+        public Task<ConnectionProfile> SaveAndSelectAsync(
+            ConnectionProfileDraft draft,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class EmptySerialPortCatalog : ISerialPortCatalog
+    {
+        public Task<IReadOnlyList<string>> GetPortNamesAsync(
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<string>>([]);
     }
 }
