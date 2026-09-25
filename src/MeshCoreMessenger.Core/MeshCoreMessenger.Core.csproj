@@ -4,10 +4,11 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <LangVersion>12.0</LangVersion>
-    <RootNamespace>MeshCoreSharp</RootNamespace>
-    <AssemblyName>MeshCoreSharp</AssemblyName>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="System.IO.Ports" />
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../MeshCoreSharp/MeshCoreSharp.csproj" />
   </ItemGroup>
 </Project>

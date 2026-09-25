@@ -1,6 +1,6 @@
 # План реализации MeshCoreMessenger
 
-Дата: 25.09.2026. **Все этапы приложения ниже ещё не выполнены.**
+Дата: 25.09.2026. **Подэтап A1 (каркас) выполнен; остальной функционал приложения не реализован.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация и статистика; базовая проверка — 82 теста.
 Архитектурные решения и инварианты: [MESSENGER_ARCHITECTURE.md](MESSENGER_ARCHITECTURE.md).
@@ -8,15 +8,40 @@
 
 ## A. Каркас, хранилище и граница событий
 
-- [ ] Создать Core, Desktop и проекты тестов; сохранить единственную Companion DLL.
-- [ ] Зафиксировать SDK и стабильные совместимые версии Avalonia/MVVM/SQLite,
-  lock-файл, поддерживаемые версии macOS/Windows и команды build/test/publish.
-- [ ] Реализовать пути данных, один экземпляр на каталог, bootstrap DI/logging.
+### A1 — каркас приложения (выполнено 25.09.2026)
+
+- [x] Созданы `MeshCoreMessenger.Core`, `MeshCoreMessenger.Desktop` и два проекта
+  xUnit v3; сохранена единственная Companion-библиотека `MeshCoreSharp.dll`.
+- [x] Настроены ссылки `Desktop -> Core -> MeshCoreSharp` без доступа UI к internal runtime.
+- [x] SDK зафиксирован на `10.0.301`; версии пакетов централизованы в
+  `Directory.Packages.props`, для всех проектов созданы NuGet lock-файлы.
+- [x] Добавлен базовый DI/logging bootstrap и минимальное Avalonia-окно с ViewModel.
+- [x] Проверены restore в locked mode, Release build без предупреждений, два новых
+  smoke-теста и прежние 82 регрессионных теста библиотеки.
+- [x] Desktop реально запущен на macOS 26.6 arm64; старт DI/Avalonia подтверждён
+  логом. Сетевые/Serial-клиенты не создавались, аппаратных передач не было.
+
+Зафиксированные прямые пакеты: Avalonia `12.1.3`, CommunityToolkit.Mvvm `8.4.2`,
+Microsoft.Data.Sqlite и Microsoft.Extensions `10.0.12`, xUnit v3 `4.0.1`.
+
+Команды проверки A1:
+
+```bash
+dotnet restore MeshCoreSharp.sln --locked-mode
+dotnet build MeshCoreSharp.sln -c Release --no-restore
+dotnet test MeshCoreSharp.sln -c Release --no-build --no-restore
+dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
+dotnet run --project src/MeshCoreMessenger.Desktop/MeshCoreMessenger.Desktop.csproj -c Release --no-build --no-restore
+```
+
+### Оставшаяся часть этапа A
+
+- [ ] Реализовать платформенные пути данных и один экземпляр на каталог.
 - [ ] SQLite worker, начальная миграция, модели профилей/нод/справочников/истории,
   настройки и backup/restore без копирования живой WAL-БД одиночным файлом.
 - [ ] Добавить в библиотеку `FlushEventsAsync` с семантикой барьера callbacks
   согласно разделу 10 архитектуры; существующие Dispose/тайм-ауты не менять скрыто.
-- [ ] Сделать заглушку UI, загрузку локальной истории без подключения.
+- [ ] Загрузить локальную историю в существующий shell без подключения.
 
 Готово, когда БД/настройки переживают рестарт, миграции и backup проходят на
 временных каталогах; неподдерживаемая/повреждённая БД не уничтожается;
@@ -136,9 +161,9 @@ unit-тесты к реальным радиопередачам. Аппарат
 ## Стартовое задание для реализации
 
 > Прочитай AGENTS.md, docs/MESSENGER_ARCHITECTURE.md, docs/MESSENGER_PLAN.md,
-> docs/ARCHITECTURE.md и docs/COMPANION_PROTOCOL.md. Реализуй этап A приложения
-> MeshCoreMessenger, сохранив единственную Companion-библиотеку. Сначала проверь
-> текущий код и статус репозитория; новые имена из документа — предложения.
-> Добавь только необходимые зависимости, миграции и тесты жизненного цикла/данных.
-> Обнови checklist с проверенными результатами. Аппаратные передачи для этапа A
-> не нужны.
+> docs/ARCHITECTURE.md и docs/COMPANION_PROTOCOL.md. Каркас A1 уже реализован:
+> не пересоздавай проекты, версии, lock-файлы и bootstrap. Выполни только следующий
+> подэтап, явно указанный пользователем, сохраняя единственную Companion-библиотеку.
+> Сначала проверь текущий код и статус репозитория; новые имена из документа —
+> предложения. Обнови checklist с фактическими результатами. Аппаратные передачи
+> этим планом не разрешаются автоматически.

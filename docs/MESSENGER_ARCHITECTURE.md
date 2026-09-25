@@ -1,6 +1,6 @@
 # Архитектура настольного мессенджера MeshCore
 
-Дата: 25.09.2026. Статус: **проектирование, приложение ещё не реализовано**.
+Дата: 25.09.2026. Статус: **архитектура спроектирована, каркас A1 реализован**.
 Рабочее имя: `MeshCoreMessenger`. Документ задаёт решения для ИИ-агентов;
 порядок работ и критерии готовности — [MESSENGER_PLAN.md](MESSENGER_PLAN.md).
 Фактические возможности библиотеки — [PLAN.md](../PLAN.md).
@@ -36,6 +36,19 @@ MeshCore Companion. Основные платформы — macOS и Windows; Li
 - Версии NuGet фиксировать при первом этапе после проверки совместимости с `net10.0`;
   использовать стабильные версии и lock-файл, не плавающие диапазоны.
 
+Подэтап A1 зафиксировал SDK `10.0.301` и следующие прямые зависимости:
+
+| Назначение | Пакет | Версия |
+| --- | --- | --- |
+| Desktop UI | `Avalonia`, `Avalonia.Desktop`, `Avalonia.Themes.Fluent` | `12.1.3` |
+| MVVM | `CommunityToolkit.Mvvm` | `8.4.2` |
+| Будущее SQLite-хранилище Core | `Microsoft.Data.Sqlite` | `10.0.12` |
+| Bootstrap | `Microsoft.Extensions.DependencyInjection`, `Microsoft.Extensions.Logging.Console` | `10.0.12` |
+| Новые тесты | `xunit.v3` с Microsoft Testing Platform | `4.0.1` |
+
+Версии централизованы в `Directory.Packages.props`; `Directory.Build.props`
+включает NuGet lock-файлы, а CI должен восстанавливать их в locked mode.
+
 Avalonia имеет desktop-поддержку Windows/macOS/Linux; минимальные версии ОС
 зависят от выбранного релиза, поэтому матрицу пакетов и ОС нужно зафиксировать
 при создании приложения. [Официальная матрица](https://docs.avaloniaui.net/docs/supported-platforms).
@@ -55,6 +68,9 @@ src/MeshCoreMessenger.Desktop/      Avalonia executable
 tests/MeshCoreMessenger.Core.Tests/
 tests/MeshCoreMessenger.Desktop.Tests/
 ```
+
+Эти четыре проекта и минимальный Avalonia shell созданы в A1. Перечисленные ниже
+сервисы, БД и пользовательский функционал остаются проектом до соответствующих этапов.
 
 Зависимости: `Desktop -> Core -> MeshCoreSharp`, а Desktop также может использовать
 публичные модели библиотеки. Core содержит только логику приложения. Протокол,

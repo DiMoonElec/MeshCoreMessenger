@@ -81,10 +81,13 @@ followed by a private message confirmed by both ACK and the recipient.
 
 ## Immediate next milestone
 
-The desktop application is designed but not implemented. Read
+The desktop application architecture is designed and stage A1 scaffolding is implemented.
+Read
 `docs/MESSENGER_ARCHITECTURE.md` and `docs/MESSENGER_PLAN.md` before application work.
-Start with stage A when asked to begin implementation: Avalonia/Core projects,
-SQLite foundations and a tested event-queue completion barrier in the library.
+Do not recreate the Core/Desktop/test projects, package pins, lock files, or basic
+DI/logging bootstrap. Continue only with the specific remaining stage requested by the user.
+The rest of stage A starts with application data paths/single-instance behavior,
+then SQLite foundations and a tested event-queue completion barrier in the library.
 Application services use public Companion APIs; do not duplicate protocol/runtime code.
 Auto-connect/reconnect is an application policy owned by its ConnectionSupervisor;
 it must never implicitly replay outgoing messages or mutate device configuration.

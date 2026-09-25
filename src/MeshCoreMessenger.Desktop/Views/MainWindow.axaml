@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+        x:Class="MeshCoreMessenger.Desktop.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="{Binding Title}"
+        Width="900"
+        Height="600"
+        MinWidth="640"
+        MinHeight="420">
+  <StackPanel HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Spacing="12">
+    <TextBlock Text="{Binding Title}"
+               FontSize="28"
+               FontWeight="SemiBold"
+               HorizontalAlignment="Center" />
+    <TextBlock Text="{Binding Status}"
+               Opacity="0.7"
+               HorizontalAlignment="Center" />
+  </StackPanel>
+</Window>

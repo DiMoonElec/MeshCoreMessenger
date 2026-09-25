@@ -230,12 +230,16 @@ Before first stable NuGet release:
 
 ## Future solution projects
 
-The desktop messenger now has a concrete design, not yet implemented:
+The desktop messenger has a concrete design and its stage A1 scaffold is implemented:
 
 - [Application architecture](MESSENGER_ARCHITECTURE.md): Avalonia, SQLite,
   connection profiles/reconnect, separate Chat/channel/device tabs, durable history.
 - [Implementation stages](MESSENGER_PLAN.md): A–E for the first usable release,
   F for optional diagnostics and later improvements.
+
+The solution now includes Core, Avalonia Desktop and two xUnit v3 projects, pinned
+SDK/package versions, NuGet lock files, DI/logging bootstrap and a verified empty
+desktop window. Database, connection and messaging application services remain pending.
 
 Application reconnect belongs in its supervisor, not in the Companion library.
 A small event-queue flush API is planned to let orderly shutdown persist callbacks
