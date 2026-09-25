@@ -51,6 +51,7 @@
   - `GetDeviceInfoAsync()`;
   - `GetBatteryAndStorageAsync()`;
   - `GetContactsAsync()`;
+  - `AddOrUpdateContactAsync(...)`, `RemoveContactAsync(...)`;
   - `DrainMessagesAsync()`;
   - `GetChannelAsync(index)`, `GetChannelsAsync()`;
   - `SetChannelAsync(index, name, secret)`, `SetHashtagChannelAsync(index, name)`, `ClearChannelAsync(index)`;
@@ -99,6 +100,22 @@ var contacts = await client.GetContactsAsync();
 foreach (var contact in contacts)
     Console.WriteLine($"{contact.Name}: {contact.PublicKeyHex}");
 ```
+
+Контакт из `NEW_ADVERT` можно сохранить без ручной сборки полей протокола:
+
+```csharp
+// Полученную в обработчике события модель передайте в очередь приложения,
+// затем сохраните вне callback:
+if (advertisement.DiscoveredContact is not null)
+    await client.AddOrUpdateContactAsync(advertisement, ct);
+
+await client.RemoveContactAsync(contact.PublicKey, ct);
+```
+
+`AddOrUpdateContactAsync` также принимает `Contact` или отдельный
+`ContactConfiguration` для явного изменения имени, флагов, пути и данных адверта.
+Операции завершаются по локальному `OK/ERROR`; после изменения приложение может
+перечитать `GetContactsAsync`. Удаление требует полный 32-байтовый публичный ключ.
 
 `GetContactsAsync(CancellationToken)` возвращает `IReadOnlyList<Contact>` после
 `CONTACT_END`. Во время получения списка остальные команды ожидают своей очереди,
@@ -483,11 +500,33 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-channel-co
 настроенным и разрешает ровно одну помеченную тестовую передачу.
 [Результат аппаратной проверки](docs/testing/serial-channel-config-2026-09-25.md).
 
+Локальный аппаратный CRUD-тест контактов без радиопередач:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-contact-mutation-test /dev/cu.usbserial-0001
+```
+
+Он добавляет отдельный временный контакт, проверяет чтение, обновляет его, снова
+проверяет поля и удаляет. Обёртка запрещает любые другие изменения и RF-команды.
+[Результат аппаратной проверки](docs/testing/serial-contact-mutation-2026-09-25.md).
+
+Проверка удаления существующего контакта, восстановления всех его полей и одной
+личной отправки с ожиданием ACK:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-contact-restore-send-test /dev/cu.usbserial-0001
+```
+
+Тест разрешает операции только для `RnD Mesh01` с ожидаемым префиксом ключа,
+восстанавливает контакт из снимка и отправляет ровно одно помеченное тестовое
+сообщение. Получение сообщения подтверждено владельцем второй ноды.
+[Результат аппаратной проверки](docs/testing/serial-contact-restore-send-2026-09-25.md).
+
 ## Следующий этап
 
-Далее — управление контактами, затем удалённые запросы статуса и телеметрии.
-Настройка/очистка каналов и канальная передача подтверждены на физической ноде;
-личная отправка и ACK также проверены.
+Далее — helper безопасного сопоставления шестибайтовых префиксов входящих сообщений
+с контактами и короткий пример мессенджера. Удалённые запросы статуса/телеметрии
+остаются отдельным расширением и не требуются для базового общения.
 
 ## Контекст для Codex / VS Code
 

@@ -8,6 +8,18 @@ using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Runtime.Transactions;
 
+if (args.Length == 2 && args[0] == "--serial-contact-restore-send-test")
+{
+    await HardwareContactRestoreSendTest.RunAsync(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-contact-mutation-test")
+{
+    await HardwareContactMutationTest.RunAsync(args[1]);
+    return 0;
+}
+
 if (args.Length == 2 && args[0] == "--serial-channel-config-test")
 {
     await HardwareChannelConfigurationTest.RunAsync(args[1]);
@@ -85,7 +97,7 @@ var tests = new (string Name, Func<Task> Run)[]
 };
 var failed = 0;
 var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat(ChannelStatsTests.Cases)
-    .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).ToArray();
+    .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).Concat(ContactMutationTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try

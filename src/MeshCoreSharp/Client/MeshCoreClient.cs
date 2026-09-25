@@ -194,6 +194,49 @@ public sealed class MeshCoreClient : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Creates or replaces a Companion contact and waits for local OK/ERROR.</summary>
+    /// <remarks>Call <see cref="GetContactsAsync"/> afterwards when the application needs a refreshed snapshot.</remarks>
+    public async Task AddOrUpdateContactAsync(ContactConfiguration contact,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.AddOrUpdateContact,
+            CompanionCommands.AddOrUpdateContact(contact), nameof(AddOrUpdateContactAsync),
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
+    /// <summary>Creates or replaces a Companion contact from a contact received in a list or NEW_ADVERT.</summary>
+    public Task AddOrUpdateContactAsync(Contact contact, CancellationToken cancellationToken = default) =>
+        AddOrUpdateContactAsync(ContactConfiguration.FromContact(contact), cancellationToken);
+
+    /// <summary>Stores contact details from a NEW_ADVERT notification.</summary>
+    /// <exception cref="ArgumentException">The notification contains only a key and no discovered contact details.</exception>
+    public Task AddOrUpdateContactAsync(AdvertisementInfo advertisement,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(advertisement);
+        if (advertisement.DiscoveredContact is null)
+            throw new ArgumentException("Only a NEW_ADVERT notification contains enough data to add a contact.", nameof(advertisement));
+        return AddOrUpdateContactAsync(advertisement.DiscoveredContact, cancellationToken);
+    }
+
+    /// <summary>Removes a Companion contact using its complete 32-byte public key.</summary>
+    public async Task RemoveContactAsync(ReadOnlyMemory<byte> publicKey,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.RemoveContact,
+            CompanionCommands.RemoveContact(publicKey.Span), nameof(RemoveContactAsync),
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
+    /// <summary>Removes a Companion contact using a decoded contact model.</summary>
+    public Task RemoveContactAsync(Contact contact, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(contact);
+        return RemoveContactAsync(contact.PublicKey, cancellationToken);
+    }
+
     /// <summary>Reads queued incoming messages until the Companion reports NO_MORE_MESSAGES.</summary>
     /// <remarks>
     /// Messages are published through <see cref="MessageReceived"/>. Concurrent calls share one drain.

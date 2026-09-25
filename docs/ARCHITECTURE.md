@@ -229,6 +229,16 @@ dispatcher and complete only on OK/ERROR. Hashtag derivation is a pure public he
 wire encoding, fixed-size padding and secrets remain below the client API. Configuration
 does not trigger an implicit readback, retry or radio transmission.
 
+### Contact mutation
+
+AddOrUpdateContactAsync and RemoveContactAsync are ordinary single-flight local
+commands waiting for OK/ERROR. ContactConfiguration is the public editable snapshot;
+overloads convert decoded Contact and NEW_ADVERT data before command dispatch. The
+encoder copies all key/path bytes before its first wait, validates the packed path
+descriptor and fixed fields, and deliberately omits optional lastmod so firmware
+uses its own clock. Mutations do not update a client-side cache and do not perform
+an implicit GET_CONTACTS; applications refresh explicitly when needed.
+
 ### AckTracker
 
 `SEND_TXT_MSG` may return `MSG_SENT` with `expected_ack`. Delivery confirmation comes later as push `ACK (0x82)`.

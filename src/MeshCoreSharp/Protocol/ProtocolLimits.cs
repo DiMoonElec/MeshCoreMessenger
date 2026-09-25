@@ -7,6 +7,7 @@ public static class ProtocolLimits
     public const int MessageSenderPrefixSize = 4;
     public const int ContactPathSize = 64;
     public const int ContactNameSize = 32;
+    public const int MaxContactNameUtf8Bytes = ContactNameSize - 1;
     public const int ChannelNameSize = 32;
     public const int MaxChannelNameUtf8Bytes = ChannelNameSize - 1;
     public const int ChannelSecretSize = 16;

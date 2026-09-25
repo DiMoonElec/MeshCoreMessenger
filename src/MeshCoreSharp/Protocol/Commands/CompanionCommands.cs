@@ -23,6 +23,51 @@ internal static class CompanionCommands
 
     public static byte[] GetContacts() => [(byte)CommandType.GetContacts];
 
+    public static byte[] AddOrUpdateContact(ContactConfiguration contact)
+    {
+        ArgumentNullException.ThrowIfNull(contact);
+        if (contact.PublicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException($"Contact public key must be exactly {ProtocolLimits.PublicKeySize} bytes.", nameof(contact));
+        if (contact.AdvertisementType == AdvertisementType.None || !Enum.IsDefined(contact.AdvertisementType))
+            throw new ArgumentOutOfRangeException(nameof(contact), "A persistent contact must have a supported advertisement type.");
+        if (contact.OutPath.Length != ProtocolLimits.ContactPathSize)
+            throw new ArgumentException($"Contact path field must be exactly {ProtocolLimits.ContactPathSize} bytes.", nameof(contact));
+        ValidatePathLength(contact.OutPathLength, nameof(contact));
+        ArgumentNullException.ThrowIfNull(contact.Name);
+        if (contact.Name.Contains('\0'))
+            throw new ArgumentException("Contact name must not contain NUL.", nameof(contact));
+        var nameBytes = StrictUtf8.GetBytes(contact.Name);
+        if (nameBytes.Length > ProtocolLimits.MaxContactNameUtf8Bytes)
+            throw new ArgumentOutOfRangeException(nameof(contact),
+                $"Contact name exceeds the {ProtocolLimits.MaxContactNameUtf8Bytes}-byte UTF-8 storage limit.");
+
+        var latitude = EncodeCoordinate(contact.AdvertisementLatitude, -90, 90, nameof(contact));
+        var longitude = EncodeCoordinate(contact.AdvertisementLongitude, -180, 180, nameof(contact));
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.AddOrUpdateContact);
+        writer.WriteBytes(contact.PublicKey.Span);
+        writer.WriteByte((byte)contact.AdvertisementType);
+        writer.WriteByte(contact.Flags);
+        writer.WriteByte(contact.OutPathLength);
+        writer.WriteBytes(contact.OutPath.Span);
+        writer.WriteBytes(nameBytes);
+        writer.WriteBytes(stackalloc byte[ProtocolLimits.ContactNameSize - nameBytes.Length]);
+        writer.WriteUInt32LittleEndian(contact.LastAdvertTimestamp);
+        writer.WriteInt32LittleEndian(latitude);
+        writer.WriteInt32LittleEndian(longitude);
+        return Validate(writer.ToArray());
+    }
+
+    public static byte[] RemoveContact(ReadOnlySpan<byte> publicKey)
+    {
+        if (publicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException($"Contact public key must be exactly {ProtocolLimits.PublicKeySize} bytes.", nameof(publicKey));
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.RemoveContact);
+        writer.WriteBytes(publicKey);
+        return Validate(writer.ToArray());
+    }
+
     public static byte[] SendAdvertisement(AdvertisementMode mode)
     {
         if (!Enum.IsDefined(mode)) throw new ArgumentOutOfRangeException(nameof(mode));
@@ -99,6 +144,23 @@ internal static class CompanionCommands
         if (bytes.Length > maxBytes)
             throw new ArgumentOutOfRangeException(nameof(text), $"Text exceeds the {maxBytes}-byte UTF-8 limit.");
         return bytes;
+    }
+
+    private static int EncodeCoordinate(double value, double minimum, double maximum, string parameterName)
+    {
+        if (!double.IsFinite(value) || value < minimum || value > maximum)
+            throw new ArgumentOutOfRangeException(parameterName,
+                $"Coordinate must be finite and between {minimum} and {maximum} degrees.");
+        return checked((int)Math.Round(value * 1_000_000d, MidpointRounding.AwayFromZero));
+    }
+
+    private static void ValidatePathLength(byte pathLength, string parameterName)
+    {
+        if (pathLength == byte.MaxValue) return;
+        var hashSize = (pathLength >> 6) + 1;
+        var hashCount = pathLength & 0x3F;
+        if ((pathLength >> 6) == 3 || hashCount * hashSize > ProtocolLimits.ContactPathSize)
+            throw new ArgumentOutOfRangeException(parameterName, "Contact path descriptor is invalid.");
     }
 
     public static byte[] SetDeviceTime(DateTimeOffset value)

@@ -36,10 +36,12 @@ internal sealed class MessagePump : IAsyncDisposable
 
     public void Start(bool drainOfflineMessages)
     {
-        _ready.TrySetResult();
         // Read the offline queue even if no notification arrived during APP_START.
+        // Queue the wake before releasing the worker so a pre-start notification
+        // and the initial drain cannot race into two separate empty passes.
         if (drainOfflineMessages)
             Notify();
+        _ready.TrySetResult();
     }
 
     public void Notify()
