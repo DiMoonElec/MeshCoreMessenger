@@ -1,7 +1,7 @@
 # План реализации MeshCoreMessenger
 
-Дата: 25.09.2026. **Подэтапы A1 (каркас), A2 (локальное хранилище) и A3
-(барьер событий) выполнены;
+Дата: 25.09.2026. **Подэтапы A1 (каркас), A2 (локальное хранилище), A3
+(барьер событий) и A4.1 (один экземпляр на каталог данных) выполнены;
 подключение приложения к ноде и пользовательский функционал не реализованы.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация, статистика и барьер callbacks;
@@ -94,9 +94,31 @@ dotnet build MeshCoreSharp.sln -c Release --no-restore --disable-build-servers
 dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
 ```
 
+### A4.1 — один экземпляр на каталог данных (выполнено 25.09.2026)
+
+- [x] До запуска Avalonia приложение открывает `.meshcoremessenger.lock` внутри
+  фактического `IAppPaths.DataDirectory` с `FileShare.None` и удерживает handle
+  в течение всего процесса.
+- [x] Разные каталоги имеют независимые блокировки. Постоянный lock-файл сам по
+  себе не блокирует запуск; штатное или аварийное закрытие handle освобождает OS-lock.
+- [x] Второй процесс для того же каталога завершается до обычного startup с кодом
+  `2` и диагностикой; недоступный каталог получает отдельную ошибку и код `3`.
+- [x] Добавлены 5 тестов механизма; вместе с bootstrap smoke-тестом Desktop — 6/6.
+- [x] На macOS вручную проверены два одновременных процесса: второй отклонён, после
+  принудительного завершения первого новый процесс успешно открыл приложение.
+- [x] SQLite, MeshCore-сессия, reconnect и аппаратные интерфейсы не запускались.
+
+Команды проверки A4.1:
+
+```bash
+dotnet build MeshCoreSharp.sln -c Release --no-restore --disable-build-servers
+dotnet tests/MeshCoreMessenger.Desktop.Tests/bin/Release/net10.0/MeshCoreMessenger.Desktop.Tests.dll
+dotnet tests/MeshCoreMessenger.Core.Tests/bin/Release/net10.0/MeshCoreMessenger.Core.Tests.dll
+dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
+```
+
 ### Оставшаяся часть этапа A
 
-- [ ] Реализовать блокировку одного экземпляра приложения на каталог данных.
 - [ ] Загрузить локальную историю в существующий shell без подключения.
 
 Готово, когда БД/настройки переживают рестарт, миграции и backup проходят на
