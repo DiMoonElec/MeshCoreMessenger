@@ -29,6 +29,7 @@ public sealed class AppBootstrapTests
         Assert.Same(storage.History, services.GetRequiredService<ILocalHistoryReader>());
         Assert.NotNull(services.GetRequiredService<IConnectionProfileManager>());
         Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
+        Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
         Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());
         Assert.Same(
             services.GetRequiredService<ConnectionProfilesViewModel>(),

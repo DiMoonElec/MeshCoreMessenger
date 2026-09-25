@@ -8,7 +8,7 @@ namespace MeshCoreMessenger.Core.Application;
 
 public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
 {
-    public MeshCoreClient Create(ConnectionProfile profile)
+    public ICompanionClient Create(ConnectionProfile profile)
     {
         var mapping = ConnectionProfileMapper.Map(profile);
         IMeshCoreTransport transport = mapping.Transport switch
@@ -17,8 +17,71 @@ public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
             ConnectionTransportKind.Serial => new SerialMeshCoreTransport(mapping.SerialOptions!),
             _ => throw new ArgumentOutOfRangeException(nameof(profile), "Unknown connection transport."),
         };
-        return new MeshCoreClient(transport, mapping.ClientOptions);
+        return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions));
     }
+}
+
+internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionClient
+{
+    public MeshCoreConnectionState State => client.State;
+    public bool IsConnected => client.IsConnected;
+    public bool IsStarted => client.IsStarted;
+
+    public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged
+    {
+        add => client.ConnectionStateChanged += value;
+        remove => client.ConnectionStateChanged -= value;
+    }
+
+    public event EventHandler<MeshCoreClientErrorEventArgs>? BackgroundError
+    {
+        add => client.BackgroundError += value;
+        remove => client.BackgroundError -= value;
+    }
+
+    public event EventHandler<CompanionPacketEventArgs>? PacketReceived
+    {
+        add => client.PacketReceived += value;
+        remove => client.PacketReceived -= value;
+    }
+
+    public event EventHandler<CompanionPacketEventArgs>? PushPacketReceived
+    {
+        add => client.PushPacketReceived += value;
+        remove => client.PushPacketReceived -= value;
+    }
+
+    public event EventHandler<CompanionPacketEventArgs>? UnhandledPacketReceived
+    {
+        add => client.UnhandledPacketReceived += value;
+        remove => client.UnhandledPacketReceived -= value;
+    }
+
+    public event EventHandler<MessageReceivedEventArgs>? MessageReceived
+    {
+        add => client.MessageReceived += value;
+        remove => client.MessageReceived -= value;
+    }
+
+    public event EventHandler<AdvertisementReceivedEventArgs>? AdvertisementReceived
+    {
+        add => client.AdvertisementReceived += value;
+        remove => client.AdvertisementReceived -= value;
+    }
+
+    public Task ConnectAsync(CancellationToken cancellationToken = default) =>
+        client.ConnectAsync(cancellationToken);
+
+    public Task<MeshCoreSharp.Models.SelfInfo> StartAsync(CancellationToken cancellationToken = default) =>
+        client.StartAsync(cancellationToken);
+
+    public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
+        client.DisconnectAsync(cancellationToken);
+
+    public Task FlushEventsAsync(CancellationToken cancellationToken = default) =>
+        client.FlushEventsAsync(cancellationToken);
+
+    public ValueTask DisposeAsync() => client.DisposeAsync();
 }
 
 internal static class ConnectionProfileMapper

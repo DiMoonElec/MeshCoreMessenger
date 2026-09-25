@@ -9,4 +9,8 @@ public interface IConnectionProfileManager
     Task<ConnectionProfile> SaveAndSelectAsync(
         ConnectionProfileDraft draft,
         CancellationToken cancellationToken = default);
+    Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(
+        Guid profileId,
+        ReadOnlyMemory<byte> publicKey,
+        CancellationToken cancellationToken = default);
 }

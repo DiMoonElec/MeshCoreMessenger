@@ -182,6 +182,12 @@ public sealed class MainWindowViewModelTests
             ConnectionProfileDraft draft,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
+
+        public Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(
+            Guid profileId,
+            ReadOnlyMemory<byte> publicKey,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class EmptySerialPortCatalog : ISerialPortCatalog

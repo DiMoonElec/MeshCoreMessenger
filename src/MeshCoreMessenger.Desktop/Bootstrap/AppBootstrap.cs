@@ -29,10 +29,13 @@ public static class AppBootstrap
         services.AddSingleton(storage);
         services.AddSingleton(storage.Settings);
         services.AddSingleton(storage.ConnectionProfiles);
+        services.AddSingleton(storage.Nodes);
+        services.AddSingleton(storage.Sessions);
         services.AddSingleton(storage.History);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
+        services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();
