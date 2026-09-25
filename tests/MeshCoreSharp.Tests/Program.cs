@@ -8,9 +8,33 @@ using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Runtime.Transactions;
 
+if (args.Length == 2 && args[0] == "--serial-channel-config-test")
+{
+    await HardwareChannelConfigurationTest.RunAsync(args[1]);
+    return 0;
+}
+
 if (args.Length == 2 && args[0] == "--serial-private-send-test")
 {
     await HardwarePrivateMessageTest.RunAsync(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-message-drain-test")
+{
+    await HardwareMessageDrainTest.RunAsync(args[1]);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-message-drain-live-test")
+{
+    await HardwareMessageDrainTest.RunAsync(args[1], waitForNotification: true);
+    return 0;
+}
+
+if (args.Length == 2 && args[0] == "--serial-no-reset-test")
+{
+    await HardwareSerialNoResetTest.RunAsync(args[1]);
     return 0;
 }
 

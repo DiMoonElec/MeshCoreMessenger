@@ -14,7 +14,7 @@ internal static class HardwareAdvertisementTest
         using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var transport = new AdvertTransport(new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
         {
-            PortName = portName, DtrEnable = false, RtsEnable = false, OpenDelay = TimeSpan.FromSeconds(2),
+            PortName = portName, DtrEnable = true, RtsEnable = true, OpenDelay = TimeSpan.FromSeconds(2),
         }));
         await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions
         {

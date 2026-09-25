@@ -52,7 +52,7 @@ internal static class SerialTests
     private static async Task Options()
     {
         var defaults = new SerialMeshCoreTransportOptions { PortName = "COM1" };
-        Check(defaults.BaudRate == 115200 && defaults.DtrEnable && !defaults.RtsEnable);
+        Check(defaults.BaudRate == 115200 && defaults.DtrEnable && defaults.RtsEnable);
         Check(defaults.ReadTimeout > 0 && defaults.WriteTimeout > 0);
         foreach (var invalid in new[]
         {

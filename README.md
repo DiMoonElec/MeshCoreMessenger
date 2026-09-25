@@ -42,7 +42,7 @@
 - Последовательный `CommandDispatcher`.
 - Subscribe-before-send: transaction регистрируется в `PacketRouter` до записи команды.
 - Push packets могут приходить между command и response и не завершают transaction, если их тип не соответствует ожидаемому ответу.
-- Автоматическое чтение входящей очереди через `SYNC_NEXT_MESSAGE` и событие `MessageReceived`.
+- Автоматическое и явное чтение входящей очереди через `SYNC_NEXT_MESSAGE` и событие `MessageReceived`.
 - Public API:
   - `ConnectAsync()`;
   - `StartAsync()`;
@@ -51,7 +51,9 @@
   - `GetDeviceInfoAsync()`;
   - `GetBatteryAndStorageAsync()`;
   - `GetContactsAsync()`;
+  - `DrainMessagesAsync()`;
   - `GetChannelAsync(index)`, `GetChannelsAsync()`;
+  - `SetChannelAsync(index, name, secret)`, `SetHashtagChannelAsync(index, name)`, `ClearChannelAsync(index)`;
   - `GetCoreStatsAsync()`, `GetRadioStatsAsync()`, `GetPacketStatsAsync()`;
   - `SendTextAsync(publicKey, text)`, `SendChannelTextAsync(channelIndex, text)`;
   - `SendAdvertisementAsync(mode)` и событие `AdvertisementReceived`;
@@ -144,6 +146,26 @@ Console.WriteLine($"Uptime: {core.UptimeSeconds} s; RX: {packets.Received}; TX: 
 `ChannelInfo.Secret` содержит 16 байт ключа. `ToString()` не выводит ключ,
 но низкоуровневый `ChannelInfoPacket.RawFrame` его содержит — не журналируйте
 такой кадр целиком.
+
+Настройка канала использует тот же последовательный dispatcher и завершается по
+`OK/ERROR`. Базовый метод принимает готовый 16-байтовый ключ. Для открытого
+hashtag-канала достаточно передать точное имя с `#`:
+
+```csharp
+var empty = (await client.GetChannelsAsync(ct)).First(channel => channel.IsEmpty);
+await client.SetHashtagChannelAsync(empty.Index, "#mcs-dev-test", ct);
+
+// При необходимости слот освобождается отдельной операцией:
+await client.ClearChannelAsync(empty.Index, ct);
+```
+
+`ChannelSecrets.DeriveHashtag(name)` вычисляет первые 16 байт SHA-256 от UTF-8
+имени вместе с `#`, как штатные клиенты MeshCore. Имя хешируется буквально:
+регистр и пробелы значимы. Такой канал доступен каждому, кто знает или угадает имя,
+поэтому секрет hashtag-канала не обеспечивает приватность. Для приватного канала
+приложение должно сгенерировать случайный 16-байтовый ключ и передать его в
+`SetChannelAsync`. Имя ограничено 31 байтом UTF-8, чтобы оно вместе с NUL помещалось
+в 32-байтовую строку прошивки. Очистка записывает пустое имя и нулевой ключ.
 
 Статистика доступна в прошивках с протоколом v8+ и возвращается тремя моделями:
 `CoreStats` (батарея, uptime, флаги ошибок, очередь), `RadioStats` (шум, RSSI, SNR,
@@ -245,22 +267,27 @@ var contacts = await client.GetContactsAsync();
 `/dev/ttyUSB0`, в macOS — `/dev/cu.usbmodem…` или `/dev/cu.usbserial…`.
 `SerialMeshCoreTransport.GetPortNames()` возвращает доступные имена без открытия устройств.
 
-Параметры по умолчанию: 115200 бод, 8N1, без flow control, DTR включён, RTS выключен,
-задержка после открытия 200 мс. Скорость, сигнальные линии и задержку можно задать:
+Параметры по умолчанию: 115200 бод, 8N1, без flow control, DTR и RTS включены,
+задержка после открытия 200 мс. На ESP32 обе активные линии являются безопасной
+парой для стандартной двухтранзисторной схемы автосброса. `System.IO.Ports`
+применяет линии последовательно после открытия; пара `false/false` может создать
+краткий импульс сброса. Для платы с другой разводкой задайте её проверенные уровни.
+Скорость, сигнальные линии и задержку можно задать:
 
 ```csharp
 var transport = new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
 {
     PortName = "COM3",
     BaudRate = 115200,
-    DtrEnable = false,
-    RtsEnable = false,
+    DtrEnable = true,
+    RtsEnable = true,
     OpenDelay = TimeSpan.FromSeconds(1),
 });
 ```
 
 DTR/RTS и задержка зависят от платы: некоторые USB-UART адаптеры используют эти
-линии для сброса. `ReadTimeout` (100 мс) задаёт интервал ожидания данных в RX-потоке,
+линии для сброса. Значение `true` означает активный сигнал, физически это обычно
+низкий уровень. `ReadTimeout` (100 мс) задаёт интервал ожидания данных в RX-потоке,
 а не время ожидания ответа команды. Истечение этого тайм-аута не разрывает соединение.
 `WriteTimeout` (1000 мс) ограничивает запись. Ошибка записи, включая тайм-аут,
 закрывает соединение, поскольку кадр мог быть отправлен частично.
@@ -299,13 +326,25 @@ NuGet-пакет `System.IO.Ports` 10.0.12 с нативными компоне�
 
 Ошибки команды и тайм-ауты (`CommandTimeout`) поступают в `BackgroundError`.
 Ошибочный кадр также вызывает диагностику и останавливает текущий проход.
-Следующее уведомление запускает новый проход; бесконечных автоматических повторов нет.
+Следующее уведомление запускает новый проход после восстанавливаемой ошибки;
+бесконечных автоматических повторов нет. После тайм-аута требуется переподключение:
+у `SYNC_NEXT_MESSAGE` нет ID запроса, поэтому его поздний ответ нельзя безопасно
+отличить от ответа повторной команды.
 Запоздалый корректный пакет сообщения всё равно вызывает `MessageReceived`.
 При отключении фоновое чтение отменяется, при следующем подключении и `StartAsync`
 создаётся новый приёмник. Автоматического переподключения нет.
 
 Для диагностических приложений автоматические запросы можно отключить через
-`new MeshCoreClientOptions { AutoReceiveMessages = false }`.
+`new MeshCoreClientOptions { AutoReceiveMessages = false }`. Очередь при этом можно
+прочитать явно; параллельные вызовы присоединяются к одному проходу:
+
+```csharp
+await client.DrainMessagesAsync(ct); // сообщения приходят через MessageReceived
+```
+
+Отмена одного ожидающего вызова не отменяет общий проход и других вызывающих.
+Успешное завершение означает, что Companion ответил `NO_MORE_MESSAGES`; обработчики
+`MessageReceived` выполняются в отдельной очереди и могут завершиться позднее.
 Сообщения из очереди удаляются прошивкой при чтении; библиотека не сохраняет их
 на диск и не выполняет дедупликацию. Подпишитесь на событие до запуска приёма.
 
@@ -363,6 +402,27 @@ python3 tests/MeshCoreSharp.Tests/serial_pty_smoke.py
 
 Для неё нужна выполненная Release-сборка и Python 3. Физический Serial-порт не открывается.
 
+Ручное чтение очереди подключённой ноды при `AutoReceiveMessages=false`:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-message-drain-test /dev/cu.usbserial-0001
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-message-drain-live-test /dev/cu.usbserial-0001
+```
+
+Обёртка разрешает только `APP_START` и `SYNC_NEXT_MESSAGE`: радиопередача и изменение
+настроек блокируются. Первый вариант читает накопленную очередь и завершается. Live-вариант
+после начального прохода ждёт `MESSAGES_WAITING` до 60 секунд, затем явно читает новую
+очередь. Обе проверки удаляют полученные сообщения из очереди Companion.
+
+Проверка отсутствия сброса при двух последовательных открытиях Serial:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-no-reset-test /dev/cu.usbserial-0001
+```
+
+Она разрешает только `APP_START` и `GET_STATS(core)`, не читает очередь сообщений и
+проверяет, что uptime ноды продолжает расти после закрытия и повторного открытия порта.
+
 Отдельная проверка подключённой USB-ноды только локальными командами чтения:
 
 ```bash
@@ -372,7 +432,8 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-read-only 
 Тест разрешает только фиксированные `APP_START`, `DEVICE_QUERY`, `GET_DEVICE_TIME`,
 `GET_BATT_AND_STORAGE`, `GET_CONTACTS`, `GET_CHANNEL` и `GET_STATS` (все три группы).
 Он использует публичный `MeshCoreClient`, выводит имена каналов без ключей.
-Автоматический приём сообщений не запускается; DTR/RTS отключены. Счётчики
+Автоматический приём сообщений не запускается; DTR/RTS включены, чтобы не сбрасывать
+ESP32 при открытии порта. Счётчики
 радиопередач сравниваются после `APP_START` и в конце проверки. Нужна прошивка с поддержкой
 `GET_STATS`; сам тест не отключает возможные автономные передачи прошивки.
 Результат аппаратной проверки: [Heltec V3, 24.09.2026](docs/testing/serial-usb-2026-09-24.md).
@@ -411,11 +472,22 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-private-se
 неоднозначен, передача не выполняется. При тайм-ауте команда не повторяется.
 [Результат аппаратной проверки](docs/testing/serial-private-send-2026-09-25.md).
 
+Аппаратная проверка настройки hashtag-канала, очистки слота и одной передачи:
+
+```bash
+dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-channel-config-test /dev/cu.usbserial-0001
+```
+
+Тест изменяет только слот, который предварительно прочитан как пустой с нулевым
+ключом. Он проверяет запись и очистку чтением обратно, оставляет `#mcs-dev-test`
+настроенным и разрешает ровно одну помеченную тестовую передачу.
+[Результат аппаратной проверки](docs/testing/serial-channel-config-2026-09-25.md).
+
 ## Следующий этап
 
-Далее — управление каналами и контактами, затем удалённые запросы статуса и телеметрии.
-Личная отправка и ACK подтверждены на физической ноде; также аппаратно проверена
-одна канальная передача в `#test`.
+Далее — управление контактами, затем удалённые запросы статуса и телеметрии.
+Настройка/очистка каналов и канальная передача подтверждены на физической ноде;
+личная отправка и ACK также проверены.
 
 ## Контекст для Codex / VS Code
 

@@ -14,8 +14,8 @@ internal static class HardwareReadOnlyTest
         var transport = new ReadOnlyTransport(new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
         {
             PortName = portName,
-            DtrEnable = false,
-            RtsEnable = false,
+            DtrEnable = true,
+            RtsEnable = true,
             OpenDelay = TimeSpan.FromMilliseconds(200),
         }));
         await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions
@@ -27,7 +27,7 @@ internal static class HardwareReadOnlyTest
         client.BackgroundError += (_, args) => Console.WriteLine($"BACKGROUND ERROR: {args.Exception.Message}");
         client.PacketReceived += (_, args) =>
             Console.WriteLine($"USB RX {args.Packet.Type} ({args.Packet.RawFrame.Length} bytes)");
-        Console.WriteLine($"READ-ONLY SERIAL TEST {DateTimeOffset.Now:O}: {portName}, 115200/8N1, DTR=false, RTS=false");
+        Console.WriteLine($"READ-ONLY SERIAL TEST {DateTimeOffset.Now:O}: {portName}, 115200/8N1, DTR=true, RTS=true (ESP32 reset-safe pair)");
         Console.WriteLine("Allowlist: APP_START, DEVICE_QUERY, GET_DEVICE_TIME, GET_BATT_AND_STORAGE, GET_CONTACTS, GET_CHANNEL, GET_STATS(core/radio/packets).");
         Console.WriteLine("Public MeshCoreClient API; no message pump, no configuration changes, no RF-send commands.");
         var timer = Stopwatch.StartNew();

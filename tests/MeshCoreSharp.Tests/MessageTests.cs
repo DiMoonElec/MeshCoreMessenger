@@ -19,6 +19,8 @@ internal static class MessageTests
         ("Notifications during contacts wait for END", DuringContacts),
         ("Notification racing NO_MORE_MESSAGES is retained", FinalNotification),
         ("No sync before APP_START; automatic reception can be disabled", StartAndOptOut),
+        ("Manual drain works with auto reception disabled and coalesces callers", ManualDrain),
+        ("Manual drain reports failures and requires reconnect after timeout", ManualDrainFailures),
         ("Message timeout/error/malformed response release gate", FailureRecovery),
         ("Late message remains visible after a timeout", LateMessage),
         ("Cancelled APP_START does not activate message pump", CancelledStart),
@@ -238,6 +240,92 @@ internal static class MessageTests
         }
     }
 
+    private static async Task ManualDrain()
+    {
+        await using var transport = Transport();
+        await using var client = new MeshCoreClient(transport, new() { AutoReceiveMessages = false });
+        try { await client.DrainMessagesAsync(); throw new Exception("Expected drain before APP_START to fail"); }
+        catch (InvalidOperationException) { }
+        await client.ConnectAsync();
+        try { await client.DrainMessagesAsync(); throw new Exception("Expected drain before APP_START to fail"); }
+        catch (InvalidOperationException) { }
+        await client.StartAsync();
+        Check(!transport.Sent.Reader.TryRead(out _));
+
+        var delivered = new TaskCompletionSource<ReceivedMessage>(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.MessageReceived += (_, e) => delivered.TrySetResult(e.Message);
+        var first = client.DrainMessagesAsync();
+        await Expect(transport, CommandType.SyncNextMessage);
+        var second = client.DrainMessagesAsync();
+        using var canceled = new CancellationTokenSource();
+        var canceledCaller = client.DrainMessagesAsync(canceled.Token);
+        canceled.Cancel();
+        try { await canceledCaller; throw new Exception("Expected one drain caller to be canceled"); }
+        catch (OperationCanceledException) { }
+
+        transport.Emit(MessageFixtures.Text(PacketType.ContactMessageReceived, "manual"));
+        Check(await delivered.Task is ContactMessage { Text: "manual" });
+        await Expect(transport, CommandType.SyncNextMessage);
+        transport.Emit([(byte)PacketType.NoMoreMessages]);
+        await Task.WhenAll(first, second);
+        await Time(transport, client);
+        Check(!transport.Sent.Reader.TryRead(out _), "Concurrent callers started an extra drain");
+
+        // Notifications remain passive when automatic reception is disabled.
+        transport.Emit([(byte)PacketType.MessagesWaiting]);
+        await Task.Delay(50);
+        Check(!transport.Sent.Reader.TryRead(out _));
+
+        var interrupted = client.DrainMessagesAsync();
+        await Expect(transport, CommandType.SyncNextMessage);
+        await client.DisconnectAsync();
+        try { await interrupted; throw new Exception("Expected disconnect to cancel manual drain"); }
+        catch (OperationCanceledException) { }
+    }
+
+    private static async Task ManualDrainFailures()
+    {
+        foreach (var failure in new[] { "error", "malformed" })
+        {
+            await using var transport = Transport();
+            await using var client = await Ready(transport, new() { AutoReceiveMessages = false });
+            var drain = client.DrainMessagesAsync();
+            await Expect(transport, CommandType.SyncNextMessage);
+            if (failure == "error") transport.Emit([(byte)PacketType.Error, (byte)MeshCoreErrorCode.BadState]);
+            else transport.Emit([0x10, 0xE3]);
+            try
+            {
+                await drain;
+                throw new Exception("Expected manual drain failure");
+            }
+            catch (Exception ex) when (ex is MeshCoreCommandException or MeshCoreProtocolException) { }
+
+            var retry = client.DrainMessagesAsync();
+            await Expect(transport, CommandType.SyncNextMessage);
+            transport.Emit([(byte)PacketType.NoMoreMessages]);
+            await retry;
+        }
+
+        await using var timeoutTransport = Transport();
+        await using var timeoutClient = await Ready(timeoutTransport,
+            new() { AutoReceiveMessages = false, CommandTimeout = TimeSpan.FromMilliseconds(100) });
+        var timedOut = timeoutClient.DrainMessagesAsync();
+        await Expect(timeoutTransport, CommandType.SyncNextMessage);
+        try { await timedOut; throw new Exception("Expected manual drain timeout"); }
+        catch (MeshCoreTimeoutException) { }
+        try { await timeoutClient.DrainMessagesAsync(); throw new Exception("Expected reconnect requirement"); }
+        catch (MeshCoreProtocolException ex) { Check(ex.InnerException is MeshCoreTimeoutException); }
+        Check(!timeoutTransport.Sent.Reader.TryRead(out _));
+
+        await timeoutClient.DisconnectAsync();
+        await timeoutClient.ConnectAsync();
+        await timeoutClient.StartAsync();
+        var afterReconnect = timeoutClient.DrainMessagesAsync();
+        await Expect(timeoutTransport, CommandType.SyncNextMessage);
+        timeoutTransport.Emit([(byte)PacketType.NoMoreMessages]);
+        await afterReconnect;
+    }
+
     private static async Task FailureRecovery()
     {
         foreach (var failure in new[] { "timeout", "error", "malformed" })
@@ -258,11 +346,22 @@ internal static class MessageTests
             });
             Check(client.IsConnected);
             await Time(transport, client);
-            // No automatic retry loop. A later tickle resumes draining.
+            // A later tickle resumes recoverable failures. A timeout is ambiguous:
+            // its late response could satisfy another SYNC, so reconnect is required.
             transport.Emit([(byte)PacketType.MessagesWaiting]);
-            await Expect(transport, CommandType.SyncNextMessage);
-            transport.Emit([(byte)PacketType.NoMoreMessages]);
-            await Time(transport, client);
+            if (failure == "timeout")
+            {
+                await Task.Delay(50);
+                Check(!transport.Sent.Reader.TryRead(out _));
+                try { await client.DrainMessagesAsync(); throw new Exception("Expected reconnect requirement"); }
+                catch (MeshCoreProtocolException) { }
+            }
+            else
+            {
+                await Expect(transport, CommandType.SyncNextMessage);
+                transport.Emit([(byte)PacketType.NoMoreMessages]);
+                await Time(transport, client);
+            }
             Check(!errors.Reader.TryRead(out _));
         }
     }

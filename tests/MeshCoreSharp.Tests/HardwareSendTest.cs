@@ -18,8 +18,8 @@ internal static class HardwareSendTest
         var transport = new SingleSendTransport(new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
         {
             PortName = portName,
-            DtrEnable = false,
-            RtsEnable = false,
+            DtrEnable = true,
+            RtsEnable = true,
             OpenDelay = TimeSpan.FromSeconds(2),
         }));
         await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions

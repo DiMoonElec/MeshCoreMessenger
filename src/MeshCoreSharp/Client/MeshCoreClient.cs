@@ -93,12 +93,10 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;
-                _messagePump = _options.AutoReceiveMessages
-                    ? new MessagePump(
-                        ct => _dispatcher.SyncNextMessageAsync(_options.CommandTimeout, ct),
-                        ex => RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex)),
-                        _receiveCts.Token)
-                    : null;
+                _messagePump = new MessagePump(
+                    ct => _dispatcher.SyncNextMessageAsync(_options.CommandTimeout, ct),
+                    ex => RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(ex)),
+                    _receiveCts.Token);
                 _receiveTask = ReceiveLoopAsync(_receiveCts.Token, _messagePump, _ackTracker);
                 SetState(MeshCoreConnectionState.Connected);
             }
@@ -128,7 +126,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
 
         SelfInfo = packet.Info;
         _started = true;
-        messagePump?.Start();
+        messagePump?.Start(_options.AutoReceiveMessages);
         return packet.Info;
     }
 
@@ -196,6 +194,18 @@ public sealed class MeshCoreClient : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Reads queued incoming messages until the Companion reports NO_MORE_MESSAGES.</summary>
+    /// <remarks>
+    /// Messages are published through <see cref="MessageReceived"/>. Concurrent calls share one drain.
+    /// Canceling one caller does not cancel a drain used by other callers. After a response timeout,
+    /// reconnect before retrying because a late response cannot be correlated safely.
+    /// </remarks>
+    public Task DrainMessagesAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        return _messagePump!.DrainAsync(cancellationToken);
+    }
+
     /// <summary>Reads one local channel slot, including an empty slot. Invalid indices produce a firmware error.</summary>
     public async Task<ChannelInfo> GetChannelAsync(byte index, CancellationToken cancellationToken = default)
     {
@@ -217,6 +227,36 @@ public sealed class MeshCoreClient : IAsyncDisposable
         for (var index = 0; index < count; index++)
             channels.Add(await GetChannelAsync((byte)index, cancellationToken).ConfigureAwait(false));
         return channels.AsReadOnly();
+    }
+
+    /// <summary>Creates or replaces a local channel slot using an exact 16-byte shared secret.</summary>
+    /// <remarks>The secret is copied into the command and is not logged by the library.</remarks>
+    public async Task SetChannelAsync(byte index, string name, ReadOnlyMemory<byte> secret,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        ArgumentException.ThrowIfNullOrEmpty(name);
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SetChannel,
+            CompanionCommands.SetChannel(index, name, secret.Span), nameof(SetChannelAsync),
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
+    /// <summary>Creates or replaces a public hashtag channel using the standard name-derived secret.</summary>
+    /// <remarks>The exact name is hashed verbatim and must include the leading '#'. Hashtag channels are not private.</remarks>
+    public Task SetHashtagChannelAsync(byte index, string channelName,
+        CancellationToken cancellationToken = default)
+    {
+        var secret = ChannelSecrets.DeriveHashtag(channelName);
+        return SetChannelAsync(index, channelName, secret, cancellationToken);
+    }
+
+    /// <summary>Clears a local channel slot by writing an empty name and an all-zero secret.</summary>
+    public async Task ClearChannelAsync(byte index, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SetChannel,
+            CompanionCommands.ClearChannel(index), nameof(ClearChannelAsync),
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
     }
 
     /// <summary>Reads battery, uptime, error flags and outbound queue length (firmware protocol v8+).</summary>
@@ -399,7 +439,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 if (packet is AdvertisementPacket advert)
                     RaiseSafely(AdvertisementReceived, new AdvertisementReceivedEventArgs(advert.Info));
 
-                if (packet.Type == PacketType.MessagesWaiting)
+                if (_options.AutoReceiveMessages && packet.Type == PacketType.MessagesWaiting)
                     messagePump?.Notify();
 
                 if (packet.IsPush)

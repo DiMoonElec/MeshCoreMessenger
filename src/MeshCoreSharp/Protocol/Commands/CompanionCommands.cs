@@ -5,6 +5,8 @@ namespace MeshCoreSharp.Protocol.Commands;
 
 internal static class CompanionCommands
 {
+    private static readonly System.Text.UTF8Encoding StrictUtf8 = new(false, true);
+
     public static byte[] AppStart(string applicationName, byte appProtocolVersion)
     {
         ArgumentNullException.ThrowIfNull(applicationName);
@@ -28,6 +30,29 @@ internal static class CompanionCommands
     }
 
     public static byte[] GetChannel(byte index) => [(byte)CommandType.GetChannel, index];
+
+    public static byte[] SetChannel(byte index, string name, ReadOnlySpan<byte> secret)
+    {
+        ArgumentNullException.ThrowIfNull(name);
+        if (name.Contains('\0')) throw new ArgumentException("Channel name must not contain NUL.", nameof(name));
+        if (secret.Length != ProtocolLimits.ChannelSecretSize)
+            throw new ArgumentException($"Channel secret must be exactly {ProtocolLimits.ChannelSecretSize} bytes.", nameof(secret));
+
+        var nameBytes = StrictUtf8.GetBytes(name);
+        if (nameBytes.Length > ProtocolLimits.MaxChannelNameUtf8Bytes)
+            throw new ArgumentOutOfRangeException(nameof(name),
+                $"Channel name exceeds the {ProtocolLimits.MaxChannelNameUtf8Bytes}-byte UTF-8 storage limit.");
+
+        var command = new byte[2 + ProtocolLimits.ChannelNameSize + ProtocolLimits.ChannelSecretSize];
+        command[0] = (byte)CommandType.SetChannel;
+        command[1] = index;
+        nameBytes.CopyTo(command.AsSpan(2, ProtocolLimits.ChannelNameSize));
+        secret.CopyTo(command.AsSpan(2 + ProtocolLimits.ChannelNameSize, ProtocolLimits.ChannelSecretSize));
+        return Validate(command);
+    }
+
+    public static byte[] ClearChannel(byte index) =>
+        SetChannel(index, string.Empty, stackalloc byte[ProtocolLimits.ChannelSecretSize]);
 
     public static byte[] GetStats(StatsType type)
     {

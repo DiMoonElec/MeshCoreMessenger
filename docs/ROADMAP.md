@@ -88,11 +88,14 @@ Public `MessageReceived` delivers `ContactMessage`, `ChannelMessage`, or `Channe
 while low-level packet diagnostics remain available. The pump starts after successful APP_START,
 reads the offline queue once, and responds to subsequent MESSAGES_WAITING notifications.
 It stops with the connection and reports errors without automatic retry loops.
-`AutoReceiveMessages` can disable automatic requests for diagnostic applications.
+`AutoReceiveMessages` can disable automatic requests. Public `DrainMessagesAsync`
+runs an explicit drain through the same pump, coalesces concurrent callers, isolates
+caller cancellation and reports failures. A timed-out sync requires reconnect because
+a late uncorrelated response cannot be assigned safely to a retry.
 
 ## M3 — Outgoing text and ACK tracking
 
-Implemented (72 regression tests in total and TCP self-test pass):
+Implemented (77 regression tests in total and TCP self-test pass):
 
 - `SEND_TXT_MSG` encoder;
 - `MSG_SENT` parser;
@@ -120,7 +123,7 @@ Advertisements implemented: `SendAdvertisementAsync(ZeroHop/Flood)`, typed ADVER
 NEW_ADVERT pushes and `AdvertisementReceived`. New discoveries remain separate from
 contacts transactions. One Flood advertisement verified on Heltec V3 (TX 0 -> 1);
 the subsequent private message was received successfully through MessageReceived.
-72 regression tests pass.
+77 regression tests pass.
 
 Implemented ahead of M3: local channel reads (`GetChannelAsync`, `GetChannelsAsync`)
 and core/radio/packet statistics. Channel enumeration includes empty slots and uses
@@ -130,9 +133,15 @@ Verified on the physical Heltec V3: 40 slots, 3 named channels, all three statis
 groups and 76 contacts. See the [hardware report](testing/serial-usb-2026-09-24.md),
 including a first-attempt APP_START timeout followed by a successful explicit retry.
 
+Channel mutation is implemented: exact-key `SetChannelAsync`, standard hashtag
+derivation, `SetHashtagChannelAsync`, and `ClearChannelAsync`. Encoding, validation,
+interleaved push, ERROR recovery and command serialization have regression coverage.
+On the physical Heltec V3, slot 39 was set/read, cleared/read and finally configured
+as `#mcs-dev-test`; one labeled message increased TX 4 -> 5 without resetting the node.
+See the [channel configuration report](testing/serial-channel-config-2026-09-25.md).
+
 Remaining operations:
 
-- set channel;
 - send channel data;
 - get contact by key;
 - add/update/remove/share/export/import contact;
@@ -169,6 +178,12 @@ Physical USB read-only validation passed on macOS arm64 with Heltec V3, firmware
 v1.17.1-d929643: both empty lists and 75-contact lists in three consecutive cycles,
 radio TX counters unchanged at zero. See [hardware report](testing/serial-usb-2026-09-24.md).
 Windows/Linux validation remains pending.
+
+Serial control defaults and hardware harnesses now use DTR=true/RTS=true to avoid
+pulsing the standard ESP32 auto-reset circuit. Two consecutive Heltec V3 connections
+preserved uptime (481 -> 484 seconds); see the
+[no-reset report](testing/serial-no-reset-2026-09-25.md). Earlier false/false harness
+settings likely caused the observed reboots and loss of queued test messages.
 
 No changes to `MeshCoreClient`, packet parsing, transactions, or public operation APIs
 were required to switch from TCP to Serial.

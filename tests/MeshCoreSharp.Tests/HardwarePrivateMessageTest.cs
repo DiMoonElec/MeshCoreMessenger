@@ -19,8 +19,8 @@ internal static class HardwarePrivateMessageTest
         var transport = new SinglePrivateSendTransport(new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
         {
             PortName = portName,
-            DtrEnable = false,
-            RtsEnable = false,
+            DtrEnable = true,
+            RtsEnable = true,
             OpenDelay = TimeSpan.FromSeconds(2),
         }));
         await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions

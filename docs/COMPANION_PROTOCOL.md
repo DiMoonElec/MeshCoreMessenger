@@ -79,11 +79,13 @@ The stream framing has no separate CRC/checksum field.
 TCP is a byte stream: a read may contain half a frame, exactly one frame, multiple frames, or the end of one frame plus part of another.
 
 The implemented Serial transport uses this same framing and handles arbitrary read
-boundaries. Defaults are 115200 baud, 8N1, no flow control, DTR on, RTS off, with a
-200 ms opening delay. Speed, DTR/RTS and delay are configurable. These defaults were
-checked against the [meshcore_py serial connection](https://github.com/meshcore-dev/meshcore_py/blob/main/src/meshcore/serial_cx.py)
-and [connection example](https://github.com/meshcore-dev/meshcore_py#connecting-to-your-device).
-Signal settings may need adjustment for a particular board's reset wiring.
+boundaries. Defaults are 115200 baud, 8N1, no flow control, DTR on, RTS on, with a
+200 ms opening delay. `System.IO.Ports` applies DTR and then RTS after opening; on
+ESP32 boards, requesting false/false can pass through a reset-producing intermediate
+state. The default true/true pair is a non-reset state for the standard two-transistor
+auto-reset circuit. Speed, DTR/RTS and delay remain configurable for boards with
+different wiring. See Espressif's [automatic bootloader documentation](https://docs.espressif.com/projects/esptool/en/latest/esp32/advanced-topics/boot-mode-selection.html)
+and the [.NET Unix SerialStream initialization](https://github.com/dotnet/runtime/blob/main/src/libraries/System.IO.Ports/src/System/IO/Ports/SerialStream.Unix.cs).
 
 ## BLE framing
 
@@ -168,7 +170,7 @@ Examples already implemented in MeshCoreSharp:
 - `DEVICE_QUERY -> DEVICE_INFO`
 - `GET_BATT_AND_STORAGE -> BATT_AND_STORAGE`
 
-## Local channel reads and statistics
+## Local channel reads, writes and statistics
 
 Verified against firmware handlers `CMD_GET_CHANNEL`, `CMD_GET_STATS` in
 [MyMesh.cpp](https://github.com/meshcore-dev/MeshCore/blob/main/examples/companion_radio/MyMesh.cpp)
@@ -182,6 +184,20 @@ all slots up to DEVICE_INFO.MaxChannels, including holes, without assuming a fix
 capacity or probing until an error. Legacy devices without capacity require explicit
 single-slot reads. Each request holds CommandGate only until its own response;
 enumeration is not an atomic snapshot. Responses must match the requested index.
+
+`SET_CHANNEL (32)` is exactly 50 bytes: command (1), slot index (1), UTF-8 name
+in a 32-byte NUL-padded field, then a 16-byte secret. Current firmware copies the
+name into a 32-byte C string, so the library accepts at most 31 UTF-8 bytes and
+rejects invalid UTF-8/NUL rather than allowing silent truncation. The response is
+`OK/ERROR`. Clearing a slot uses the same command with an empty name and 16 zero bytes.
+
+The standard hashtag convention derives the secret as the first 16 bytes of
+SHA-256 over the exact UTF-8 channel name including `#`. It is case- and
+whitespace-sensitive; no Unicode normalization is applied. For example, `#test`
+maps to `9cd8fcf22a47333b591d96a2b848b73f`. This only separates topic traffic:
+anyone who guesses the name can derive the key. The default `Public` channel uses
+the firmware's well-known nonzero key; an all-zero key with an empty name means an
+empty/deleted slot despite a contradictory older paragraph in upstream documentation.
 
 `GET_STATS (56)` takes subtype 0/1/2 (protocol v8+). `STATS (0x18)` echoes subtype:
 
@@ -335,6 +351,13 @@ prefix; it is not split heuristically. V3 reserved bytes are skipped without req
 Reading a queue item removes it on the firmware side before the application has
 persisted it. The client does not provide durable/exactly-once delivery or retry
 timed-out reads automatically. Packet/model events remain available for late replies.
+
+`DrainMessagesAsync` explicitly runs this sequence to `NO_MORE_MESSAGES`, also when
+automatic reception is disabled. Concurrent calls share a single drain; canceling
+one caller only cancels its wait. Recoverable command/protocol errors may be retried
+explicitly. After a `SYNC_NEXT_MESSAGE` timeout the connection must be restarted
+before another drain, because a late response has no request ID and could be mistaken
+for the result of a retry.
 
 ## `SEND_TXT_MSG`: immediate send result vs delivery ACK
 

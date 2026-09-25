@@ -17,6 +17,9 @@ internal static class ChannelStatsTests
         ("Channel index and stats subtype matching with interleaved push", Matching),
         ("Channel enumeration includes holes and uses device capacity", Enumeration),
         ("Channel enumeration legacy firmware, zero and maximum capacity", Capacities),
+        ("Channel configuration encoding and hashtag derivation", ConfigurationEncoding),
+        ("Channel set and clear routing with interleaved push", ConfigurationRouting),
+        ("Channel configuration validation and recovery", ConfigurationValidation),
         ("Channel/stats errors and malformed frames release gate", Failures),
         ("Channel timeout, queued cancellation and enumeration cancellation", Cancellation),
     ];
@@ -194,6 +197,76 @@ internal static class ChannelStatsTests
             var all = await client.GetChannelsAsync();
             Check(all.Count == count && calls == count + 1);
         }
+    }
+
+    private static Task ConfigurationEncoding()
+    {
+        var hashtag = ChannelSecrets.DeriveHashtag("#test");
+        Check(Convert.ToHexString(hashtag) == "9CD8FCF22A47333B591D96A2B848B73F");
+        var command = CompanionCommands.SetChannel(7, "#test", hashtag);
+        Check(command.Length == 50 && command[0] == 32 && command[1] == 7);
+        Check(command.AsSpan(2, 5).SequenceEqual("#test"u8));
+        Check(command.AsSpan(7, 27).IndexOfAnyExcept((byte)0) < 0);
+        Check(command.AsSpan(34, 16).SequenceEqual(hashtag));
+        var clear = CompanionCommands.ClearChannel(39);
+        Check(clear.Length == 50 && clear[0] == 32 && clear[1] == 39);
+        Check(clear.AsSpan(2).IndexOfAnyExcept((byte)0) < 0);
+        return Task.CompletedTask;
+    }
+
+    private static async Task ConfigurationRouting()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        var push = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PushPacketReceived += (_, _) => push.TrySetResult();
+
+        var set = client.SetHashtagChannelAsync(9, "#test");
+        var command = await Sent(transport);
+        Check(command.SequenceEqual(CompanionCommands.SetChannel(9, "#test", ChannelSecrets.DeriveHashtag("#test"))));
+        transport.Emit([0x83]);
+        await push.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Check(!set.IsCompleted);
+        transport.Emit([0]);
+        await set;
+
+        var clear = client.ClearChannelAsync(9);
+        Check((await Sent(transport)).SequenceEqual(CompanionCommands.ClearChannel(9)));
+        transport.Emit([0]);
+        await clear;
+    }
+
+    private static async Task ConfigurationValidation()
+    {
+        var key = new byte[16];
+        await Throws<ArgumentException>(() => Task.FromResult(ChannelSecrets.DeriveHashtag("test")));
+        await Throws<ArgumentException>(() => Task.FromResult(ChannelSecrets.DeriveHashtag("#")));
+        await Throws<ArgumentException>(() => Task.FromResult(CompanionCommands.SetChannel(1, "name", key[..15])));
+        await Throws<ArgumentException>(() => Task.FromResult(CompanionCommands.SetChannel(1, "a\0b", key)));
+        await Throws<ArgumentOutOfRangeException>(() => Task.FromResult(CompanionCommands.SetChannel(1, new string('x', 32), key)));
+        await Throws<System.Text.EncoderFallbackException>(() =>
+            Task.FromResult(CompanionCommands.SetChannel(1, "#\uD800", key)));
+
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        using (var cancelled = new CancellationTokenSource())
+        {
+            cancelled.Cancel();
+            await Throws<OperationCanceledException>(() =>
+                client.SetChannelAsync(2, "private", key, cancelled.Token));
+            Check(!transport.Sent.Reader.TryRead(out _));
+        }
+        var failed = client.SetChannelAsync(2, "private", key);
+        await Sent(transport);
+        transport.Emit([1, 6]);
+        var error = await Throws<MeshCoreCommandException>(() => failed);
+        Check(error.Command == CommandType.SetChannel && error.ErrorCode == MeshCoreErrorCode.IllegalArgument);
+        var recovered = client.ClearChannelAsync(2);
+        await Sent(transport);
+        transport.Emit([0]);
+        await recovered;
     }
 
     private static async Task Failures()
