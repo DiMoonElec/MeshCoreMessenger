@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MeshCoreMessenger.Core.Application;
+using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
 
@@ -20,6 +22,7 @@ public static class AppBootstrap
                 options.TimestampFormat = "HH:mm:ss ";
             });
         });
+        services.AddSingleton<IAppPaths>(_ => DesktopAppPaths.CreateDefault());
         services.AddSingleton<MainWindowViewModel>();
         services.AddTransient(provider => new MainWindow
         {

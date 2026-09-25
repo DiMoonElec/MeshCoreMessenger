@@ -1,6 +1,7 @@
 # План реализации MeshCoreMessenger
 
-Дата: 25.09.2026. **Подэтап A1 (каркас) выполнен; остальной функционал приложения не реализован.**
+Дата: 25.09.2026. **Подэтапы A1 (каркас) и A2 (локальное хранилище) выполнены;
+подключение приложения к ноде и пользовательский функционал не реализованы.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация и статистика; базовая проверка — 82 теста.
 Архитектурные решения и инварианты: [MESSENGER_ARCHITECTURE.md](MESSENGER_ARCHITECTURE.md).
@@ -34,11 +35,41 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
 dotnet run --project src/MeshCoreMessenger.Desktop/MeshCoreMessenger.Desktop.csproj -c Release --no-build --no-restore
 ```
 
+### A2 — фундамент локального хранилища (выполнено 25.09.2026)
+
+- [x] Добавлены `IAppPaths` и платформенные каталоги данных: Application Support
+  на macOS, LocalApplicationData на Windows и XDG/fallback на Linux; БД называется
+  `messenger.db`, резервные копии находятся в отдельном подкаталоге.
+- [x] Реализованы один последовательный `DatabaseWorker` на отдельном потоке и
+  отдельные короткоживущие read-only соединения без pooling.
+- [x] Для SQLite включены `foreign_keys=ON`, WAL, `synchronous=FULL` и конечный
+  `busy_timeout=5000`; добавлена транзакционная миграция версии 1.
+- [x] Созданы таблицы и типизированные модели для settings, connection profiles,
+  nodes, sessions, contacts, channels/bindings, conversations, messages,
+  send attempts и drafts с внешними ключами, длинами ключей, уникальностью и индексами.
+- [x] Реализованы stores настроек и профилей подключения, проверка целостности и
+  версии при открытии. Более новая версия отклоняется до записи; ошибка миграции
+  не удаляет и не пересоздаёт исходную БД.
+- [x] Backup и restore используют SQLite backup API. Restore сначала проверяется
+  и мигрируется на временной staging-БД, поэтому ошибочная миграция не заменяет
+  рабочую БД; живая WAL-БД не копируется как одиночный файл.
+- [x] На временных каталогах прошли 15 тестов хранилища и прежний Core smoke-тест;
+  Release build прошёл без предупреждений, прежние 82 регрессионных теста
+  библиотеки также прошли.
+- [x] Подключение к Companion, reconnect, приём/отправка и аппаратные проверки не запускались.
+
+Команды проверки A2:
+
+```bash
+dotnet build MeshCoreSharp.sln -c Release --no-restore --disable-build-servers
+dotnet tests/MeshCoreMessenger.Core.Tests/bin/Release/net10.0/MeshCoreMessenger.Core.Tests.dll
+dotnet tests/MeshCoreMessenger.Desktop.Tests/bin/Release/net10.0/MeshCoreMessenger.Desktop.Tests.dll
+dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
+```
+
 ### Оставшаяся часть этапа A
 
-- [ ] Реализовать платформенные пути данных и один экземпляр на каталог.
-- [ ] SQLite worker, начальная миграция, модели профилей/нод/справочников/истории,
-  настройки и backup/restore без копирования живой WAL-БД одиночным файлом.
+- [ ] Реализовать блокировку одного экземпляра приложения на каталог данных.
 - [ ] Добавить в библиотеку `FlushEventsAsync` с семантикой барьера callbacks
   согласно разделу 10 архитектуры; существующие Dispose/тайм-ауты не менять скрыто.
 - [ ] Загрузить локальную историю в существующий shell без подключения.
