@@ -230,9 +230,19 @@ Before first stable NuGet release:
 
 ## Future solution projects
 
-Expected future additions may include:
+The desktop messenger now has a concrete design, not yet implemented:
 
-- GUI application;
+- [Application architecture](MESSENGER_ARCHITECTURE.md): Avalonia, SQLite,
+  connection profiles/reconnect, separate Chat/channel/device tabs, durable history.
+- [Implementation stages](MESSENGER_PLAN.md): A–E for the first usable release,
+  F for optional diagnostics and later improvements.
+
+Application reconnect belongs in its supervisor, not in the Companion library.
+A small event-queue flush API is planned to let orderly shutdown persist callbacks
+already queued by RX. It does not provide a device-side durable message acknowledgement.
+
+Other future additions may include:
+
 - CLI/diagnostic tool;
 - additional test/integration harnesses.
 

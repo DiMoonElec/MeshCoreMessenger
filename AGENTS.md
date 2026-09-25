@@ -63,39 +63,32 @@ See `docs/ARCHITECTURE.md` and `docs/COMPANION_PROTOCOL.md` before changing rout
 
 ## Current implementation status
 
-Already implemented and verified at concept level:
+Implemented as of 2026-09-25; consult `PLAN.md`, source, and `docs/testing/` for details:
 
-- TCP connection to a real node.
-- Stream framing compatible with the current `meshcore_py` TCP implementation.
-- Continuous independent RX loop.
-- `PacketRouter`.
-- Serialized `CommandDispatcher`.
-- Subscribe-before-send transaction registration.
-- Typed decoding for `OK`, `ERROR`, `SELF_INFO`, `CURRENT_TIME`, `DEVICE_INFO`, `BATT_AND_STORAGE`.
-- Raw fallback packet for unsupported/unimplemented packet types.
-- `APP_START` / `SELF_INFO`.
-- `GET_DEVICE_TIME` / `SET_DEVICE_TIME`.
-- `DEVICE_QUERY`.
-- `GET_BATT_AND_STORAGE`.
-- Push routing while an immediate command is pending.
+- TCP and Serial transports, continuous RX, serialized dispatcher, subscribe-before-send.
+- Typed startup/device/time/battery information and local core/radio/packet statistics.
+- Multi-frame contacts with inactivity/absolute timeouts and interleaved pushes.
+- Automatic and explicit incoming-message draining, legacy/V3 text and channel data.
+- Private/channel text sending, separate private ACK delivery tracking, no automatic retries.
+- Advertisement sending and typed ADVERT/NEW_ADVERT events.
+- Channel enumeration, configuration, hashtag key derivation and clearing.
+- Contact add/update/remove with typed configuration and validation.
+- Raw fallback and asynchronous diagnostic events.
+
+Release build and 82 regression tests passed at the last implementation checkpoint.
+Hardware reports cover USB without reset, channel exchange, and contact restoration
+followed by a private message confirmed by both ACK and the recipient.
 
 ## Immediate next milestone
 
-Implement `GET_CONTACTS` as the first multi-frame command transaction:
-
-`CONTACT_START -> CONTACT* -> CONTACT_END`
-
-Requirements:
-
-- Keep the command slot occupied until `CONTACT_END` or failure/timeout.
-- Allow unrelated push packets to arrive between contact frames.
-- Prefer an inactivity timeout reset on each valid stream frame, with a sensible absolute safety timeout if needed.
-- Decode contacts into typed data/models rather than dictionaries.
-- Add regression tests for interleaving push packets during the contacts stream.
-
-After contacts, implement incoming message draining:
-
-`MESSAGES_WAITING -> SYNC_NEXT_MESSAGE -> message* -> NO_MORE_MESSAGES`.
+The desktop application is designed but not implemented. Read
+`docs/MESSENGER_ARCHITECTURE.md` and `docs/MESSENGER_PLAN.md` before application work.
+Start with stage A when asked to begin implementation: Avalonia/Core projects,
+SQLite foundations and a tested event-queue completion barrier in the library.
+Application services use public Companion APIs; do not duplicate protocol/runtime code.
+Auto-connect/reconnect is an application policy owned by its ConnectionSupervisor;
+it must never implicitly replay outgoing messages or mutate device configuration.
+Keep the Companion library free of UI, database and message-history responsibilities.
 
 ## Engineering rules
 

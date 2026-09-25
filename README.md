@@ -524,9 +524,17 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-contact-re
 
 ## Следующий этап
 
-Далее — helper безопасного сопоставления шестибайтовых префиксов входящих сообщений
-с контактами и короткий пример мессенджера. Удалённые запросы статуса/телеметрии
-остаются отдельным расширением и не требуются для базового общения.
+Спроектирован настольный мессенджер на Avalonia для macOS/Windows: профили и
+автоподключение TCP/Serial, SQLite-история, отдельные вкладки личных чатов, каналов
+и служебных устройств. Приложение пока не реализовано.
+
+- [Архитектура приложения](docs/MESSENGER_ARCHITECTURE.md) — компоненты, БД,
+  идентичность чатов, reconnect, сохранность, UX и диагностика.
+- [План реализации](docs/MESSENGER_PLAN.md) — этапы A–F и критерии приёмки для ИИ-агентов.
+
+Первый этап — каркас приложения, БД и барьер доставки событий библиотеки для
+корректного закрытия сессии. Удалённые запросы статуса/телеметрии остаются
+отдельным расширением и не требуются для базового общения.
 
 ## Контекст для Codex / VS Code
 
@@ -536,6 +544,7 @@ dotnet run --project tests/MeshCoreSharp.Tests -c Release -- --serial-contact-re
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — runtime-архитектура, transaction/router/gate модель;
 - [`docs/COMPANION_PROTOCOL.md`](docs/COMPANION_PROTOCOL.md) — особенности Companion Protocol и известные расхождения источников;
 - [`docs/ROADMAP.md`](docs/ROADMAP.md) — текущий статус и порядок дальнейшей реализации;
+- [`docs/MESSENGER_ARCHITECTURE.md`](docs/MESSENGER_ARCHITECTURE.md) и [`docs/MESSENGER_PLAN.md`](docs/MESSENGER_PLAN.md) — проектирование настольного мессенджера;
 - [`docs/CODEX_START.md`](docs/CODEX_START.md) — готовый стартовый prompt для новой Codex-сессии.
 
 Открывайте в VS Code корень репозитория, содержащий `MeshCoreSharp.sln` и `AGENTS.md`.
