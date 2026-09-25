@@ -15,6 +15,19 @@ internal sealed class ClientEventQueue : IDisposable
 
     public void Post(Action callback) => _queue.Writer.TryWrite(callback);
 
+    public Task FlushAsync(CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        if (!_queue.Writer.TryWrite(() => completion.TrySetResult()))
+            throw new ObjectDisposedException(nameof(MeshCoreClient), "The client event queue no longer accepts barriers.");
+
+        // Cancelling the caller only cancels its wait. The accepted marker remains in the
+        // FIFO so it cannot disturb delivery or later barriers.
+        return completion.Task.WaitAsync(cancellationToken);
+    }
+
     private async Task DispatchAsync()
     {
         await foreach (var callback in _queue.Reader.ReadAllAsync().ConfigureAwait(false))

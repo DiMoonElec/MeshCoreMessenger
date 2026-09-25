@@ -62,6 +62,21 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public event EventHandler<MessageReceivedEventArgs>? MessageReceived;
     public event EventHandler<AdvertisementReceivedEventArgs>? AdvertisementReceived;
 
+    /// <summary>
+    /// Waits until all synchronous event callbacks queued before this barrier have returned.
+    /// </summary>
+    /// <remarks>
+    /// This does not drain messages from the Companion, wait for application persistence, or
+    /// await work that an event callback starts after returning. Events queued after this call's
+    /// barrier do not delay it. Call this after stopping RX and before disposing the client;
+    /// do not synchronously wait for it from inside a client event callback.
+    /// </remarks>
+    public async Task FlushEventsAsync(CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        await _events.FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task ConnectAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();

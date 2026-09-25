@@ -97,7 +97,8 @@ var tests = new (string Name, Func<Task> Run)[]
 };
 var failed = 0;
 var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat(ChannelStatsTests.Cases)
-    .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).Concat(ContactMutationTests.Cases).ToArray();
+    .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).Concat(ContactMutationTests.Cases)
+    .Concat(EventBarrierTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try
