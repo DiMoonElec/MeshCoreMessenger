@@ -24,6 +24,7 @@ public enum CompanionSessionEventKind
     UnhandledPacketReceived,
     MessageReceived,
     AdvertisementReceived,
+    EventBarrier,
 }
 
 public sealed record LocalNodeIdentity(ReadOnlyMemory<byte> PublicKey, string Name)
@@ -52,4 +53,5 @@ public sealed record CompanionSessionEvent
     public ReadOnlyMemory<byte> RawFrame { get; init; }
     public ReceivedMessage? Message { get; init; }
     public AdvertisementInfo? Advertisement { get; init; }
+    internal TaskCompletionSource? BarrierCompletion { get; init; }
 }

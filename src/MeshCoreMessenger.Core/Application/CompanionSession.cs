@@ -74,6 +74,25 @@ public sealed class CompanionSession : IAsyncDisposable
         return _client.GetChannelsAsync(cancellationToken);
     }
 
+    internal Task DrainMessagesAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureIdentified();
+        return _client.DrainMessagesAsync(cancellationToken);
+    }
+
+    /// <summary>Places a marker after all library callbacks, for the one application event consumer.</summary>
+    internal async Task FlushEventsForConsumerAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureIdentified();
+        await _client.FlushEventsAsync(cancellationToken).ConfigureAwait(false);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _events.Writer.WriteAsync(NewEvent(CompanionSessionEventKind.EventBarrier) with
+        {
+            BarrierCompletion = completion,
+        }, cancellationToken).ConfigureAwait(false);
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CompanionSessionStartResult> StartAsync(CancellationToken cancellationToken = default)
     {
         // A persisted attempt must always be closed, including when the caller supplies an

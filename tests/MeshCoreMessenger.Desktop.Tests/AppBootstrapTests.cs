@@ -32,6 +32,7 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
         Assert.NotNull(services.GetRequiredService<DirectoryService>());
         Assert.NotNull(services.GetRequiredService<MessageIngestor>());
+        Assert.NotNull(services.GetRequiredService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
         Assert.Same(storage.IncomingMessages, services.GetRequiredService<IIncomingMessageStore>());
         Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());

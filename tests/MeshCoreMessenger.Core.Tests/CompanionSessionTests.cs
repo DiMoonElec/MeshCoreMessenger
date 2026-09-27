@@ -393,6 +393,13 @@ public sealed class CompanionSessionTests
             return Task.FromResult<IReadOnlyList<ChannelInfo>>([]);
         }
 
+        public Task DrainMessagesAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls.Add("Drain");
+            return Task.CompletedTask;
+        }
+
         public async Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("Disconnect");

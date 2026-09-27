@@ -148,7 +148,7 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
   ручная остановка, смена профиля и сон/пробуждение.
 - [ ] Отдельные SessionId/NodeId, проверка ключа ноды после Start, защита от
   поздних событий прежней сессии.
-- [ ] AutoReceiveMessages=false, загрузка справочников до начального drain,
+- [x] AutoReceiveMessages=false, загрузка справочников до начального drain,
   объединение push-сигналов и безопасная реакция на тайм-аут.
 - [x] MessageIngestor и writer: commit до UI, обработка неразрешённых отправителей,
   неопределённых канальных слотов и ошибок диска.
@@ -373,7 +373,7 @@ flush/cancellation, retry после имитированной ошибки wri
 Существующий backup/restore regression выполняется на v2 схеме. Аппаратный порт,
 drain и какие-либо передачи не использовались.
 
-#### B5 — ReceiveCoordinator и безопасный начальный drain
+#### B5 — ReceiveCoordinator и безопасный начальный drain (выполнено 28.09.2026)
 
 **Цель:** связать B2–B4 в одну синхронизацию `identify -> directories -> drain ->
 commit`, не допуская параллельных или небезопасных чтений очереди Companion.
@@ -400,6 +400,26 @@ commit`, не допуская параллельных или небезопа�
 проход; callbacks задержаны после возврата drain; changed-slot backlog остаётся
 неопределённым, а следующий проход использует новую binding; timeout не повторяется
 в старой сессии; ошибка БД останавливает чтение без потери уже принятых DTO.
+
+Реализовано: `ReceiveCoordinator` является единственным consumer событий
+`CompanionSession`. Сессия подписывается на public client events до `StartAsync`, а
+coordinator обрабатывает только скопированные session events; из packet-событий он
+использует исключительно push `MessagesWaiting`. Сообщения, пришедшие до завершения
+справочников, удерживаются в памяти. После directory snapshot initial drain выполняется
+один раз, затем coordinator ждёт library `FlushEventsAsync`, marker application event
+queue и `MessageIngestor.FlushAsync`; только после этого активируются pending channel
+transitions. Сигнал в этом окне создаёт дополнительный проход с новой stable binding.
+Сигналы во время последующих проходов coalesce до одного pending flag; параллельных
+drain нет. Timeout `SYNC_NEXT_MESSAGE` переводит coordinator в `NeedsAttention` и
+запрещает повтор на том же client. Ошибка ingress приостанавливает новые drain до
+явного `RetryAsync`, который сначала дописывает уже принятые DTO.
+
+Проверено: fake Companion/SQLite tests покрывают сообщение, удержанное с `StartAsync`,
+coalesced `MessagesWaiting`, timeout без retry, pause/retry storage и changed channel
+slot: backlog сохранён как unknown, следующий проход получает новую binding. TCP/Serial,
+физическая нода и RF-команды не использовались.
+Release build прошёл без предупреждений; Core tests — 61/61, Desktop — 18/18,
+MeshCoreSharp regression suite — 92/92.
 
 #### B6 — ConnectionSupervisor, автоподключение и reconnect
 

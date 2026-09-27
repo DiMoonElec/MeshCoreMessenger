@@ -26,6 +26,7 @@ public interface ICompanionClient : IAsyncDisposable
     Task<SelfInfo> StartAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default);
+    Task DrainMessagesAsync(CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     Task FlushEventsAsync(CancellationToken cancellationToken = default);
 }

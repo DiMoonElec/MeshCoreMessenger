@@ -40,6 +40,7 @@ public static class AppBootstrap
         services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<DirectoryService>();
         services.AddSingleton<MessageIngestor>();
+        services.AddSingleton<ReceiveCoordinator>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();

@@ -82,6 +82,9 @@ internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionC
     public Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default) =>
         client.GetChannelsAsync(cancellationToken);
 
+    public Task DrainMessagesAsync(CancellationToken cancellationToken = default) =>
+        client.DrainMessagesAsync(cancellationToken);
+
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
         client.DisconnectAsync(cancellationToken);
 

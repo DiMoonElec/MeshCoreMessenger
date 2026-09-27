@@ -288,6 +288,12 @@ public sealed class DirectoryServiceTests
                 : Task.FromException<IReadOnlyList<ChannelInfo>>(ChannelsError);
         }
 
+        public Task DrainMessagesAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
+
         public Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
             State = MeshCoreConnectionState.Disconnected;
