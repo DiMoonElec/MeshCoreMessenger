@@ -150,7 +150,7 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
   поздних событий прежней сессии.
 - [ ] AutoReceiveMessages=false, загрузка справочников до начального drain,
   объединение push-сигналов и безопасная реакция на тайм-аут.
-- [ ] MessageIngestor и writer: commit до UI, обработка неразрешённых отправителей,
+- [x] MessageIngestor и writer: commit до UI, обработка неразрешённых отправителей,
   неопределённых канальных слотов и ошибок диска.
 - [ ] Штатное закрытие: stop RX -> event barrier -> commit -> dispose/закрытие БД.
 - [ ] Открытие приложения offline показывает историю и состояние подключения.
@@ -311,7 +311,7 @@ regression tests `MeshCoreSharp`. Аппаратная проверка полу
 RF-команды не выполнялись. Подробности — в
 [отчёте](testing/messenger-b3-serial-2026-09-25.md).
 
-#### B4 — durable MessageIngestor и транзакции входящих
+#### B4 — durable MessageIngestor и транзакции входящих (выполнено 28.09.2026)
 
 **Цель:** любой уже доставленный приложению `ReceivedMessage` либо надёжно ожидает
 записи, либо закоммичен в правильный диалог; callback библиотеки не выполняет SQL
@@ -350,6 +350,28 @@ RF-команды не выполнялись. Подробности — в
 commit предшествует UI notification; callback не ждёт SQLite; порядок последовательного
 writer; cancellation/flush; disk error удерживает pending DTO и успешный retry их
 записывает. Проверить upgrade БД v1 -> v2 и backup/restore.
+
+Реализовано: migration 2 расширяет `Messages` nullable полями `TextType`,
+`PathLength`, `BinaryDataType` и 4-byte `OriginalSenderPrefix`; ранее созданная
+v1 БД обновляется транзакционно, без пересоздания. `MessageIngestor` принимает
+скопированные DTO в неограниченную FIFO-очередь с одним consumer и explicit
+`FlushAsync`; его callback не ждёт SQLite. При ошибке writer текущий DTO остаётся
+первым в очереди, ingress ставится на паузу до `RetryAsync`, а новые события
+сохраняются в памяти. Сигнал перегрузки появляется от 1 000 DTO или примерно
+16 MiB; очередь не применяет политику drop. SQLite store проверяет EventId до
+изменения проекций, поэтому повтор не создаёт даже пустой conversation; новая
+доставка с тем же текстом и временем имеет новый EventId и записывается отдельно.
+Private prefix разрешается только при ровно одном текущем контакте; stable channel
+binding проверяется в БД, а неизвестный или изменённый slot получает
+session-scoped `UnknownChannel` identity. Commit conversation/message/projection
+выполняется одной транзакцией; уведомление `MessageCommitted` приходит после неё.
+
+Проверено: 55 Core tests, включая три модели incoming messages, protocol metadata,
+unique/ambiguous/absent private prefix, stable/changed/unknown channel slot,
+EventId idempotency, commit-before-notification, копирование callback-буферов,
+flush/cancellation, retry после имитированной ошибки writer и миграцию v1 -> v2.
+Существующий backup/restore regression выполняется на v2 схеме. Аппаратный порт,
+drain и какие-либо передачи не использовались.
 
 #### B5 — ReceiveCoordinator и безопасный начальный drain
 

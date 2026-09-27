@@ -17,7 +17,7 @@ public sealed class AppBootstrapTests
         using var temporary = new TemporaryDirectory();
         var paths = temporary.CreatePaths();
         await using var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
-        using var services = AppBootstrap.CreateServiceProvider(paths, storage);
+        await using var services = AppBootstrap.CreateServiceProvider(paths, storage);
 
         var viewModel = services.GetRequiredService<MainWindowViewModel>();
         var logger = services.GetRequiredService<ILogger<AppBootstrapTests>>();
@@ -31,7 +31,9 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
         Assert.NotNull(services.GetRequiredService<DirectoryService>());
+        Assert.NotNull(services.GetRequiredService<MessageIngestor>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
+        Assert.Same(storage.IncomingMessages, services.GetRequiredService<IIncomingMessageStore>());
         Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());
         Assert.Same(
             services.GetRequiredService<ConnectionProfilesViewModel>(),

@@ -168,7 +168,7 @@ public sealed class LocalStorageTests
         await using var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
 
         using var connection = OpenReadOnly(paths.DatabasePath);
-        Assert.Equal(1, ScalarInt(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
         Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(connection, "SELECT MAX(Version) FROM SchemaMigrations;"));
     }
 
@@ -188,7 +188,36 @@ public sealed class LocalStorageTests
         }
 
         using var connection = OpenReadOnly(paths.DatabasePath);
-        Assert.Equal(1, ScalarInt(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
+    }
+
+    [Fact]
+    public async Task UpgradesVersionOneDatabaseWithIncomingMessageMetadataWithoutRecreatingIt()
+    {
+        using var temporary = new TemporaryDirectory();
+        var paths = temporary.CreatePaths();
+        Directory.CreateDirectory(paths.DataDirectory);
+        using (var connection = OpenWritable(paths.DatabasePath))
+        {
+            Execute(connection, "CREATE TABLE SchemaMigrations (Version INTEGER NOT NULL PRIMARY KEY, Name TEXT NOT NULL UNIQUE, AppliedUtc TEXT NOT NULL);");
+            Execute(connection, "CREATE TABLE Messages (Id TEXT NOT NULL PRIMARY KEY, Text TEXT);");
+            Execute(connection, "INSERT INTO SchemaMigrations (Version, Name, AppliedUtc) VALUES (1, 'Initial local storage', '2026-09-25T00:00:00Z');");
+            Execute(connection, "INSERT INTO Messages (Id, Text) VALUES ('existing', 'preserve');");
+            Execute(connection, "PRAGMA user_version=1;");
+        }
+
+        await using (var storage = await LocalStorage.OpenAsync(paths, CancellationToken))
+        {
+            Assert.NotNull(storage.IncomingMessages);
+        }
+
+        using var verification = OpenReadOnly(paths.DatabasePath);
+        Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(verification, "PRAGMA user_version;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(verification, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal("preserve", ScalarString(verification, "SELECT Text FROM Messages WHERE Id = 'existing';"));
+        using var columns = verification.CreateCommand();
+        columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Messages') WHERE name IN ('TextType', 'PathLength', 'BinaryDataType', 'OriginalSenderPrefix');";
+        Assert.Equal(4, Convert.ToInt32(columns.ExecuteScalar()));
     }
 
     [Fact]

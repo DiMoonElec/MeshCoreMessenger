@@ -4,11 +4,12 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly Migration[] Migrations =
     [
         new(1, "Initial local storage", InitialSchemaSql),
+        new(2, "Incoming message metadata", IncomingMessageMetadataSql),
     ];
 
     public static void ApplyPending(SqliteConnection connection)
@@ -263,5 +264,12 @@ internal static class DatabaseMigrator
             UpdatedUtc TEXT NOT NULL,
             FOREIGN KEY (ConversationId) REFERENCES Conversations(Id) ON DELETE CASCADE
         );
+        """;
+
+    private const string IncomingMessageMetadataSql = """
+        ALTER TABLE Messages ADD COLUMN TextType INTEGER;
+        ALTER TABLE Messages ADD COLUMN PathLength INTEGER CHECK (PathLength BETWEEN 0 AND 255);
+        ALTER TABLE Messages ADD COLUMN BinaryDataType INTEGER CHECK (BinaryDataType BETWEEN 0 AND 65535);
+        ALTER TABLE Messages ADD COLUMN OriginalSenderPrefix BLOB CHECK (OriginalSenderPrefix IS NULL OR length(OriginalSenderPrefix) = 4);
         """;
 }
