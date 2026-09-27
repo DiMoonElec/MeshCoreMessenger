@@ -62,6 +62,18 @@ public sealed class CompanionSession : IAsyncDisposable
     public CompanionSessionState State => _state;
     public ChannelReader<CompanionSessionEvent> Events => _events.Reader;
 
+    internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureIdentified();
+        return _client.GetContactsAsync(cancellationToken);
+    }
+
+    internal Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureIdentified();
+        return _client.GetChannelsAsync(cancellationToken);
+    }
+
     public async Task<CompanionSessionStartResult> StartAsync(CancellationToken cancellationToken = default)
     {
         // A persisted attempt must always be closed, including when the caller supplies an
@@ -351,4 +363,12 @@ public sealed class CompanionSession : IAsyncDisposable
                 PublicKey = advertisement.DiscoveredContact.PublicKey.ToArray(),
                 OutPath = advertisement.DiscoveredContact.OutPath.ToArray(),
             });
+
+    private void EnsureIdentified()
+    {
+        if (_state != CompanionSessionState.Identified || LocalNodeId is null)
+        {
+            throw new InvalidOperationException("Companion session has not completed node identification.");
+        }
+    }
 }

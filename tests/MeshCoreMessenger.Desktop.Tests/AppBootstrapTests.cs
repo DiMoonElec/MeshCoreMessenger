@@ -30,6 +30,8 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<IConnectionProfileManager>());
         Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
+        Assert.NotNull(services.GetRequiredService<DirectoryService>());
+        Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
         Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());
         Assert.Same(
             services.GetRequiredService<ConnectionProfilesViewModel>(),

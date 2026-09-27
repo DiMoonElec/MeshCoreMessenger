@@ -381,6 +381,18 @@ public sealed class CompanionSessionTests
             return result;
         }
 
+        public Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<Contact>>([]);
+        }
+
+        public Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult<IReadOnlyList<ChannelInfo>>([]);
+        }
+
         public async Task DisconnectAsync(CancellationToken cancellationToken = default)
         {
             Calls.Add("Disconnect");

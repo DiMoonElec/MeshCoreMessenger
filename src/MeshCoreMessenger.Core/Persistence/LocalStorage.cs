@@ -20,6 +20,7 @@ public sealed class LocalStorage : IAsyncDisposable
         ConnectionProfiles = new SqliteConnectionProfileStore(writer, reader);
         Nodes = new SqliteNodeStore(writer, reader);
         Sessions = new SqliteSessionStore(writer, reader);
+        Directories = new SqliteDirectoryStore(writer, reader);
         History = new SqliteLocalHistoryReader(reader);
     }
 
@@ -27,6 +28,7 @@ public sealed class LocalStorage : IAsyncDisposable
     public IConnectionProfileStore ConnectionProfiles { get; }
     public INodeStore Nodes { get; }
     public ISessionStore Sessions { get; }
+    public IDirectoryStore Directories { get; }
     public ILocalHistoryReader History { get; }
 
     public static async Task<LocalStorage> OpenAsync(IAppPaths paths, CancellationToken cancellationToken = default)

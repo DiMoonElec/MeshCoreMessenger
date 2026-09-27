@@ -1,5 +1,6 @@
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreSharp;
+using MeshCoreSharp.Models;
 using MeshCoreSharp.Transport;
 using MeshCoreSharp.Transport.Serial;
 using MeshCoreSharp.Transport.Tcp;
@@ -74,6 +75,12 @@ internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionC
 
     public Task<MeshCoreSharp.Models.SelfInfo> StartAsync(CancellationToken cancellationToken = default) =>
         client.StartAsync(cancellationToken);
+
+    public Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default) =>
+        client.GetContactsAsync(cancellationToken);
+
+    public Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default) =>
+        client.GetChannelsAsync(cancellationToken);
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
         client.DisconnectAsync(cancellationToken);
