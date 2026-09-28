@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
+using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
 
@@ -93,13 +94,215 @@ public sealed class MainWindowViewModelTests
         await viewModel.StopAsync();
     }
 
-    private static MainWindowViewModel CreateViewModel(ILocalHistoryReader history)
+    [Theory]
+    [InlineData(ConnectionSupervisorState.Offline, "Не подключено")]
+    [InlineData(ConnectionSupervisorState.Connecting, "Подключение…")]
+    [InlineData(ConnectionSupervisorState.Identifying, "Идентификация…")]
+    [InlineData(ConnectionSupervisorState.Synchronizing, "Синхронизация…")]
+    [InlineData(ConnectionSupervisorState.Online, "Подключено")]
+    [InlineData(ConnectionSupervisorState.RetryWaiting, "Ожидание повтора")]
+    [InlineData(ConnectionSupervisorState.Disconnecting, "Отключение…")]
+    [InlineData(ConnectionSupervisorState.NeedsAttention, "Требуется внимание")]
+    public async Task MapsEverySupervisorState(
+        ConnectionSupervisorState state,
+        string expectedStatus)
     {
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor: supervisor);
+        var retryAt = DateTimeOffset.UtcNow.AddSeconds(5);
+
+        supervisor.Publish(CreateSnapshot(state, "test reason", retryAt));
+
+        Assert.Equal(expectedStatus, viewModel.ConnectionStatus);
+        Assert.Contains("test reason", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
+        if (state == ConnectionSupervisorState.RetryWaiting)
+        {
+            Assert.Contains("Следующая попытка", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
+        }
+
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task SupervisorStateIsAppliedThroughUiDispatcher()
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var dispatcher = new QueuedUiDispatcher();
+        var viewModel = CreateViewModel(
+            new FakeHistoryReader(),
+            supervisor: supervisor,
+            dispatcher: dispatcher);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online));
+
+        Assert.Equal("Не подключено", viewModel.ConnectionStatus);
+        Assert.Equal(1, dispatcher.PendingCount);
+
+        dispatcher.RunNext();
+
+        Assert.Equal("Подключено", viewModel.ConnectionStatus);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task ConnectAndDisconnectCommandsDelegateToSupervisor()
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor: supervisor);
+
+        await viewModel.ConnectCommand.ExecuteAsync(null);
+        await viewModel.DisconnectCommand.ExecuteAsync(null);
+
+        Assert.Equal(1, supervisor.ConnectCalls);
+        Assert.Equal(1, supervisor.DisconnectCalls);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task CommittedMessageRereadsHistoryBeforeUpdatingProjection()
+    {
+        var conversationId = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var dispatcher = new ImmediateUiDispatcher();
+        var viewModel = CreateViewModel(
+            history,
+            notifications: notifications,
+            dispatcher: dispatcher);
+        await viewModel.LoadAsync(CancellationToken);
+        var readsBeforeCommit = history.ConversationReads;
+
+        history.Conversations = [CreateSummary(conversationId, "New", "committed preview", 1)];
+        history.Messages[conversationId] = [CreateMessage(conversationId, 1, "committed body")];
+
+        Assert.Empty(viewModel.Conversations);
+        notifications.Publish(new StoredIncomingMessage(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            conversationId,
+            1,
+            Inserted: true));
+
+        await WaitUntilAsync(() => viewModel.Messages.Count == 1);
+        Assert.True(history.ConversationReads > readsBeforeCommit);
+        Assert.Equal(conversationId, Assert.Single(viewModel.Conversations).Id);
+        Assert.Equal("committed body", Assert.Single(viewModel.Messages).Body);
+        Assert.True(dispatcher.Calls >= 2);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task DuplicateCommitDoesNotReloadProjection()
+    {
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var viewModel = CreateViewModel(history, notifications: notifications);
+        await viewModel.LoadAsync(CancellationToken);
+        var reads = history.ConversationReads;
+
+        notifications.Publish(new StoredIncomingMessage(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            Inserted: false));
+        await Task.Delay(25, CancellationToken);
+
+        Assert.Equal(reads, history.ConversationReads);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task CommitsDuringRefreshAreCoalescedIntoOneAdditionalRead()
+    {
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var viewModel = CreateViewModel(history, notifications: notifications);
+        await viewModel.LoadAsync(CancellationToken);
+        var reads = history.ConversationReads;
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        history.ConversationGate = gate;
+
+        notifications.Publish(CreateCommit(inserted: true));
+        await WaitUntilAsync(() => history.ConversationReads == reads + 1);
+        notifications.Publish(CreateCommit(inserted: true));
+        notifications.Publish(CreateCommit(inserted: true));
+        gate.SetResult();
+
+        await WaitUntilAsync(() => history.ConversationReads == reads + 2);
+        await Task.Delay(25, CancellationToken);
+        Assert.Equal(reads + 2, history.ConversationReads);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task LateCallbacksAfterStopDoNotChangeProjectionOrConnectionState()
+    {
+        var history = new FakeHistoryReader();
+        var supervisor = new FakeConnectionSupervisor();
+        var notifications = new FakeMessageCommitNotifications();
+        var dispatcher = new ImmediateUiDispatcher();
+        var viewModel = CreateViewModel(
+            history,
+            supervisor,
+            notifications,
+            dispatcher);
+        await viewModel.LoadAsync(CancellationToken);
+        var reads = history.ConversationReads;
+        var dispatches = dispatcher.Calls;
+
+        await viewModel.StopAsync();
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online));
+        notifications.Publish(new StoredIncomingMessage(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            1,
+            Inserted: true));
+
+        Assert.Equal("Не подключено", viewModel.ConnectionStatus);
+        Assert.Equal(reads, history.ConversationReads);
+        Assert.Equal(dispatches, dispatcher.Calls);
+    }
+
+    private static MainWindowViewModel CreateViewModel(
+        ILocalHistoryReader history,
+        FakeConnectionSupervisor? supervisor = null,
+        FakeMessageCommitNotifications? notifications = null,
+        IUiDispatcher? dispatcher = null)
+    {
+        supervisor ??= new FakeConnectionSupervisor();
         var profiles = new ConnectionProfilesViewModel(
             new EmptyProfileManager(),
+            supervisor,
             new EmptySerialPortCatalog(),
             NullLogger<ConnectionProfilesViewModel>.Instance);
-        return new MainWindowViewModel(history, profiles, NullLogger<MainWindowViewModel>.Instance);
+        return new MainWindowViewModel(
+            history,
+            profiles,
+            supervisor,
+            notifications ?? new FakeMessageCommitNotifications(),
+            dispatcher ?? new ImmediateUiDispatcher(),
+            NullLogger<MainWindowViewModel>.Instance);
+    }
+
+    private static ConnectionSupervisorSnapshot CreateSnapshot(
+        ConnectionSupervisorState state,
+        string? reason = null,
+        DateTimeOffset? nextAttemptUtc = null) =>
+        new(state, 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), reason, nextAttemptUtc);
+
+    private static StoredIncomingMessage CreateCommit(bool inserted) =>
+        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, inserted);
+
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
     }
 
     private static ConversationSummary CreateSummary(Guid id, string title, string preview, long sequence) =>
@@ -130,16 +333,19 @@ public sealed class MainWindowViewModelTests
 
     private sealed class FakeHistoryReader : ILocalHistoryReader
     {
-        public IReadOnlyList<ConversationSummary> Conversations { get; init; } = [];
+        public IReadOnlyList<ConversationSummary> Conversations { get; set; } = [];
         public Dictionary<Guid, IReadOnlyList<HistoryMessage>> Messages { get; } = [];
         public List<Guid> RequestedConversations { get; } = [];
         public Exception? ConversationError { get; init; }
         public bool WaitForCancellation { get; init; }
+        public int ConversationReads { get; private set; }
+        public TaskCompletionSource? ConversationGate { get; set; }
 
         public async Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
             int limit,
             CancellationToken cancellationToken = default)
         {
+            ConversationReads++;
             if (WaitForCancellation)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -148,6 +354,11 @@ public sealed class MainWindowViewModelTests
             if (ConversationError is not null)
             {
                 throw ConversationError;
+            }
+
+            if (ConversationGate is { } gate)
+            {
+                await gate.Task.WaitAsync(cancellationToken);
             }
 
             return Conversations.Take(limit).ToArray();

@@ -10,6 +10,7 @@ namespace MeshCoreMessenger.Desktop.ViewModels;
 public sealed class ConnectionProfilesViewModel : ObservableObject
 {
     private readonly IConnectionProfileManager _manager;
+    private readonly IConnectionSupervisor _supervisor;
     private readonly ISerialPortCatalog _serialPorts;
     private readonly ILogger<ConnectionProfilesViewModel> _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
@@ -35,10 +36,12 @@ public sealed class ConnectionProfilesViewModel : ObservableObject
 
     public ConnectionProfilesViewModel(
         IConnectionProfileManager manager,
+        IConnectionSupervisor supervisor,
         ISerialPortCatalog serialPorts,
         ILogger<ConnectionProfilesViewModel> logger)
     {
         _manager = manager;
+        _supervisor = supervisor;
         _serialPorts = serialPorts;
         _logger = logger;
         NewProfileCommand = new RelayCommand(BeginNewProfile);
@@ -250,6 +253,7 @@ public sealed class ConnectionProfilesViewModel : ObservableObject
         try
         {
             var saved = await _manager.SaveAndSelectAsync(CreateDraft(), linkedCancellation.Token);
+            await _supervisor.SwitchProfileAsync(saved.Id, linkedCancellation.Token);
             var profiles = await _manager.GetProfilesAsync(linkedCancellation.Token);
             ApplyProfiles(profiles, saved.Id);
             await RefreshPortsCoreAsync(profiles, linkedCancellation.Token);

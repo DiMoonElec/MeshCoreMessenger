@@ -41,6 +41,8 @@ public sealed class AppBootstrapTests
         var supervisor = services.GetRequiredService<IConnectionSupervisor>();
         Assert.Same(supervisor, services.GetRequiredService<IConnectionSupervisor>());
         Assert.NotNull(services.GetRequiredService<DesktopConnectionLifecycle>());
+        Assert.NotNull(services.GetRequiredService<IUiDispatcher>());
+        Assert.NotNull(services.GetRequiredService<IMessageCommitNotifications>());
         Assert.Null(services.GetService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
         Assert.Same(storage.IncomingMessages, services.GetRequiredService<IIncomingMessageStore>());

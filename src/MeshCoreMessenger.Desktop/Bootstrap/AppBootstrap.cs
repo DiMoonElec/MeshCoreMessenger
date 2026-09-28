@@ -48,6 +48,8 @@ public static class AppBootstrap
         services.AddSingleton<IPlatformPowerEvents>(_ => DesktopPlatformPowerEvents.Create());
         services.AddSingleton<IConnectionSupervisor, ConnectionSupervisor>();
         services.AddSingleton<DesktopConnectionLifecycle>();
+        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddSingleton<IMessageCommitNotifications, MessageCommitNotifications>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();

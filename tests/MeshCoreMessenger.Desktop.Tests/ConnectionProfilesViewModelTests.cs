@@ -50,7 +50,8 @@ public sealed class ConnectionProfilesViewModelTests
     {
         var manager = new FakeProfileManager();
         var catalog = new FakeSerialPortCatalog(["/dev/cu.usbserial-0001"]);
-        var viewModel = CreateViewModel(manager, catalog);
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(manager, catalog, supervisor);
         await viewModel.LoadAsync(CancellationToken);
         viewModel.ProfileName = "USB node";
         viewModel.SelectedTransport = ConnectionTransportKind.Serial;
@@ -80,7 +81,8 @@ public sealed class ConnectionProfilesViewModelTests
         Assert.False(draft.Reconnect);
         Assert.Equal(2, catalog.Calls);
         Assert.False(viewModel.HasError);
-        Assert.NotNull(viewModel.SelectedProfile);
+        var selected = Assert.IsType<ConnectionProfileListItem>(viewModel.SelectedProfile);
+        Assert.Equal([selected.Id], supervisor.SwitchedProfiles);
         await viewModel.StopAsync();
     }
 
@@ -149,7 +151,13 @@ public sealed class ConnectionProfilesViewModelTests
     private static ConnectionProfilesViewModel CreateViewModel(
         FakeProfileManager manager,
         ISerialPortCatalog catalog) =>
-        new(manager, catalog, NullLogger<ConnectionProfilesViewModel>.Instance);
+        CreateViewModel(manager, catalog, new FakeConnectionSupervisor());
+
+    private static ConnectionProfilesViewModel CreateViewModel(
+        FakeProfileManager manager,
+        ISerialPortCatalog catalog,
+        IConnectionSupervisor supervisor) =>
+        new(manager, supervisor, catalog, NullLogger<ConnectionProfilesViewModel>.Instance);
 
     private static ConnectionProfile CreateSerialProfile(string name, string portName)
     {
