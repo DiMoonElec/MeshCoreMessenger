@@ -18,11 +18,13 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     private readonly List<CompanionSessionEvent> _messagesBeforeDirectories = [];
     private readonly Dictionary<byte, ChannelBindingRecord> _stableBindings = [];
     private readonly HashSet<byte> _transitionSlots = [];
-    private CancellationTokenSource? _stop;
+    private CancellationTokenSource? _workerStop;
+    private CancellationTokenSource? _eventStop;
     private Task? _eventPump;
     private Task? _worker;
     private TaskCompletionSource _initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource<Exception> _ingestFailure = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<Exception> _failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private CompanionSession? _session;
     private Guid _nodeId;
     private int _directoriesReady;
@@ -41,6 +43,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
     public ReceiveCoordinatorState State => _state;
     public Exception? LastError { get; private set; }
+    internal Task<Exception> Failure => _failure.Task;
 
     /// <summary>Completes after directories, initial drain, both event barriers and binding activation.</summary>
     public Task SynchronizeAsync(CompanionSession session, CancellationToken cancellationToken = default)
@@ -65,18 +68,53 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
     public async Task StopAsync(CancellationToken cancellationToken = default)
     {
-        var stop = Interlocked.Exchange(ref _stop, null);
-        if (stop is null)
+        var workerStop = Interlocked.Exchange(ref _workerStop, null);
+        var eventStop = Interlocked.Exchange(ref _eventStop, null);
+        if (workerStop is null && eventStop is null)
         {
             return;
         }
 
-        stop.Cancel();
+        workerStop?.Cancel();
+        eventStop?.Cancel();
         _retrySignal.Release();
         _drainSignal.Release();
         var tasks = new[] { _eventPump, _worker }.Where(task => task is not null).Cast<Task>();
         await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
-        stop.Dispose();
+        workerStop?.Dispose();
+        eventStop?.Dispose();
+        _state = ReceiveCoordinatorState.Stopped;
+    }
+
+    /// <summary>Stops new directory/drain work while leaving the session event consumer alive.</summary>
+    internal async Task QuiesceAsync(CancellationToken cancellationToken = default)
+    {
+        var workerStop = Interlocked.Exchange(ref _workerStop, null);
+        if (workerStop is null)
+        {
+            return;
+        }
+
+        workerStop.Cancel();
+        _retrySignal.Release();
+        _drainSignal.Release();
+        if (_worker is not null)
+        {
+            await _worker.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        workerStop.Dispose();
+    }
+
+    /// <summary>Waits for the completed session event channel, then commits all accepted messages.</summary>
+    internal async Task CompleteAfterSessionStopAsync(CancellationToken cancellationToken = default)
+    {
+        if (_eventPump is not null)
+        {
+            await _eventPump.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        await FlushIngestOrThrowAsync(cancellationToken).ConfigureAwait(false);
+        Interlocked.Exchange(ref _eventStop, null)?.Dispose();
         _state = ReceiveCoordinatorState.Stopped;
     }
 
@@ -114,10 +152,11 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
             _session = session;
             _nodeId = nodeId;
-            _stop = new CancellationTokenSource();
+            _workerStop = new CancellationTokenSource();
+            _eventStop = new CancellationTokenSource();
             _state = ReceiveCoordinatorState.Synchronizing;
-            _eventPump = Task.Run(() => PumpEventsAsync(session, _stop.Token));
-            _worker = Task.Run(() => RunAsync(session, _stop.Token));
+            _eventPump = Task.Run(() => PumpEventsAsync(session, _eventStop.Token));
+            _worker = Task.Run(() => RunAsync(session, _workerStop.Token));
         }
     }
 
@@ -159,6 +198,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
             LastError = timeout;
             _state = ReceiveCoordinatorState.NeedsAttention;
             _initial.TrySetException(timeout);
+            _failure.TrySetResult(timeout);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -169,6 +209,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
             LastError = exception;
             _state = ReceiveCoordinatorState.NeedsAttention;
             _initial.TrySetException(exception);
+            _failure.TrySetResult(exception);
         }
     }
 
@@ -182,7 +223,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                 await FlushIngestOrThrowAsync(cancellationToken).ConfigureAwait(false);
                 return;
             }
-            catch (IngestPausedException exception)
+            catch (ReceiveIngestException exception)
             {
                 LastError = exception.InnerException ?? exception;
                 _state = ReceiveCoordinatorState.NeedsAttention;
@@ -214,7 +255,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                 await operation().ConfigureAwait(false);
                 return;
             }
-            catch (IngestPausedException exception)
+            catch (ReceiveIngestException exception)
             {
                 LastError = exception.InnerException ?? exception;
                 _state = ReceiveCoordinatorState.NeedsAttention;
@@ -318,20 +359,20 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     {
         if (_ingestor.IsPaused)
         {
-            throw new IngestPausedException(LastError);
+            throw new ReceiveIngestException(LastError);
         }
 
         var flush = _ingestor.FlushAsync(cancellationToken);
         var completed = await Task.WhenAny(flush, _ingestFailure.Task).ConfigureAwait(false);
         if (completed != flush)
         {
-            throw new IngestPausedException(await _ingestFailure.Task.ConfigureAwait(false));
+            throw new ReceiveIngestException(await _ingestFailure.Task.ConfigureAwait(false));
         }
 
         await flush.ConfigureAwait(false);
         if (_ingestor.IsPaused)
         {
-            throw new IngestPausedException(LastError);
+            throw new ReceiveIngestException(LastError);
         }
     }
 
@@ -408,12 +449,14 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
     private bool ConsumeDrainPending() => Interlocked.Exchange(ref _drainPending, 0) != 0;
 
-    private void OnIngestFailed(object? sender, MessageIngestorErrorEventArgs error) =>
+    private void OnIngestFailed(object? sender, MessageIngestorErrorEventArgs error)
+    {
         _ingestFailure.TrySetResult(error.Exception);
+        _failure.TrySetResult(new ReceiveIngestException(error.Exception));
+    }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
-    private sealed class IngestPausedException(Exception? innerException) : Exception("Incoming message persistence is paused.", innerException);
 }
 
 public enum ReceiveCoordinatorState
@@ -426,3 +469,6 @@ public enum ReceiveCoordinatorState
 }
 
 public sealed class ReceiveDrainTimeoutException(string message, Exception innerException) : Exception(message, innerException);
+
+public sealed class ReceiveIngestException(Exception? innerException)
+    : Exception("Incoming message persistence is paused.", innerException);

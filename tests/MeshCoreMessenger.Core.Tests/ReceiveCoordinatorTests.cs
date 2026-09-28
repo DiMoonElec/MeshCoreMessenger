@@ -148,6 +148,31 @@ public sealed class ReceiveCoordinatorTests
         Assert.Null(messages[1].UnknownChannelIdentity);
     }
 
+    [Fact]
+    public async Task QuiesceKeepsEventConsumerAliveThroughSessionBarrierAndIngestCommit()
+    {
+        await using var context = await CoordinatorContext.CreateAsync();
+        var contactKey = Key(44);
+        context.Client.Contacts = [Contact(contactKey, "Closing sender")];
+        await using var session = await context.CreateStartedSessionAsync();
+        await using var coordinator = context.CreateCoordinator();
+        await coordinator.SynchronizeAsync(session, CancellationToken);
+        context.Client.FlushAction = () =>
+        {
+            context.Client.EmitMessage(Message(contactKey[..6], "during close"));
+            context.Client.FlushAction = null;
+            return Task.CompletedTask;
+        };
+
+        await coordinator.QuiesceAsync(CancellationToken);
+        await session.StopAsync("Reconnect", CancellationToken);
+        await coordinator.CompleteAfterSessionStopAsync(CancellationToken);
+
+        var stored = Assert.Single(context.Store.Stored);
+        Assert.Equal("during close", Assert.IsType<ContactMessage>(stored.Message).Text);
+        Assert.Equal(ReceiveCoordinatorState.Stopped, coordinator.State);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, CancellationToken cancellationToken)
     {
         while (!condition())

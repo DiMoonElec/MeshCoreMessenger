@@ -421,7 +421,7 @@ slot: backlog сохранён как unknown, следующий проход �
 Release build прошёл без предупреждений; Core tests — 61/61, Desktop — 18/18,
 MeshCoreSharp regression suite — 92/92.
 
-#### B6 — ConnectionSupervisor, автоподключение и reconnect
+#### B6 — ConnectionSupervisor, автоподключение и reconnect (B6.1 выполнено 28.09.2026)
 
 **Цель:** сделать единственного владельца активной попытки и всех переходов
 `Offline/Connecting/Identifying/Synchronizing/Online/RetryWaiting/Disconnecting/
@@ -454,6 +454,37 @@ NeedsAttention`.
 loop; ручной stop; смена профиля; transient/permanent classification; late callback
 старой generation; suspend/wake; shutdown во время Connecting, Synchronizing и
 RetryWaiting. Тесты используют fake session/time/power events.
+
+##### B6.1 — базовый supervisor и reconnect (выполнено 28.09.2026)
+
+Реализован один сериализованный control loop с immutable snapshot состояний
+`Offline/Connecting/Identifying/Synchronizing/Online/RetryWaiting/Disconnecting/
+NeedsAttention`. `StartAutoConnect`, `ConnectNow`, ручное отключение и shutdown не
+создают параллельных циклов. Каждая новая generation получает новый
+`CompanionSession` и `ReceiveCoordinator`; следующая попытка начинается только после
+полного завершения предыдущей.
+
+Attempt lifecycle передаётся supervisor отдельным сигналом и не читает
+`CompanionSession.Events`: единственным consumer этой очереди остаётся
+`ReceiveCoordinator`. Закрытие разделено на quiesce новых drain, остановку сессии с
+library event barrier, дочитывание application events и ingest barrier. Событие,
+пришедшее во время финального session barrier, покрыто отдельным regression test и
+коммитится до завершения attempt.
+
+Добавлены transient/permanent classification, учёт `Reconnect=false`, задержки
+1/2/4/8/15/30 секунд с injectable jitter ±20%, сброс backoff после 60 секунд Online
+и generation guard для поздних progress/lifecycle callbacks. Timeout
+`SYNC_NEXT_MESSAGE` закрывает старую session и создаёт новую; mismatch ключа,
+ошибки БД/ingest и несовместимые/невалидные настройки переходят в `NeedsAttention`
+без reconnect loop. Supervisor не имеет API отправки, advert или mutation.
+
+Проверено: полный Release build без предупреждений; Core tests — 80/80, Desktop —
+18/18, MeshCoreSharp regression suite — 92/92. Тесты используют fake attempts,
+управляемое время/delay/jitter и временную SQLite. Физическая нода не использовалась.
+
+В B6.1 намеренно не входят смена профиля, suspend/wake, platform power adapters,
+Desktop startup/autoconnect и UI состояния. Эти части остаются для B6.2/B7; весь B6
+и исходный checklist этапа B пока не завершены.
 
 #### B7 — интеграция Desktop, штатное закрытие и приёмка Stage B
 

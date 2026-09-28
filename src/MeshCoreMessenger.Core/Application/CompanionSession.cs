@@ -62,6 +62,8 @@ public sealed class CompanionSession : IAsyncDisposable
     public CompanionSessionState State => _state;
     public ChannelReader<CompanionSessionEvent> Events => _events.Reader;
 
+    internal event EventHandler<CompanionSessionLifecycleEventArgs>? LifecycleChanged;
+
     internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
@@ -108,9 +110,9 @@ public sealed class CompanionSession : IAsyncDisposable
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                _state = CompanionSessionState.Connecting;
+                SetState(CompanionSessionState.Connecting);
                 await _client.ConnectAsync(cancellationToken).ConfigureAwait(false);
-                _state = CompanionSessionState.Identifying;
+                SetState(CompanionSessionState.Identifying);
                 var self = await _client.StartAsync(cancellationToken).ConfigureAwait(false);
                 var publicKey = self.PublicKey.ToArray();
                 if (publicKey.Length != 32)
@@ -138,9 +140,9 @@ public sealed class CompanionSession : IAsyncDisposable
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                _state = requiresConfirmation
+                SetState(requiresConfirmation
                     ? CompanionSessionState.NeedsAttention
-                    : CompanionSessionState.Identified;
+                    : CompanionSessionState.Identified);
                 return new CompanionSessionStartResult(
                     SessionId,
                     Generation,
@@ -197,7 +199,7 @@ public sealed class CompanionSession : IAsyncDisposable
                 _profile.Id,
                 LocalNode.PublicKey,
                 cancellationToken).ConfigureAwait(false);
-            _state = CompanionSessionState.Identified;
+            SetState(CompanionSessionState.Identified);
         }
         finally
         {
@@ -254,7 +256,7 @@ public sealed class CompanionSession : IAsyncDisposable
             return;
         }
 
-        _state = CompanionSessionState.Stopping;
+        SetState(CompanionSessionState.Stopping);
         Exception? cleanupError = null;
         try
         {
@@ -303,7 +305,7 @@ public sealed class CompanionSession : IAsyncDisposable
             cleanupError ??= exception;
         }
 
-        _state = finalState;
+        SetState(finalState);
         _events.Writer.TryComplete();
         if (cleanupError is not null)
         {
@@ -311,19 +313,35 @@ public sealed class CompanionSession : IAsyncDisposable
         }
     }
 
-    private void OnConnectionStateChanged(object? sender, MeshCoreConnectionStateChangedEventArgs args) =>
+    private void OnConnectionStateChanged(object? sender, MeshCoreConnectionStateChangedEventArgs args)
+    {
         _events.Writer.TryWrite(NewEvent(CompanionSessionEventKind.ConnectionStateChanged) with
         {
             PreviousConnectionState = args.PreviousState,
             CurrentConnectionState = args.CurrentState,
         });
+        RaiseLifecycle(new CompanionSessionLifecycleEventArgs
+        {
+            SessionId = SessionId,
+            Generation = Generation,
+            ConnectionState = args.CurrentState,
+        });
+    }
 
-    private void OnBackgroundError(object? sender, MeshCoreClientErrorEventArgs args) =>
+    private void OnBackgroundError(object? sender, MeshCoreClientErrorEventArgs args)
+    {
         _events.Writer.TryWrite(NewEvent(CompanionSessionEventKind.BackgroundError) with
         {
             ErrorType = args.Exception.GetType().FullName,
             ErrorMessage = args.Exception.Message,
         });
+        RaiseLifecycle(new CompanionSessionLifecycleEventArgs
+        {
+            SessionId = SessionId,
+            Generation = Generation,
+            Error = args.Exception,
+        });
+    }
 
     private void OnPacketReceived(object? sender, CompanionPacketEventArgs args) =>
         CopyPacket(CompanionSessionEventKind.PacketReceived, args);
@@ -360,6 +378,38 @@ public sealed class CompanionSession : IAsyncDisposable
         OccurredUtc = _timeProvider.GetUtcNow(),
         Kind = kind,
     };
+
+    private void SetState(CompanionSessionState state)
+    {
+        if (_state == state)
+        {
+            return;
+        }
+
+        _state = state;
+        RaiseLifecycle(new CompanionSessionLifecycleEventArgs
+        {
+            SessionId = SessionId,
+            Generation = Generation,
+            SessionState = state,
+        });
+    }
+
+    private void RaiseLifecycle(CompanionSessionLifecycleEventArgs args)
+    {
+        foreach (EventHandler<CompanionSessionLifecycleEventArgs> handler in
+                 LifecycleChanged?.GetInvocationList().Cast<EventHandler<CompanionSessionLifecycleEventArgs>>() ?? [])
+        {
+            try
+            {
+                handler(this, args);
+            }
+            catch
+            {
+                // Lifecycle observers must not affect session cleanup or the application event queue.
+            }
+        }
+    }
 
     private static ReceivedMessage CopyMessage(ReceivedMessage message) => message switch
     {

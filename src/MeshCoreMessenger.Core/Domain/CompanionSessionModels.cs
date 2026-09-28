@@ -39,6 +39,15 @@ public sealed record CompanionSessionStartResult(
     LocalNodeIdentity Node,
     bool RequiresNodeConfirmation);
 
+internal sealed class CompanionSessionLifecycleEventArgs : EventArgs
+{
+    public required Guid SessionId { get; init; }
+    public required long Generation { get; init; }
+    public CompanionSessionState? SessionState { get; init; }
+    public MeshCoreConnectionState? ConnectionState { get; init; }
+    public Exception? Error { get; init; }
+}
+
 public sealed record CompanionSessionEvent
 {
     public required Guid SessionId { get; init; }
