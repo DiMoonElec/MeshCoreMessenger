@@ -37,10 +37,15 @@ public static class AppBootstrap
         services.AddSingleton(storage.History);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
+        services.AddSingleton<SessionCompletionTracker>();
+        services.AddSingleton<IDurableSessionCompletion>(provider =>
+            provider.GetRequiredService<SessionCompletionTracker>());
         services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
         services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<DirectoryService>();
         services.AddSingleton<MessageIngestor>();
+        services.AddSingleton<IDurableMessageIngress>(provider =>
+            provider.GetRequiredService<MessageIngestor>());
         services.AddSingleton<IConnectionAttemptFactory, ConnectionAttemptFactory>();
         services.AddSingleton<IConnectionFailureClassifier, ConnectionFailureClassifier>();
         services.AddSingleton<IReconnectDelay, SystemReconnectDelay>();
@@ -48,12 +53,20 @@ public static class AppBootstrap
         services.AddSingleton<IPlatformPowerEvents>(_ => DesktopPlatformPowerEvents.Create());
         services.AddSingleton<IConnectionSupervisor, ConnectionSupervisor>();
         services.AddSingleton<DesktopConnectionLifecycle>();
+        services.AddSingleton<IDesktopConnectionLifecycle>(provider =>
+            provider.GetRequiredService<DesktopConnectionLifecycle>());
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<IMessageCommitNotifications, MessageCommitNotifications>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();
-        services.AddTransient(provider => new MainWindow
+        services.AddSingleton<IDesktopUiLifetime>(provider =>
+            provider.GetRequiredService<MainWindowViewModel>());
+        services.AddSingleton<DesktopShutdownCoordinator>();
+        services.AddSingleton<IDesktopShutdownCoordinator>(provider =>
+            provider.GetRequiredService<DesktopShutdownCoordinator>());
+        services.AddTransient(provider => new MainWindow(
+            provider.GetRequiredService<IDesktopShutdownCoordinator>())
         {
             DataContext = provider.GetRequiredService<MainWindowViewModel>(),
         });

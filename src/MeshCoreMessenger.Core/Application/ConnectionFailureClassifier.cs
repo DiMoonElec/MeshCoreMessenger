@@ -28,6 +28,7 @@ public sealed class ConnectionFailureClassifier : IConnectionFailureClassifier
             NodeIdentityMismatchException => ConnectionFailureDisposition.NeedsAttention,
             ConnectionAttemptPersistenceException => ConnectionFailureDisposition.NeedsAttention,
             ReceiveIngestException => ConnectionFailureDisposition.NeedsAttention,
+            SessionCompletionPersistenceException => ConnectionFailureDisposition.NeedsAttention,
             DatabaseStorageException => ConnectionFailureDisposition.NeedsAttention,
             SqliteException => ConnectionFailureDisposition.NeedsAttention,
             NotSupportedException => ConnectionFailureDisposition.NeedsAttention,

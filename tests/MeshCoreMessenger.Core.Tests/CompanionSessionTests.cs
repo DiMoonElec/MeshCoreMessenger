@@ -455,6 +455,7 @@ public sealed class CompanionSessionTests
                 profileManager,
                 storage.Nodes,
                 storage.Sessions,
+                new SessionCompletionTracker(storage.Sessions),
                 TimeProvider.System);
         }
 

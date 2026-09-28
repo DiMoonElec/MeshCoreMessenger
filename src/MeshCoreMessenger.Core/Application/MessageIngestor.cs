@@ -5,8 +5,16 @@ using MeshCoreSharp.Models;
 
 namespace MeshCoreMessenger.Core.Application;
 
+public interface IDurableMessageIngress
+{
+    bool IsPaused { get; }
+    int PendingMessageCount { get; }
+    Task FlushAsync(CancellationToken cancellationToken = default);
+    Task RetryAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>Single-consumer durable ingress. Event callbacks enqueue copied DTOs and never await SQLite.</summary>
-public sealed class MessageIngestor : IAsyncDisposable
+public sealed class MessageIngestor : IDurableMessageIngress, IAsyncDisposable
 {
     private const int OverloadMessageCount = 1_000;
     private const long OverloadByteCount = 16L * 1024 * 1024;
@@ -15,8 +23,11 @@ public sealed class MessageIngestor : IAsyncDisposable
     private readonly Channel<WorkItem> _queue = Channel.CreateUnbounded<WorkItem>(new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     private readonly SemaphoreSlim _resume = new(0);
     private readonly CancellationTokenSource _stop = new();
+    private readonly object _failureGate = new();
     private readonly Task _consumer;
     private Exception? _failure;
+    private TaskCompletionSource<Exception> _failureSignal =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
     private int _queued;
     private long _queuedBytes;
     private int _disposed;
@@ -59,16 +70,56 @@ public sealed class MessageIngestor : IAsyncDisposable
     public async Task FlushAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
+        Task<Exception> failure;
+        lock (_failureGate)
+        {
+            if (_failure is { } currentFailure)
+            {
+                throw new ReceiveIngestException(currentFailure);
+            }
+
+            failure = _failureSignal.Task;
+        }
+
         var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         await _queue.Writer.WriteAsync(new BarrierWork(completion), cancellationToken).ConfigureAwait(false);
-        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var barrier = completion.Task.WaitAsync(cancellationToken);
+        var completed = await Task.WhenAny(barrier, failure).ConfigureAwait(false);
+        if (completed == failure)
+        {
+            throw new ReceiveIngestException(await failure.ConfigureAwait(false));
+        }
+
+        await barrier.ConfigureAwait(false);
+        lock (_failureGate)
+        {
+            if (_failure is { } currentFailure)
+            {
+                throw new ReceiveIngestException(currentFailure);
+            }
+        }
     }
 
     public Task RetryAsync(CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         cancellationToken.ThrowIfCancellationRequested();
-        if (Interlocked.Exchange(ref _failure, null) is not null) _resume.Release();
+        var resume = false;
+        lock (_failureGate)
+        {
+            if (_failure is not null)
+            {
+                _failure = null;
+                _failureSignal = new TaskCompletionSource<Exception>(
+                    TaskCreationOptions.RunContinuationsAsynchronously);
+                resume = true;
+            }
+        }
+
+        if (resume)
+        {
+            _resume.Release();
+        }
         return Task.CompletedTask;
     }
 
@@ -105,7 +156,17 @@ public sealed class MessageIngestor : IAsyncDisposable
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return; }
                 catch (Exception exception)
                 {
-                    if (Interlocked.CompareExchange(ref _failure, exception, null) is null) RaiseFailed(exception);
+                    var newlyPaused = false;
+                    lock (_failureGate)
+                    {
+                        if (_failure is null)
+                        {
+                            _failure = exception;
+                            _failureSignal.TrySetResult(exception);
+                            newlyPaused = true;
+                        }
+                    }
+                    if (newlyPaused) RaiseFailed(exception);
                     await WaitUntilResumedAsync().ConfigureAwait(false);
                 }
             }

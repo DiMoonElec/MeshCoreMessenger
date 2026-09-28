@@ -67,6 +67,9 @@ public sealed class MessageIngestorTests
         await failed.Task.WaitAsync(CancellationToken);
         Assert.True(ingestor.IsPaused);
         Assert.Equal(1, ingestor.PendingMessageCount);
+        var flushError = await Assert.ThrowsAsync<ReceiveIngestException>(
+            () => ingestor.FlushAsync(CancellationToken));
+        Assert.IsType<IOException>(flushError.InnerException);
         await ingestor.RetryAsync(CancellationToken);
         await ingestor.FlushAsync(CancellationToken);
         Assert.False(ingestor.IsPaused);
@@ -89,6 +92,34 @@ public sealed class MessageIngestorTests
         Assert.Single(store.Stored);
     }
 
+    [Fact]
+    public async Task FailureRaisedDuringFlushCompletesItWithErrorAndKeepsWorkForRetry()
+    {
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var store = new ControlledStore
+        {
+            Gate = gate,
+            StoreStarted = started,
+            FailuresRemaining = 1,
+        };
+        await using var ingestor = new MessageIngestor(store, TimeProvider.System);
+        ingestor.Enqueue(Guid.NewGuid(), Guid.NewGuid(), Channel("shutdown boundary"));
+        await started.Task.WaitAsync(CancellationToken);
+
+        var flush = ingestor.FlushAsync(CancellationToken);
+        Assert.False(flush.IsCompleted);
+        gate.SetResult();
+
+        await Assert.ThrowsAsync<ReceiveIngestException>(() => flush);
+        Assert.True(ingestor.IsPaused);
+        Assert.Equal(1, ingestor.PendingMessageCount);
+
+        await ingestor.RetryAsync(CancellationToken);
+        await ingestor.FlushAsync(CancellationToken);
+        Assert.Single(store.Stored);
+    }
+
     private static ChannelMessage Channel(string text) => new(1, 1, MessageTextType.Plain, DateTimeOffset.UtcNow, text, null);
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
@@ -97,18 +128,20 @@ public sealed class MessageIngestorTests
         private readonly ConcurrentDictionary<Guid, byte> _persisted = new();
         private int _failuresRemaining;
         public TaskCompletionSource? Gate { get; init; }
+        public TaskCompletionSource? StoreStarted { get; init; }
         public int FailuresRemaining { set => _failuresRemaining = value; }
         public ConcurrentQueue<IncomingMessageEnvelope> Stored { get; } = [];
 
         public async Task<StoredIncomingMessage> StoreAsync(IncomingMessageEnvelope envelope, CancellationToken cancellationToken = default)
         {
-            if (Interlocked.Decrement(ref _failuresRemaining) >= 0)
-            {
-                throw new IOException("Simulated durable-store failure.");
-            }
+            StoreStarted?.TrySetResult();
             if (Gate is not null)
             {
                 await Gate.Task.WaitAsync(cancellationToken);
+            }
+            if (Interlocked.Decrement(ref _failuresRemaining) >= 0)
+            {
+                throw new IOException("Simulated durable-store failure.");
             }
             Stored.Enqueue(envelope);
             _persisted.TryAdd(envelope.EventId, 0);

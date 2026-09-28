@@ -14,6 +14,7 @@ public sealed class CompanionSession : IAsyncDisposable
     private readonly IConnectionProfileManager _profiles;
     private readonly INodeStore _nodes;
     private readonly ISessionStore _sessions;
+    private readonly IDurableSessionCompletion _sessionCompletions;
     private readonly TimeProvider _timeProvider;
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Channel<CompanionSessionEvent> _events = Channel.CreateUnbounded<CompanionSessionEvent>(
@@ -31,6 +32,7 @@ public sealed class CompanionSession : IAsyncDisposable
         IConnectionProfileManager profiles,
         INodeStore nodes,
         ISessionStore sessions,
+        IDurableSessionCompletion sessionCompletions,
         TimeProvider timeProvider)
     {
         SessionId = sessionId;
@@ -43,6 +45,7 @@ public sealed class CompanionSession : IAsyncDisposable
         _profiles = profiles;
         _nodes = nodes;
         _sessions = sessions;
+        _sessionCompletions = sessionCompletions;
         _timeProvider = timeProvider;
 
         _client.ConnectionStateChanged += OnConnectionStateChanged;
@@ -294,7 +297,7 @@ public sealed class CompanionSession : IAsyncDisposable
 
         try
         {
-            await _sessions.EndAsync(
+            await _sessionCompletions.EndAsync(
                 SessionId,
                 _timeProvider.GetUtcNow(),
                 reason,
@@ -302,7 +305,9 @@ public sealed class CompanionSession : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            cleanupError ??= exception;
+            // Durable session completion must dominate transport cleanup failures so
+            // the supervisor cannot classify a database problem as a transient reconnect.
+            cleanupError = exception;
         }
 
         SetState(finalState);

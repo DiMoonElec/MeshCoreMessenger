@@ -33,6 +33,9 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
         Assert.NotNull(services.GetRequiredService<DirectoryService>());
         Assert.NotNull(services.GetRequiredService<MessageIngestor>());
+        Assert.Same(
+            services.GetRequiredService<SessionCompletionTracker>(),
+            services.GetRequiredService<IDurableSessionCompletion>());
         Assert.NotNull(services.GetRequiredService<IConnectionAttemptFactory>());
         Assert.NotNull(services.GetRequiredService<IConnectionFailureClassifier>());
         Assert.NotNull(services.GetRequiredService<IReconnectDelay>());
@@ -41,6 +44,13 @@ public sealed class AppBootstrapTests
         var supervisor = services.GetRequiredService<IConnectionSupervisor>();
         Assert.Same(supervisor, services.GetRequiredService<IConnectionSupervisor>());
         Assert.NotNull(services.GetRequiredService<DesktopConnectionLifecycle>());
+        Assert.Same(
+            services.GetRequiredService<DesktopConnectionLifecycle>(),
+            services.GetRequiredService<IDesktopConnectionLifecycle>());
+        Assert.Same(
+            services.GetRequiredService<MessageIngestor>(),
+            services.GetRequiredService<IDurableMessageIngress>());
+        Assert.NotNull(services.GetRequiredService<IDesktopShutdownCoordinator>());
         Assert.NotNull(services.GetRequiredService<IUiDispatcher>());
         Assert.NotNull(services.GetRequiredService<IMessageCommitNotifications>());
         Assert.Null(services.GetService<ReceiveCoordinator>());

@@ -265,6 +265,20 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(dispatches, dispatcher.Calls);
     }
 
+    [Fact]
+    public async Task ShutdownPersistenceFailureRemainsVisibleAfterUiScenariosStop()
+    {
+        var viewModel = CreateViewModel(new FakeHistoryReader());
+        await viewModel.StopAsync();
+
+        await ((IDesktopUiLifetime)viewModel).ReportShutdownFailureAsync(
+            new IOException("disk full"));
+
+        Assert.True(viewModel.HasError);
+        Assert.Contains("повторите закрытие", viewModel.ErrorMessage, StringComparison.Ordinal);
+        Assert.Contains("Закрытие отменено", viewModel.Status, StringComparison.Ordinal);
+    }
+
     private static MainWindowViewModel CreateViewModel(
         ILocalHistoryReader history,
         FakeConnectionSupervisor? supervisor = null,

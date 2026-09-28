@@ -348,7 +348,12 @@ public sealed class DirectoryServiceTests
         {
             var profiles = new ConnectionProfileManager(Storage.ConnectionProfiles, Storage.Settings, TimeProvider.System);
             var factory = new CompanionSessionFactory(
-                new FakeClientFactory(client), profiles, Storage.Nodes, Storage.Sessions, TimeProvider.System);
+                new FakeClientFactory(client),
+                profiles,
+                Storage.Nodes,
+                Storage.Sessions,
+                new SessionCompletionTracker(Storage.Sessions),
+                TimeProvider.System);
             var session = await factory.CreateAsync(Profile, generation: 1, CancellationToken);
             await session.StartAsync(CancellationToken);
             return session;

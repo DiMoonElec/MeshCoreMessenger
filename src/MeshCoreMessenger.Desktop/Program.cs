@@ -39,7 +39,7 @@ internal static class Program
                 {
                     var viewModel = services.GetRequiredService<MainWindowViewModel>();
                     viewModel.LoadAsync().GetAwaiter().GetResult();
-                    var connectionLifecycle = services.GetRequiredService<DesktopConnectionLifecycle>();
+                    var shutdown = services.GetRequiredService<DesktopShutdownCoordinator>();
                     App.Services = services;
                     try
                     {
@@ -49,11 +49,12 @@ internal static class Program
                     {
                         try
                         {
-                            viewModel.StopAsync().GetAwaiter().GetResult();
+                            shutdown.ShutdownForProcessExitAsync().GetAwaiter().GetResult();
                         }
-                        finally
+                        catch (DesktopShutdownException exception)
                         {
-                            connectionLifecycle.ShutdownAsync().GetAwaiter().GetResult();
+                            // A forced OS/process shutdown cannot keep the UI alive for retry.
+                            Console.Error.WriteLine(exception.Message);
                         }
                     }
                 }

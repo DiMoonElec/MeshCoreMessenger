@@ -10,7 +10,7 @@ using MeshCoreMessenger.Desktop.Lifecycle;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
-public sealed class MainWindowViewModel : ObservableObject
+public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 {
     private const int ConversationPageSize = 200;
     private const int MessagePageSize = 100;
@@ -215,6 +215,19 @@ public sealed class MainWindowViewModel : ObservableObject
         {
         }
 
+    }
+
+    async Task IDesktopUiLifetime.ReportShutdownFailureAsync(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                ErrorMessage = "Не удалось сохранить все входящие сообщения. " +
+                    "Исправьте проблему с локальным хранилищем и повторите закрытие окна.";
+                Status = "Закрытие отменено: данные ещё не сохранены";
+            },
+            CancellationToken.None);
     }
 
     private Task Track(Task task)

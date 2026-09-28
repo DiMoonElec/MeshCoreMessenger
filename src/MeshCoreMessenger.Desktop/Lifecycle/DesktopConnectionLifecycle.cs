@@ -2,8 +2,16 @@ using MeshCoreMessenger.Core.Application;
 
 namespace MeshCoreMessenger.Desktop.Lifecycle;
 
+internal interface IDesktopConnectionLifecycle
+{
+    Task StartAsync(CancellationToken cancellationToken = default);
+    Task ShutdownAsync(CancellationToken cancellationToken = default);
+}
+
 /// <summary>Owns the single Desktop startup and shutdown invocation of the connection supervisor.</summary>
-internal sealed class DesktopConnectionLifecycle(IConnectionSupervisor supervisor) : IAsyncDisposable
+internal sealed class DesktopConnectionLifecycle(IConnectionSupervisor supervisor) :
+    IDesktopConnectionLifecycle,
+    IAsyncDisposable
 {
     private readonly object _gate = new();
     private Task? _startup;

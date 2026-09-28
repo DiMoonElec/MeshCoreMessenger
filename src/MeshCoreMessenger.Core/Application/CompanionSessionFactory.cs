@@ -8,6 +8,7 @@ public sealed class CompanionSessionFactory(
     IConnectionProfileManager profiles,
     INodeStore nodes,
     ISessionStore sessions,
+    IDurableSessionCompletion sessionCompletions,
     TimeProvider timeProvider) : ICompanionSessionFactory
 {
     public async Task<CompanionSession> CreateAsync(
@@ -38,11 +39,12 @@ public sealed class CompanionSessionFactory(
                 profiles,
                 nodes,
                 sessions,
+                sessionCompletions,
                 timeProvider);
         }
         catch
         {
-            await sessions.EndAsync(
+            await sessionCompletions.EndAsync(
                 sessionId,
                 timeProvider.GetUtcNow(),
                 "Client creation failed",

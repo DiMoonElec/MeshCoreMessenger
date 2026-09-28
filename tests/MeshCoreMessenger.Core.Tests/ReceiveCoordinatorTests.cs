@@ -269,7 +269,7 @@ public sealed class ReceiveCoordinatorTests
             await storage.ConnectionProfiles.SaveAsync(profile, CancellationToken);
             var client = new FakeClient(); var store = new CaptureStore();
             var profiles = new ConnectionProfileManager(storage.ConnectionProfiles, storage.Settings, TimeProvider.System);
-            return new CoordinatorContext(root, storage, profile, client, new CompanionSessionFactory(new OneClientFactory(client), profiles, storage.Nodes, storage.Sessions, TimeProvider.System), store);
+            return new CoordinatorContext(root, storage, profile, client, new CompanionSessionFactory(new OneClientFactory(client), profiles, storage.Nodes, storage.Sessions, new SessionCompletionTracker(storage.Sessions), TimeProvider.System), store);
         }
         public async Task<CompanionSession> CreateStartedSessionAsync()
         {
