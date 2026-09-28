@@ -550,6 +550,76 @@ callback и отсутствие перекрывающихся attempts. Физ
 все Core/Desktop/MeshCoreSharp regression tests. Stage B завершать только после
 документированной аппаратной проверки либо явно оставить её непроверенным блокером.
 
+##### B7.1 — composition root и неблокирующий startup (выполнено 28.09.2026)
+
+- Зарегистрировать attempt factory, supervisor, retry policy и platform power events;
+  `ReceiveCoordinator` не регистрировать singleton, поскольку он принадлежит одной
+  attempt и создаётся её factory.
+- Добавить единственного Desktop lifecycle owner с идемпотентными startup/shutdown.
+  Локальную историю загрузить до сетевой политики, а `StartAutoConnect` вызвать после
+  показа окна. Ожидание сети/Serial не должно блокировать UI startup.
+- При обычном завершении сначала остановить UI-сценарии, затем supervisor, после него
+  асинхронно закрыть DI services, SQLite и instance lock. Отменяемое закрытие при
+  ошибке commit будет добавлено в B7.3.
+
+Тесты B7.1: полный DI graph; один lifecycle/supervisor; ровно один startup/shutdown;
+новый coordinator на attempt; отсутствие transport attempt при выключенном
+`AutoConnect`; заблокированный connect не задерживает возврат startup-команды.
+
+Реализовано: Desktop DI регистрирует production attempt factory, failure classifier,
+delay/jitter, platform power events и единственный supervisor. Лишняя singleton-
+регистрация `ReceiveCoordinator` удалена: coordinator по-прежнему создаётся factory
+отдельно для каждой attempt. `DesktopConnectionLifecycle` объединяет повторные
+startup/shutdown вызовы и при гонке дожидается принятого startup перед shutdown.
+
+`Program` сначала открывает lock/SQLite и загружает локальную историю. Lifecycle
+создаётся только после этого, а `StartAutoConnect` вызывается обработчиком первого
+`Window.Opened`; создание transport/client остаётся фоновой работой supervisor и не
+задерживает UI. При обычном выходе останавливаются ViewModels, затем supervisor,
+после чего DI services закрываются через `DisposeAsync`, далее SQLite и instance lock.
+Отмена уже начавшегося закрытия при persistence failure намеренно остаётся B7.3.
+
+Проверено: полный Release build без предупреждений; Core tests — 94/94, Desktop —
+26/26, MeshCoreSharp regression suite — 92/92. Новые fake-тесты подтверждают один
+startup/shutdown, их порядок, возврат startup при заблокированном создании connection
+attempt и отсутствие attempt при `AutoConnect=false`; bootstrap test проверяет полный
+DI graph и отсутствие singleton coordinator. Физическая нода не использовалась.
+
+##### B7.2 — состояние подключения и commit-driven UI
+
+- Проецировать immutable supervisor snapshot, выбранный профиль, причину и время
+  retry в MainWindow; добавить минимальные Connect/Disconnect действия и применение
+  `SwitchProfile` после явной смены профиля.
+- `MessageCommitted` обрабатывать только через UI dispatcher и перечитывать SQLite
+  после commit; объединять частые обновления и отписываться при остановке ViewModel.
+
+Тесты B7.2: отображение состояний; UI-thread dispatch; profile switch; отсутствие
+обновления до commit; обновление истории после commit; поздние callbacks после stop.
+
+##### B7.3 — отменяемое и восстанавливаемое закрытие
+
+- Перестать подавлять persistence failure в shutdown contract. Закрытие должно
+  сообщать результат и сохранять возможность повторить durable session-end/ingest
+  flush до уничтожения writer.
+- Перехватить Avalonia shutdown/closing: обычное закрытие отменяется на время
+  quiesce/barriers/commit. При ошибке окно, pending DTO, SQLite и instance lock
+  остаются живыми; после явного retry закрытие повторяется. Параллельные запросы
+  закрытия объединяются в одну операцию. OS shutdown остаётся документированным
+  best-effort сценарием.
+
+Тесты B7.3: сообщение на границе shutdown; успешный и неуспешный flush; retry без
+потери pending DTO; повтор закрытия; session end; точный порядок disposal; освобождение
+БД и instance lock только после успеха; история доступна после рестарта.
+
+##### B7.4 — end-to-end и аппаратная приёмка
+
+- Production-like harness: fake Companion, настоящий supervisor/coordinator/ingestor
+  и временная SQLite. Покрыть сообщения во время Start, directory load, reconnect и
+  shutdown, отсутствие второго reconnect loop и автоматических передач/mutations.
+- После всех fake/regression tests выполнить Serial-приёмку без RF-передач: uptime
+  без reset, backlog drain, unplug/replug и два запуска; по возможности проверить TCP
+  к той же ноде. Результат записать в `docs/testing/`.
+
 Готово, когда сообщения с fake transport, пришедшие во время запуска/получения
 справочников/отключения, записываются в правильную историю; в старте нет автоматических
 передач; два reconnect-цикла не возникают. Затем на ноде проверить чтение накопленных

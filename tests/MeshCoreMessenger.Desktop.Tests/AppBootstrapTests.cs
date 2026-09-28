@@ -4,6 +4,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
+using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
 
@@ -32,7 +33,15 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
         Assert.NotNull(services.GetRequiredService<DirectoryService>());
         Assert.NotNull(services.GetRequiredService<MessageIngestor>());
-        Assert.NotNull(services.GetRequiredService<ReceiveCoordinator>());
+        Assert.NotNull(services.GetRequiredService<IConnectionAttemptFactory>());
+        Assert.NotNull(services.GetRequiredService<IConnectionFailureClassifier>());
+        Assert.NotNull(services.GetRequiredService<IReconnectDelay>());
+        Assert.NotNull(services.GetRequiredService<IReconnectJitter>());
+        Assert.NotNull(services.GetRequiredService<IPlatformPowerEvents>());
+        var supervisor = services.GetRequiredService<IConnectionSupervisor>();
+        Assert.Same(supervisor, services.GetRequiredService<IConnectionSupervisor>());
+        Assert.NotNull(services.GetRequiredService<DesktopConnectionLifecycle>());
+        Assert.Null(services.GetService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
         Assert.Same(storage.IncomingMessages, services.GetRequiredService<IIncomingMessageStore>());
         Assert.NotNull(services.GetRequiredService<ISerialPortCatalog>());

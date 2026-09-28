@@ -2,6 +2,7 @@ using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
+using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
 
@@ -33,17 +34,32 @@ internal static class Program
 
             try
             {
-                using var services = AppBootstrap.CreateServiceProvider(paths, storage);
-                var viewModel = services.GetRequiredService<MainWindowViewModel>();
-                viewModel.LoadAsync().GetAwaiter().GetResult();
-                App.Services = services;
+                var services = AppBootstrap.CreateServiceProvider(paths, storage);
                 try
                 {
-                    return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+                    var viewModel = services.GetRequiredService<MainWindowViewModel>();
+                    viewModel.LoadAsync().GetAwaiter().GetResult();
+                    var connectionLifecycle = services.GetRequiredService<DesktopConnectionLifecycle>();
+                    App.Services = services;
+                    try
+                    {
+                        return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+                    }
+                    finally
+                    {
+                        try
+                        {
+                            viewModel.StopAsync().GetAwaiter().GetResult();
+                        }
+                        finally
+                        {
+                            connectionLifecycle.ShutdownAsync().GetAwaiter().GetResult();
+                        }
+                    }
                 }
                 finally
                 {
-                    viewModel.StopAsync().GetAwaiter().GetResult();
+                    services.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
             finally
