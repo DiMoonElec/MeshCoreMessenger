@@ -122,6 +122,46 @@ public sealed class ConnectionProfileTests
     }
 
     [Fact]
+    public async Task SelectsExistingProfileWithoutRewritingIt()
+    {
+        using var temporary = new TemporaryDirectory();
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var first = CreateTcpProfile(Guid.NewGuid(), "First", DateTimeOffset.UtcNow.AddDays(-1));
+        var second = CreateTcpProfile(Guid.NewGuid(), "Second", DateTimeOffset.UtcNow);
+        await storage.ConnectionProfiles.SaveAsync(first, CancellationToken);
+        await storage.ConnectionProfiles.SaveAsync(second, CancellationToken);
+        var manager = new ConnectionProfileManager(
+            storage.ConnectionProfiles,
+            storage.Settings,
+            TimeProvider.System);
+
+        var selected = await manager.SelectAsync(second.Id, CancellationToken);
+
+        Assert.Equal(second, selected);
+        Assert.Equal(second, await manager.GetSelectedProfileAsync(CancellationToken));
+        Assert.Equal(second, await storage.ConnectionProfiles.GetAsync(second.Id, CancellationToken));
+    }
+
+    [Fact]
+    public async Task MissingProfileSelectionDoesNotReplaceCurrentSelection()
+    {
+        using var temporary = new TemporaryDirectory();
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var profile = CreateTcpProfile(Guid.NewGuid(), "Current", DateTimeOffset.UtcNow);
+        await storage.ConnectionProfiles.SaveAsync(profile, CancellationToken);
+        var manager = new ConnectionProfileManager(
+            storage.ConnectionProfiles,
+            storage.Settings,
+            TimeProvider.System);
+        await manager.SelectAsync(profile.Id, CancellationToken);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() =>
+            manager.SelectAsync(Guid.NewGuid(), CancellationToken));
+
+        Assert.Equal(profile, await manager.GetSelectedProfileAsync(CancellationToken));
+    }
+
+    [Fact]
     public void MapsTcpProfileWithoutEnablingAutomaticMessageDrain()
     {
         var profile = CreateTcpProfile(Guid.NewGuid(), "TCP", DateTimeOffset.UtcNow) with

@@ -194,6 +194,15 @@ public sealed class ConnectionProfilesViewModelTests
             return Task.FromResult(Selected);
         }
 
+        public Task<ConnectionProfile> SelectAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Selected = Profiles.Single(item => item.Id == profileId);
+            return Task.FromResult(Selected);
+        }
+
         public Task<ConnectionProfile> SaveAndSelectAsync(
             ConnectionProfileDraft draft,
             CancellationToken cancellationToken = default)

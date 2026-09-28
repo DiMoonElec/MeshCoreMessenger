@@ -144,9 +144,9 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
 ## B. Подключение и запись входящих
 
 - [ ] Профили TCP/Serial, выбор порта, сохранение настроек, автоподключение.
-- [ ] ConnectionSupervisor: state machine, отмена, backoff с jitter,
+- [x] ConnectionSupervisor: state machine, отмена, backoff с jitter,
   ручная остановка, смена профиля и сон/пробуждение.
-- [ ] Отдельные SessionId/NodeId, проверка ключа ноды после Start, защита от
+- [x] Отдельные SessionId/NodeId, проверка ключа ноды после Start, защита от
   поздних событий прежней сессии.
 - [x] AutoReceiveMessages=false, загрузка справочников до начального drain,
   объединение push-сигналов и безопасная реакция на тайм-аут.
@@ -421,7 +421,7 @@ slot: backlog сохранён как unknown, следующий проход �
 Release build прошёл без предупреждений; Core tests — 61/61, Desktop — 18/18,
 MeshCoreSharp regression suite — 92/92.
 
-#### B6 — ConnectionSupervisor, автоподключение и reconnect (B6.1 выполнено 28.09.2026)
+#### B6 — ConnectionSupervisor, автоподключение и reconnect (выполнено 28.09.2026)
 
 **Цель:** сделать единственного владельца активной попытки и всех переходов
 `Offline/Connecting/Identifying/Synchronizing/Online/RetryWaiting/Disconnecting/
@@ -482,9 +482,39 @@ library event barrier, дочитывание application events и ingest barri
 18/18, MeshCoreSharp regression suite — 92/92. Тесты используют fake attempts,
 управляемое время/delay/jitter и временную SQLite. Физическая нода не использовалась.
 
-В B6.1 намеренно не входят смена профиля, suspend/wake, platform power adapters,
-Desktop startup/autoconnect и UI состояния. Эти части остаются для B6.2/B7; весь B6
-и исходный checklist этапа B пока не завершены.
+В B6.1 намеренно не входили смена профиля, suspend/wake, platform power adapters,
+Desktop startup/autoconnect и UI состояния. Первые три части выполнены в B6.2;
+Desktop-интеграция и исходный checklist всего этапа B остаются для B7.
+
+##### B6.2 — смена профиля и suspend/wake (выполнено 28.09.2026)
+
+Добавлен `SwitchProfile`: существующий профиль выбирается отдельной операцией без
+перезаписи его полей, retry отменяется, а новая attempt/generation создаётся только
+после полного `StopAsync`/dispose предыдущей. Смена во время suspend только сохраняет
+выбор; соединение открывается после wake. Поздние callbacks прежнего профиля
+отсекаются тем же generation guard, параллельных attempts нет.
+
+Добавлен `IPlatformPowerEvents`. Его callbacks только ставят suspend/wake в общий
+control loop. Suspend отменяет startup/retry или полностью закрывает Online attempt;
+wake всегда создаёт новую session и не доверяет прежнему socket/port. Manual
+disconnect остаётся Offline, а `NeedsAttention` сохраняется без автоматического
+reconnect. Повторные power-события идемпотентны; shutdown отписывает supervisor.
+
+В Desktop реализованы adapters Windows через message-only window и
+`WM_POWERBROADCAST`, macOS через `IORegisterForSystemPower`/CFRunLoop с обязательным
+acknowledgement sleep, а для остальных платформ — no-op того же интерфейса. Новых
+NuGet-зависимостей нет. macOS adapter прошёл локальный start/stop smoke-test;
+Windows message mapping проверен детерминированно, но на Windows не запускался.
+
+Проверено: полный Release build без предупреждений; Core tests — 94/94, Desktop —
+21/21, MeshCoreSharp regression suite — 92/92. Fake-тесты покрывают switch из Online
+и RetryWaiting, switch во время suspend, suspend/wake из Connecting, Synchronizing,
+Online и RetryWaiting, duplicate wake, manual disconnect, `NeedsAttention`, late
+callback и отсутствие перекрывающихся attempts. Физическая нода не использовалась.
+
+Регистрация supervisor/power events в Desktop DI, startup/autoconnect и UI состояния
+намеренно не добавлены: это граница B7. SQLite schema и MeshCoreSharp/protocol не
+изменялись.
 
 #### B7 — интеграция Desktop, штатное закрытие и приёмка Stage B
 

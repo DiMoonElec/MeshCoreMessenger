@@ -178,6 +178,11 @@ public sealed class MainWindowViewModelTests
             CancellationToken cancellationToken = default) =>
             Task.FromResult<ConnectionProfile?>(null);
 
+        public Task<ConnectionProfile> SelectAsync(
+            Guid profileId,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
         public Task<ConnectionProfile> SaveAndSelectAsync(
             ConnectionProfileDraft draft,
             CancellationToken cancellationToken = default) =>

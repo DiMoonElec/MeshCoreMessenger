@@ -311,30 +311,262 @@ public sealed class ConnectionSupervisorTests
         Assert.Equal(1, context.Factory.CreateCount);
     }
 
+    [Fact]
+    public async Task SwitchProfileFullyStopsOldAttemptBeforeCreatingNewOne()
+    {
+        var context = CreateContext();
+        var second = CreateProfile("Second");
+        context.Profiles.Profiles.Add(second);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        var oldAttempt = context.Factory.Attempts[0];
+
+        await supervisor.SwitchProfileAsync(second.Id, CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.True(oldAttempt.Stopped);
+        Assert.Equal([context.Profiles.Profiles[0].Id, second.Id], context.Factory.Attempts.Select(item => item.ProfileId));
+        Assert.Equal(second.Id, supervisor.Snapshot.ProfileId);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task SwitchProfileDoesNotCreateReplacementUntilOldStopCompletes()
+    {
+        var context = CreateContext();
+        var second = CreateProfile("Second");
+        context.Profiles.Profiles.Add(second);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        var oldAttempt = context.Factory.Attempts[0];
+        oldAttempt.StopGate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        await supervisor.SwitchProfileAsync(second.Id, CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Disconnecting);
+        Assert.Equal(1, context.Factory.CreateCount);
+        Assert.Equal(1, context.Factory.ActiveCount);
+
+        oldAttempt.StopGate.SetResult();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.Equal(2, context.Factory.CreateCount);
+        Assert.True(oldAttempt.Stopped);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task SwitchProfileCancelsRetryAndStartsSelectedProfileImmediately()
+    {
+        var context = CreateContext();
+        var second = CreateProfile("Second");
+        context.Profiles.Profiles.Add(second);
+        context.Factory.EnqueueStart((_, _) => throw new MeshCoreTransportException("offline"));
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting);
+
+        await supervisor.SwitchProfileAsync(second.Id, CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.True(context.Delay.Requests[0].IsCanceled);
+        Assert.Equal(second.Id, context.Factory.Attempts[1].ProfileId);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task SuspendAndWakeReplaceOnlineAttemptWithFreshGeneration()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        var oldAttempt = context.Factory.Attempts[0];
+
+        power.Suspend();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Offline);
+        Assert.True(oldAttempt.Stopped);
+        power.Resume();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.NotEqual(oldAttempt.SessionId, context.Factory.Attempts[1].SessionId);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Theory]
+    [InlineData(ConnectionSupervisorState.Connecting)]
+    [InlineData(ConnectionSupervisorState.Synchronizing)]
+    public async Task SuspendAndWakeReplaceAttemptDuringStartup(ConnectionSupervisorState state)
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        context.Factory.EnqueueStart(async (attempt, cancellationToken) =>
+        {
+            if (state == ConnectionSupervisorState.Synchronizing)
+            {
+                attempt.EmitProgress(ConnectionAttemptPhase.Identifying);
+                attempt.EmitProgress(ConnectionAttemptPhase.Synchronizing);
+            }
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        });
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, state);
+
+        power.Suspend();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Offline);
+        power.Resume();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.True(context.Factory.Attempts[0].Stopped);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task SuspendCancelsRetryAndWakeCreatesExactlyOneAttempt()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        context.Factory.EnqueueStart((_, _) => throw new MeshCoreTransportException("offline"));
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting);
+
+        power.Suspend();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Offline);
+        power.Resume();
+        power.Resume();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.True(context.Delay.Requests[0].IsCanceled);
+        Assert.Equal(2, context.Factory.CreateCount);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task ManualDisconnectStaysOfflineAcrossSuspendAndWake()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        await supervisor.DisconnectAsync(CancellationToken);
+
+        power.Suspend();
+        power.Resume();
+        await Task.Delay(20, CancellationToken);
+
+        Assert.Equal(ConnectionSupervisorState.Offline, supervisor.Snapshot.State);
+        Assert.Equal(1, context.Factory.CreateCount);
+    }
+
+    [Fact]
+    public async Task NeedsAttentionIsPreservedAcrossSuspendAndWakeWithoutReconnect()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        context.Factory.EnqueueStart((_, _) => throw new ReceiveIngestException(new IOException("disk full")));
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.NeedsAttention);
+
+        power.Suspend();
+        await WaitUntilAsync(() => context.Factory.Attempts[0].Stopped);
+        power.Resume();
+        await Task.Delay(20, CancellationToken);
+
+        Assert.Equal(ConnectionSupervisorState.NeedsAttention, supervisor.Snapshot.State);
+        Assert.Equal(1, context.Factory.CreateCount);
+        Assert.Empty(context.Delay.History);
+    }
+
+    [Fact]
+    public async Task SwitchWhileSuspendedUsesSelectedProfileOnWake()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        var second = CreateProfile("Second");
+        context.Profiles.Profiles.Add(second);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+
+        power.Suspend();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Offline);
+        await supervisor.SwitchProfileAsync(second.Id, CancellationToken);
+        Assert.Equal(1, context.Factory.CreateCount);
+        power.Resume();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        Assert.Equal(second.Id, context.Factory.Attempts[1].ProfileId);
+    }
+
+    [Fact]
+    public async Task LateCallbackFromProfileBeforeSwitchCannotChangeNewGeneration()
+    {
+        var context = CreateContext();
+        var second = CreateProfile("Second");
+        context.Profiles.Profiles.Add(second);
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.StartAutoConnectAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        var oldAttempt = context.Factory.Attempts[0];
+        await supervisor.SwitchProfileAsync(second.Id, CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
+
+        oldAttempt.EmitProgress(ConnectionAttemptPhase.Synchronizing);
+        oldAttempt.Fail(new MeshCoreTransportException("late"));
+        await Task.Delay(20, CancellationToken);
+
+        Assert.Equal(ConnectionSupervisorState.Online, supervisor.Snapshot.State);
+        Assert.Equal(2, supervisor.Snapshot.Generation);
+        Assert.Equal(second.Id, supervisor.Snapshot.ProfileId);
+    }
+
+    [Fact]
+    public async Task ShutdownUnsubscribesFromPlatformPowerEvents()
+    {
+        var power = new FakePowerEvents();
+        var context = CreateContext(powerEvents: power);
+        var supervisor = context.CreateSupervisor();
+        Assert.Equal(2, power.SubscriptionCount);
+
+        await supervisor.ShutdownAsync(CancellationToken);
+
+        Assert.Equal(0, power.SubscriptionCount);
+    }
+
     private static SupervisorContext CreateContext(
         bool reconnect = true,
         bool autoConnect = true,
-        IReadOnlyList<double>? jitter = null)
+        IReadOnlyList<double>? jitter = null,
+        IPlatformPowerEvents? powerEvents = null)
     {
-        var profile = new ConnectionProfile
-        {
-            Id = Guid.NewGuid(),
-            Name = "Test",
-            Transport = ConnectionTransportKind.Tcp,
-            TcpHost = "127.0.0.1",
-            TcpPort = 5000,
-            AutoConnect = autoConnect,
-            Reconnect = reconnect,
-            CreatedUtc = DateTimeOffset.UnixEpoch,
-            UpdatedUtc = DateTimeOffset.UnixEpoch,
-        };
+        var profile = CreateProfile("Test") with { AutoConnect = autoConnect, Reconnect = reconnect };
         return new SupervisorContext(
             new FakeProfileManager(profile),
             new FakeAttemptFactory(),
             new FakeReconnectDelay(),
             new FakeJitter(jitter ?? [0]),
-            new FakeTimeProvider(DateTimeOffset.Parse("2026-09-28T00:00:00Z")));
+            new FakeTimeProvider(DateTimeOffset.Parse("2026-09-28T00:00:00Z")),
+            powerEvents);
     }
+
+    private static ConnectionProfile CreateProfile(string name) => new()
+    {
+        Id = Guid.NewGuid(),
+        Name = name,
+        Transport = ConnectionTransportKind.Tcp,
+        TcpHost = "127.0.0.1",
+        TcpPort = 5000,
+        AutoConnect = true,
+        Reconnect = true,
+        CreatedUtc = DateTimeOffset.UnixEpoch,
+        UpdatedUtc = DateTimeOffset.UnixEpoch,
+    };
 
     private static async Task WaitForStateAsync(
         ConnectionSupervisor supervisor,
@@ -366,7 +598,8 @@ public sealed class ConnectionSupervisorTests
         FakeAttemptFactory Factory,
         FakeReconnectDelay Delay,
         FakeJitter Jitter,
-        FakeTimeProvider Time)
+        FakeTimeProvider Time,
+        IPlatformPowerEvents? PowerEvents)
     {
         public ConnectionSupervisor CreateSupervisor() => new(
             Profiles,
@@ -374,15 +607,24 @@ public sealed class ConnectionSupervisorTests
             new ConnectionFailureClassifier(),
             Delay,
             Jitter,
-            Time);
+            Time,
+            PowerEvents);
     }
 
     private sealed class FakeProfileManager(ConnectionProfile profile) : IConnectionProfileManager
     {
+        private ConnectionProfile _selected = profile;
+        public List<ConnectionProfile> Profiles { get; } = [profile];
         public Task<IReadOnlyList<ConnectionProfile>> GetProfilesAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<ConnectionProfile>>([profile]);
+            Task.FromResult<IReadOnlyList<ConnectionProfile>>(Profiles);
         public Task<ConnectionProfile?> GetSelectedProfileAsync(CancellationToken cancellationToken = default) =>
-            Task.FromResult<ConnectionProfile?>(profile);
+            Task.FromResult<ConnectionProfile?>(_selected);
+        public Task<ConnectionProfile> SelectAsync(Guid profileId, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _selected = Profiles.Single(item => item.Id == profileId);
+            return Task.FromResult(_selected);
+        }
         public Task<ConnectionProfile> SaveAndSelectAsync(ConnectionProfileDraft draft, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
         public Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(Guid profileId, ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
@@ -404,7 +646,7 @@ public sealed class ConnectionSupervisorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             var start = _starts.Count > 0 ? _starts.Dequeue() : DefaultStart;
-            var attempt = new FakeAttempt(generation, start, OnStopped);
+            var attempt = new FakeAttempt(profile.Id, generation, start, OnStopped);
             Attempts.Add(attempt);
             var active = Interlocked.Increment(ref _activeCount);
             MaxActiveCount = Math.Max(MaxActiveCount, active);
@@ -424,35 +666,45 @@ public sealed class ConnectionSupervisorTests
     }
 
     private sealed class FakeAttempt(
+        Guid profileId,
         long generation,
         Func<FakeAttempt, CancellationToken, Task> start,
         Action stopped) : IConnectionAttempt
     {
         private readonly TaskCompletionSource<ConnectionAttemptCompletion> _completion =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _stopStarted;
         private int _stopped;
+        public Guid ProfileId { get; } = profileId;
         public long Generation { get; } = generation;
         public Guid? SessionId { get; } = Guid.NewGuid();
         public Guid? NodeId => NodeIdValue;
         public Guid? NodeIdValue { get; set; }
         public Task<ConnectionAttemptCompletion> Completion => _completion.Task;
         public bool Stopped => Volatile.Read(ref _stopped) != 0;
+        public TaskCompletionSource? StopGate { get; set; }
         public Exception? StopError { get; set; }
         public event EventHandler<ConnectionAttemptProgressEventArgs>? ProgressChanged;
 
         public Task StartAsync(CancellationToken cancellationToken = default) => start(this, cancellationToken);
-        public Task StopAsync(string reason, CancellationToken cancellationToken = default)
+        public async Task StopAsync(string reason, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (Interlocked.Exchange(ref _stopped, 1) == 0)
+            if (Interlocked.Exchange(ref _stopStarted, 1) != 0)
             {
-                stopped();
+                return;
             }
+
+            if (StopGate is not null)
+            {
+                await StopGate.Task.WaitAsync(cancellationToken);
+            }
+            stopped();
+            Volatile.Write(ref _stopped, 1);
             if (StopError is not null)
             {
                 throw StopError;
             }
-            return Task.CompletedTask;
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
         public void Fail(Exception exception) => _completion.TrySetResult(new ConnectionAttemptCompletion(exception));
@@ -521,5 +773,24 @@ public sealed class ConnectionSupervisorTests
         private DateTimeOffset _now = now;
         public override DateTimeOffset GetUtcNow() => _now;
         public void Advance(TimeSpan duration) => _now += duration;
+    }
+
+    private sealed class FakePowerEvents : IPlatformPowerEvents
+    {
+        private EventHandler? _suspending;
+        private EventHandler? _resumed;
+        public int SubscriptionCount { get; private set; }
+        public event EventHandler? Suspending
+        {
+            add { _suspending += value; SubscriptionCount++; }
+            remove { _suspending -= value; SubscriptionCount--; }
+        }
+        public event EventHandler? Resumed
+        {
+            add { _resumed += value; SubscriptionCount++; }
+            remove { _resumed -= value; SubscriptionCount--; }
+        }
+        public void Suspend() => _suspending?.Invoke(this, EventArgs.Empty);
+        public void Resume() => _resumed?.Invoke(this, EventArgs.Empty);
     }
 }

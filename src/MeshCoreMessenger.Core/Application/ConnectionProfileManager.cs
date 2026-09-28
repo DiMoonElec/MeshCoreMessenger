@@ -23,6 +23,22 @@ public sealed class ConnectionProfileManager(
             : null;
     }
 
+    public async Task<ConnectionProfile> SelectAsync(
+        Guid profileId,
+        CancellationToken cancellationToken = default)
+    {
+        if (profileId == Guid.Empty)
+        {
+            throw new ArgumentException("Connection profile ID must not be empty.", nameof(profileId));
+        }
+
+        var profile = await profiles.GetAsync(profileId, cancellationToken).ConfigureAwait(false)
+            ?? throw new KeyNotFoundException($"Connection profile '{profileId:D}' was not found.");
+        await settings.SetAsync(SelectedProfileSettingKey, profile.Id.ToString("D"), cancellationToken)
+            .ConfigureAwait(false);
+        return profile;
+    }
+
     public async Task<ConnectionProfile> SaveAndSelectAsync(
         ConnectionProfileDraft draft,
         CancellationToken cancellationToken = default)

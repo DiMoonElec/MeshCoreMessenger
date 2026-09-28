@@ -10,6 +10,7 @@ public interface IConnectionSupervisor : IAsyncDisposable
 
     Task StartAutoConnectAsync(CancellationToken cancellationToken = default);
     Task ConnectNowAsync(CancellationToken cancellationToken = default);
+    Task SwitchProfileAsync(Guid profileId, CancellationToken cancellationToken = default);
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     Task ShutdownAsync(CancellationToken cancellationToken = default);
 }
@@ -25,6 +26,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     private readonly IReconnectDelay _delay;
     private readonly IReconnectJitter _jitter;
     private readonly TimeProvider _timeProvider;
+    private readonly IPlatformPowerEvents? _powerEvents;
     private readonly Channel<SupervisorMessage> _messages = Channel.CreateUnbounded<SupervisorMessage>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     private readonly Task _loop;
@@ -38,6 +40,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     private long _generation;
     private int _retryNumber;
     private bool _connectionDesired;
+    private bool _suspended;
+    private bool _resumeAfterWake;
+    private string? _needsAttentionReason;
     private bool _exitRequested;
     private int _shutdownRequested;
 
@@ -47,7 +52,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         IConnectionFailureClassifier failures,
         IReconnectDelay delay,
         IReconnectJitter jitter,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPlatformPowerEvents? powerEvents = null)
     {
         _profiles = profiles;
         _attempts = attempts;
@@ -55,6 +61,12 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         _delay = delay;
         _jitter = jitter;
         _timeProvider = timeProvider;
+        _powerEvents = powerEvents;
+        if (_powerEvents is not null)
+        {
+            _powerEvents.Suspending += OnSuspending;
+            _powerEvents.Resumed += OnResumed;
+        }
         _loop = Task.Run(RunAsync);
     }
 
@@ -67,6 +79,20 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     public Task ConnectNowAsync(CancellationToken cancellationToken = default) =>
         SendControlAsync(ControlKind.ConnectNow, cancellationToken);
+
+    public async Task SwitchProfileAsync(Guid profileId, CancellationToken cancellationToken = default)
+    {
+        if (profileId == Guid.Empty)
+        {
+            throw new ArgumentException("Connection profile ID must not be empty.", nameof(profileId));
+        }
+
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _shutdownRequested) != 0, this);
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _messages.Writer.WriteAsync(new SwitchProfileMessage(profileId, completion), cancellationToken)
+            .ConfigureAwait(false);
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
         SendControlAsync(ControlKind.Disconnect, cancellationToken);
@@ -108,10 +134,15 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             }
             catch (Exception exception)
             {
+                _needsAttentionReason = exception.Message;
                 Publish(ConnectionSupervisorState.NeedsAttention, exception.Message, nextAttemptUtc: null);
                 if (message is ControlMessage control)
                 {
                     control.Completion.TrySetException(exception);
+                }
+                else if (message is SwitchProfileMessage switchProfile)
+                {
+                    switchProfile.Completion.TrySetException(exception);
                 }
             }
 
@@ -127,7 +158,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     private Task HandleAsync(SupervisorMessage message) => message switch
     {
         ControlMessage control => HandleControlAsync(control),
+        SwitchProfileMessage switchProfile => HandleSwitchProfileAsync(switchProfile),
         ShutdownMessage => HandleShutdownAsync(),
+        PowerMessage power => HandlePowerAsync(power),
         AttemptProgressMessage progress => HandleProgressAsync(progress),
         AttemptOnlineMessage online => HandleOnlineAsync(online),
         AttemptEndedMessage ended => HandleAttemptEndedAsync(ended),
@@ -173,12 +206,37 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         }
 
         _connectionDesired = true;
+        if (_suspended)
+        {
+            _resumeAfterWake = true;
+            Publish(ConnectionSupervisorState.Offline, "System is suspended.", null);
+            return;
+        }
         await BeginAttemptAsync(profile).ConfigureAwait(false);
     }
 
     private async Task ConnectNowCoreAsync()
     {
         _connectionDesired = true;
+        if (_suspended)
+        {
+            if (_profile is null)
+            {
+                _profile = await _profiles.GetSelectedProfileAsync().ConfigureAwait(false);
+            }
+            if (_profile is null)
+            {
+                _connectionDesired = false;
+                _resumeAfterWake = false;
+                _needsAttentionReason = "No connection profile is selected.";
+                Publish(ConnectionSupervisorState.NeedsAttention, "No connection profile is selected.", null);
+                return;
+            }
+
+            _resumeAfterWake = true;
+            return;
+        }
+
         if (_retryCancellation is not null)
         {
             CancelRetry();
@@ -200,6 +258,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         if (profile is null)
         {
             _connectionDesired = false;
+            _needsAttentionReason = "No connection profile is selected.";
             Publish(ConnectionSupervisorState.NeedsAttention, "No connection profile is selected.", null);
             return;
         }
@@ -208,9 +267,50 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         await BeginAttemptAsync(profile).ConfigureAwait(false);
     }
 
+    private async Task HandleSwitchProfileAsync(SwitchProfileMessage message)
+    {
+        var profile = await _profiles.SelectAsync(message.ProfileId).ConfigureAwait(false);
+        _needsAttentionReason = null;
+        _profile = profile;
+        _connectionDesired = true;
+        _retryNumber = 0;
+        CancelRetry();
+
+        if (_suspended)
+        {
+            _resumeAfterWake = true;
+            message.Completion.TrySetResult();
+            return;
+        }
+
+        if (_active is null)
+        {
+            await BeginAttemptAsync(profile).ConfigureAwait(false);
+            message.Completion.TrySetResult();
+            return;
+        }
+
+        if (_active.Profile.Id == profile.Id && !_active.RunCompleted && !_active.TeardownStarted)
+        {
+            message.Completion.TrySetResult();
+            return;
+        }
+
+        Publish(ConnectionSupervisorState.Disconnecting, "Switching connection profile.", null);
+        _active.PendingIntent = TeardownIntent.Restart;
+        _active.Cancellation.Cancel();
+        if (_active.RunCompleted)
+        {
+            BeginTeardown(_active, TeardownIntent.Restart, "Connection profile changed");
+        }
+        message.Completion.TrySetResult();
+    }
+
     private void DisconnectCore(TaskCompletionSource completion)
     {
         _connectionDesired = false;
+        _resumeAfterWake = false;
+        _needsAttentionReason = null;
         CancelRetry();
         if (_active is null)
         {
@@ -231,7 +331,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private Task HandleShutdownAsync()
     {
+        UnsubscribePowerEvents();
         _connectionDesired = false;
+        _resumeAfterWake = false;
         CancelRetry();
         if (_active is null)
         {
@@ -249,6 +351,86 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         return Task.CompletedTask;
     }
 
+    private Task HandlePowerAsync(PowerMessage power)
+    {
+        if (power.Suspending)
+        {
+            SuspendCore();
+        }
+        else
+        {
+            ResumeCore();
+        }
+        return Task.CompletedTask;
+    }
+
+    private void SuspendCore()
+    {
+        if (_suspended)
+        {
+            return;
+        }
+
+        _suspended = true;
+        _resumeAfterWake = _connectionDesired && Snapshot.State != ConnectionSupervisorState.NeedsAttention;
+        CancelRetry();
+        if (_active is null)
+        {
+            Publish(
+                _needsAttentionReason is null
+                    ? ConnectionSupervisorState.Offline
+                    : ConnectionSupervisorState.NeedsAttention,
+                _needsAttentionReason ?? "System is suspended.",
+                null,
+                sessionId: null,
+                nodeId: null);
+            return;
+        }
+
+        Publish(ConnectionSupervisorState.Disconnecting, "System is suspending.", null);
+        var intent = StrongerIntent(
+            _active.PendingIntent ?? TeardownIntent.Suspend,
+            TeardownIntent.Suspend);
+        _active.PendingIntent = intent;
+        _active.Cancellation.Cancel();
+        if (_active.RunCompleted)
+        {
+            BeginTeardown(_active, intent, TeardownReason(intent));
+        }
+    }
+
+    private void ResumeCore()
+    {
+        if (!_suspended)
+        {
+            return;
+        }
+
+        _suspended = false;
+        if (!_resumeAfterWake || !_connectionDesired || _profile is null)
+        {
+            _resumeAfterWake = false;
+            if (_active is null)
+            {
+                Publish(
+                    _needsAttentionReason is null
+                        ? ConnectionSupervisorState.Offline
+                        : ConnectionSupervisorState.NeedsAttention,
+                    _needsAttentionReason,
+                    null,
+                    sessionId: null,
+                    nodeId: null);
+            }
+            return;
+        }
+
+        if (_active is null)
+        {
+            _resumeAfterWake = false;
+            _ = BeginAttemptAsync(_profile);
+        }
+    }
+
     private Task BeginAttemptAsync(ConnectionProfile profile)
     {
         if (_active is not null)
@@ -257,6 +439,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         }
 
         var generation = checked(++_generation);
+        _needsAttentionReason = null;
         Publish(
             ConnectionSupervisorState.Connecting,
             null,
@@ -308,7 +491,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private Task HandleProgressAsync(AttemptProgressMessage progress)
     {
-        if (!IsCurrent(progress.Active, progress.Generation) || progress.Active.RunCompleted || progress.Active.TeardownStarted)
+        if (_suspended || !IsCurrent(progress.Active, progress.Generation) || progress.Active.RunCompleted || progress.Active.TeardownStarted)
         {
             return Task.CompletedTask;
         }
@@ -330,7 +513,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private Task HandleOnlineAsync(AttemptOnlineMessage online)
     {
-        if (!IsCurrent(online.Active, online.Active.Generation) || online.Active.TeardownStarted)
+        if (_suspended || !IsCurrent(online.Active, online.Active.Generation) || online.Active.TeardownStarted)
         {
             return Task.CompletedTask;
         }
@@ -377,6 +560,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         active.Failure = exception;
         if (_failures.Classify(exception) == ConnectionFailureDisposition.NeedsAttention)
         {
+            _needsAttentionReason = exception.Message;
             Publish(
                 ConnectionSupervisorState.NeedsAttention,
                 exception.Message,
@@ -462,6 +646,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             teardown.Intent is not TeardownIntent.Shutdown)
         {
             _connectionDesired = false;
+            _needsAttentionReason = teardown.Error.Message;
             Publish(ConnectionSupervisorState.NeedsAttention, teardown.Error.Message, null, sessionId: null, nodeId: null);
             CompleteDisconnectWaiters();
             return;
@@ -474,6 +659,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
                 break;
             case TeardownIntent.Restart:
                 await BeginAttemptAsync(_profile!).ConfigureAwait(false);
+                break;
+            case TeardownIntent.Suspend:
+                await CompleteSuspendTeardownAsync(teardown.Error).ConfigureAwait(false);
                 break;
             case TeardownIntent.Offline:
                 Publish(ConnectionSupervisorState.Offline, teardown.Error?.Message, null, sessionId: null, nodeId: null);
@@ -499,6 +687,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             case TeardownIntent.Restart:
                 _ = BeginAttemptAsync(_profile!);
                 break;
+            case TeardownIntent.Suspend:
+                _ = CompleteSuspendTeardownAsync(null);
+                break;
             case TeardownIntent.Offline:
                 Publish(ConnectionSupervisorState.Offline, active.Failure?.Message, null, sessionId: null, nodeId: null);
                 CompleteDisconnectWaiters();
@@ -513,6 +704,13 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private void ScheduleRetry(string reason)
     {
+        if (_suspended)
+        {
+            _resumeAfterWake = _connectionDesired;
+            Publish(ConnectionSupervisorState.Offline, "System is suspended.", null, sessionId: null, nodeId: null);
+            return;
+        }
+
         if (!_connectionDesired || _profile is null || !_profile.Reconnect)
         {
             Publish(ConnectionSupervisorState.Offline, reason, null, sessionId: null, nodeId: null);
@@ -527,6 +725,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         catch (Exception exception)
         {
             _connectionDesired = false;
+            _needsAttentionReason = exception.Message;
             Publish(ConnectionSupervisorState.NeedsAttention, exception.Message, null, sessionId: null, nodeId: null);
             return;
         }
@@ -557,7 +756,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private async Task HandleRetryElapsedAsync(RetryElapsedMessage retry)
     {
-        if (_retryCancellation is null || retry.RetryId != _retryId || !_connectionDesired)
+        if (_suspended || _retryCancellation is null || retry.RetryId != _retryId || !_connectionDesired)
         {
             return;
         }
@@ -637,11 +836,48 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         _exitRequested = true;
     }
 
+    private async Task CompleteSuspendTeardownAsync(Exception? error)
+    {
+        if (_suspended || !_resumeAfterWake || !_connectionDesired || _profile is null)
+        {
+            Publish(
+                _needsAttentionReason is null
+                    ? ConnectionSupervisorState.Offline
+                    : ConnectionSupervisorState.NeedsAttention,
+                _needsAttentionReason ?? error?.Message ?? "System is suspended.",
+                null,
+                sessionId: null,
+                nodeId: null);
+            return;
+        }
+
+        _resumeAfterWake = false;
+        await BeginAttemptAsync(_profile).ConfigureAwait(false);
+    }
+
+    private void OnSuspending(object? sender, EventArgs args) =>
+        _messages.Writer.TryWrite(new PowerMessage(true));
+
+    private void OnResumed(object? sender, EventArgs args) =>
+        _messages.Writer.TryWrite(new PowerMessage(false));
+
+    private void UnsubscribePowerEvents()
+    {
+        if (_powerEvents is null)
+        {
+            return;
+        }
+
+        _powerEvents.Suspending -= OnSuspending;
+        _powerEvents.Resumed -= OnResumed;
+    }
+
     private static string TeardownReason(TeardownIntent intent) => intent switch
     {
         TeardownIntent.Offline => "Disconnected by user",
         TeardownIntent.Restart => "Reconnect requested",
         TeardownIntent.Retry => "Connection failed",
+        TeardownIntent.Suspend => "System suspend",
         TeardownIntent.Shutdown => "Application shutdown",
         _ => "Connection attempt ended",
     };
@@ -655,6 +891,10 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         if (requested == TeardownIntent.Offline || current == TeardownIntent.Offline)
         {
             return TeardownIntent.Offline;
+        }
+        if (requested == TeardownIntent.Suspend || current == TeardownIntent.Suspend)
+        {
+            return TeardownIntent.Suspend;
         }
         return requested;
     }
@@ -678,7 +918,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private abstract record SupervisorMessage;
     private sealed record ControlMessage(ControlKind Kind, TaskCompletionSource Completion) : SupervisorMessage;
+    private sealed record SwitchProfileMessage(Guid ProfileId, TaskCompletionSource Completion) : SupervisorMessage;
     private sealed record ShutdownMessage : SupervisorMessage;
+    private sealed record PowerMessage(bool Suspending) : SupervisorMessage;
     private sealed record AttemptProgressMessage(ActiveAttempt Active, long Generation, ConnectionAttemptPhase Phase) : SupervisorMessage;
     private sealed record AttemptOnlineMessage(ActiveAttempt Active) : SupervisorMessage;
     private sealed record AttemptEndedMessage(ActiveAttempt Active, Exception? Error) : SupervisorMessage;
@@ -686,5 +928,5 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     private sealed record RetryElapsedMessage(long RetryId) : SupervisorMessage;
 
     private enum ControlKind { StartAutoConnect, ConnectNow, Disconnect }
-    private enum TeardownIntent { Retry, Restart, Offline, Shutdown }
+    private enum TeardownIntent { Retry, Restart, Suspend, Offline, Shutdown }
 }
