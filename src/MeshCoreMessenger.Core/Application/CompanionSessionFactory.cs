@@ -5,7 +5,6 @@ namespace MeshCoreMessenger.Core.Application;
 
 public sealed class CompanionSessionFactory(
     IMeshCoreClientFactory clients,
-    IConnectionProfileManager profiles,
     INodeStore nodes,
     ISessionStore sessions,
     IDurableSessionCompletion sessionCompletions,
@@ -34,9 +33,8 @@ public sealed class CompanionSessionFactory(
             return new CompanionSession(
                 sessionId,
                 generation,
-                profile,
+                profile.Id,
                 client,
-                profiles,
                 nodes,
                 sessions,
                 sessionCompletions,

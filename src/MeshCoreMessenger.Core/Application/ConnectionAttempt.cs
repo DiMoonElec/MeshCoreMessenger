@@ -59,12 +59,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
 
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
-        var result = await _session.StartAsync(cancellationToken).ConfigureAwait(false);
-        if (result.RequiresNodeConfirmation)
-        {
-            throw new NodeIdentityMismatchException();
-        }
-
+        await _session.StartAsync(cancellationToken).ConfigureAwait(false);
         RaiseProgress(ConnectionAttemptPhase.Synchronizing);
         await _coordinator.SynchronizeAsync(_session, cancellationToken).ConfigureAwait(false);
     }

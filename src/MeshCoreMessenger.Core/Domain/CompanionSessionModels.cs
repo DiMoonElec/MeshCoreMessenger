@@ -9,7 +9,6 @@ public enum CompanionSessionState
     Connecting,
     Identifying,
     Identified,
-    NeedsAttention,
     Stopping,
     Stopped,
     Failed,
@@ -36,8 +35,7 @@ public sealed record CompanionSessionStartResult(
     Guid SessionId,
     long Generation,
     Guid NodeId,
-    LocalNodeIdentity Node,
-    bool RequiresNodeConfirmation);
+    LocalNodeIdentity Node);
 
 internal sealed class CompanionSessionLifecycleEventArgs : EventArgs
 {

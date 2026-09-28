@@ -66,7 +66,6 @@ public sealed class ConnectionProfileManager(
             AcknowledgementTimeoutMilliseconds = draft.AcknowledgementTimeoutMilliseconds,
             AutoConnect = draft.AutoConnect,
             Reconnect = draft.Reconnect,
-            ExpectedNodePublicKey = existing?.ExpectedNodePublicKey?.ToArray(),
             CreatedUtc = existing?.CreatedUtc ?? now,
             UpdatedUtc = now,
         };
@@ -76,31 +75,5 @@ public sealed class ConnectionProfileManager(
         await settings.SetAsync(SelectedProfileSettingKey, profile.Id.ToString("D"), cancellationToken)
             .ConfigureAwait(false);
         return profile;
-    }
-
-    public async Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(
-        Guid profileId,
-        ReadOnlyMemory<byte> publicKey,
-        CancellationToken cancellationToken = default)
-    {
-        if (profileId == Guid.Empty)
-        {
-            throw new ArgumentException("Connection profile ID must not be empty.", nameof(profileId));
-        }
-
-        if (publicKey.Length != 32)
-        {
-            throw new ArgumentException("Expected node public key must contain exactly 32 bytes.", nameof(publicKey));
-        }
-
-        var existing = await profiles.GetAsync(profileId, cancellationToken).ConfigureAwait(false)
-            ?? throw new KeyNotFoundException($"Connection profile '{profileId:D}' was not found.");
-        var updated = existing with
-        {
-            ExpectedNodePublicKey = publicKey.ToArray(),
-            UpdatedUtc = timeProvider.GetUtcNow(),
-        };
-        await profiles.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
-        return updated;
     }
 }

@@ -126,11 +126,6 @@ public sealed class DesktopConnectionLifecycleTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
-        public Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(
-            Guid profileId,
-            ReadOnlyMemory<byte> publicKey,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
     }
 
     private sealed class BlockingAttemptFactory : IConnectionAttemptFactory

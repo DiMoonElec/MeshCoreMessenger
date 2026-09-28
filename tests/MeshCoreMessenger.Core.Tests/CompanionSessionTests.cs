@@ -38,12 +38,10 @@ public sealed class CompanionSessionTests
 
         Assert.Equal(session.SessionId, result.SessionId);
         Assert.Equal(7, result.Generation);
-        Assert.False(result.RequiresNodeConfirmation);
         Assert.Equal(CompanionSessionState.Identified, session.State);
         var stored = await context.Storage.Sessions.GetAsync(session.SessionId, CancellationToken);
         Assert.Equal(result.NodeId, stored?.NodeId);
-        var updatedProfile = await context.Storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken);
-        Assert.Equal(Key(1), updatedProfile?.ExpectedNodePublicKey);
+        Assert.Equal(profile, await context.Storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken));
 
         await session.StopAsync("Test completed", CancellationToken);
         Assert.Equal(["Connect", "Start", "Disconnect", "Flush", "Dispose"], client.Calls);
@@ -79,37 +77,32 @@ public sealed class CompanionSessionTests
     }
 
     [Fact]
-    public async Task DifferentKeyOnSameProfileRequiresExplicitConfirmationAndKeepsHistoriesSeparate()
+    public async Task DifferentKeysOnSameProfileCreateSeparateNodesAndReconnectToOriginalNode()
     {
         await using var context = await TestContext.CreateAsync();
         var profile = await context.SaveProfileAsync("One address");
-        var expectedKey = Key(40);
-        var unexpectedKey = Key(80);
-        context.Clients.Enqueue(new FakeCompanionClient(CreateSelfInfo(expectedKey, "Expected")));
-        var unexpectedClient = new FakeCompanionClient(CreateSelfInfo(unexpectedKey, "Unexpected"));
-        context.Clients.Enqueue(unexpectedClient);
+        var firstKey = Key(40);
+        var secondKey = Key(80);
+        context.Clients.Enqueue(new FakeCompanionClient(CreateSelfInfo(firstKey, "Same display name")));
+        context.Clients.Enqueue(new FakeCompanionClient(CreateSelfInfo(secondKey, "Same display name")));
+        context.Clients.Enqueue(new FakeCompanionClient(CreateSelfInfo(firstKey, "Renamed A")));
 
         await using var first = await context.Factory.CreateAsync(profile, 1, CancellationToken);
-        var expected = await first.StartAsync(CancellationToken);
+        var firstResult = await first.StartAsync(CancellationToken);
         await first.StopAsync("Reconnect", CancellationToken);
-        var boundProfile = await context.Storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken);
-
-        await using var second = await context.Factory.CreateAsync(boundProfile!, 2, CancellationToken);
-        var unexpected = await second.StartAsync(CancellationToken);
-
-        Assert.NotEqual(expected.NodeId, unexpected.NodeId);
-        Assert.True(unexpected.RequiresNodeConfirmation);
-        Assert.Equal(CompanionSessionState.NeedsAttention, second.State);
-        Assert.Equal(["Connect", "Start"], unexpectedClient.Calls);
-        var unchanged = await context.Storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken);
-        Assert.Equal(expectedKey, unchanged?.ExpectedNodePublicKey);
-
-        await second.UseConnectedNodeAsync(CancellationToken);
-
+        await using var second = await context.Factory.CreateAsync(profile, 2, CancellationToken);
+        var secondResult = await second.StartAsync(CancellationToken);
         Assert.Equal(CompanionSessionState.Identified, second.State);
-        var rebound = await context.Storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken);
-        Assert.Equal(unexpectedKey, rebound?.ExpectedNodePublicKey);
-        await second.StopAsync("Done", CancellationToken);
+        await second.StopAsync("Reconnect", CancellationToken);
+        await using var third = await context.Factory.CreateAsync(profile, 3, CancellationToken);
+        var thirdResult = await third.StartAsync(CancellationToken);
+
+        Assert.NotEqual(firstResult.NodeId, secondResult.NodeId);
+        Assert.Equal(firstResult.NodeId, thirdResult.NodeId);
+        Assert.Equal(CompanionSessionState.Identified, third.State);
+        var firstNode = await context.Storage.Nodes.GetAsync(firstResult.NodeId, CancellationToken);
+        Assert.Equal("Renamed A", firstNode?.LastName);
+        await third.StopAsync("Done", CancellationToken);
     }
 
     [Fact]
@@ -446,13 +439,8 @@ public sealed class CompanionSessionTests
             _directory = directory;
             Storage = storage;
             Clients = clients;
-            var profileManager = new ConnectionProfileManager(
-                storage.ConnectionProfiles,
-                storage.Settings,
-                TimeProvider.System);
             Factory = new CompanionSessionFactory(
                 clients,
-                profileManager,
                 storage.Nodes,
                 storage.Sessions,
                 new SessionCompletionTracker(storage.Sessions),

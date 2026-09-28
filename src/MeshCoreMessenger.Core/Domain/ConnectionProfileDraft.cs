@@ -1,6 +1,6 @@
 namespace MeshCoreMessenger.Core.Domain;
 
-/// <summary>Editable connection settings without persistence-owned timestamps and node binding.</summary>
+/// <summary>Editable transport settings without persistence-owned timestamps.</summary>
 public sealed record ConnectionProfileDraft
 {
     public Guid? Id { get; init; }

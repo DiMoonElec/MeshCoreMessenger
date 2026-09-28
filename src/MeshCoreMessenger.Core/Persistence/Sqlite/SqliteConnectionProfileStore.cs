@@ -62,13 +62,11 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
                 INSERT INTO ConnectionProfiles (
                     Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
                     DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-                    AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
-                    ExpectedNodePublicKey, CreatedUtc, UpdatedUtc)
+                    AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc)
                 VALUES (
                     $id, $name, $transport, $tcpHost, $tcpPort, $serialPortName, $baudRate,
                     $dtrEnable, $rtsEnable, $openDelayMilliseconds, $commandTimeoutMilliseconds,
-                    $acknowledgementTimeoutMilliseconds, $autoConnect, $reconnect,
-                    $expectedNodePublicKey, $createdUtc, $updatedUtc)
+                    $acknowledgementTimeoutMilliseconds, $autoConnect, $reconnect, $createdUtc, $updatedUtc)
                 ON CONFLICT(Id) DO UPDATE SET
                     Name = excluded.Name,
                     Transport = excluded.Transport,
@@ -83,7 +81,6 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
                     AcknowledgementTimeoutMilliseconds = excluded.AcknowledgementTimeoutMilliseconds,
                     AutoConnect = excluded.AutoConnect,
                     Reconnect = excluded.Reconnect,
-                    ExpectedNodePublicKey = excluded.ExpectedNodePublicKey,
                     UpdatedUtc = excluded.UpdatedUtc;
                 """;
             command.Parameters.AddWithValue("$id", profile.Id.ToString("D"));
@@ -100,8 +97,6 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
             command.Parameters.AddWithValue("$acknowledgementTimeoutMilliseconds", profile.AcknowledgementTimeoutMilliseconds);
             command.Parameters.AddWithValue("$autoConnect", profile.AutoConnect);
             command.Parameters.AddWithValue("$reconnect", profile.Reconnect);
-            command.Parameters.Add("$expectedNodePublicKey", SqliteType.Blob).Value =
-                (object?)profile.ExpectedNodePublicKey ?? DBNull.Value;
             command.Parameters.AddWithValue("$createdUtc", profile.CreatedUtc.ToString("O"));
             command.Parameters.AddWithValue("$updatedUtc", profile.UpdatedUtc.ToString("O"));
             command.ExecuteNonQuery();
@@ -125,16 +120,14 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
         AcknowledgementTimeoutMilliseconds = result.GetInt32(11),
         AutoConnect = result.GetBoolean(12),
         Reconnect = result.GetBoolean(13),
-        ExpectedNodePublicKey = result.IsDBNull(14) ? null : (byte[])result.GetValue(14),
-        CreatedUtc = DateTimeOffset.Parse(result.GetString(15), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
-        UpdatedUtc = DateTimeOffset.Parse(result.GetString(16), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        CreatedUtc = DateTimeOffset.Parse(result.GetString(14), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        UpdatedUtc = DateTimeOffset.Parse(result.GetString(15), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
     };
 
     private const string SelectColumns = """
         SELECT Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
                DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-               AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
-               ExpectedNodePublicKey, CreatedUtc, UpdatedUtc
+               AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc
         FROM ConnectionProfiles
         """;
 }

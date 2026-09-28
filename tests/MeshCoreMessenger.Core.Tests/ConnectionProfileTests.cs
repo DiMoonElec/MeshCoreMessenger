@@ -57,16 +57,13 @@ public sealed class ConnectionProfileTests
     }
 
     [Fact]
-    public async Task UpdatingProfilePreservesCreationTimeAndExpectedNodeKey()
+    public async Task UpdatingProfilePreservesCreationTime()
     {
         using var temporary = new TemporaryDirectory();
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
         var created = new DateTimeOffset(2026, 9, 24, 8, 0, 0, TimeSpan.Zero);
         var updated = created.AddDays(1);
-        var existing = CreateTcpProfile(Guid.NewGuid(), "Original", created) with
-        {
-            ExpectedNodePublicKey = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray(),
-        };
+        var existing = CreateTcpProfile(Guid.NewGuid(), "Original", created);
         await storage.ConnectionProfiles.SaveAsync(existing, CancellationToken);
         var manager = new ConnectionProfileManager(
             storage.ConnectionProfiles,
@@ -90,7 +87,6 @@ public sealed class ConnectionProfileTests
         Assert.Equal(existing.Id, saved.Id);
         Assert.Equal(created, saved.CreatedUtc);
         Assert.Equal(updated, saved.UpdatedUtc);
-        Assert.Equal(existing.ExpectedNodePublicKey, saved.ExpectedNodePublicKey);
         Assert.Null(saved.TcpHost);
         Assert.Null(saved.TcpPort);
         Assert.Equal("/dev/cu.test", saved.SerialPortName);

@@ -21,11 +21,6 @@ internal static class ConnectionProfileValidator
             throw new ArgumentOutOfRangeException(nameof(profile), "Connection timeouts must be positive.");
         }
 
-        if (profile.ExpectedNodePublicKey is { Length: not 32 })
-        {
-            throw new ArgumentException("Expected node public key must contain exactly 32 bytes.", nameof(profile));
-        }
-
         switch (profile.Transport)
         {
             case ConnectionTransportKind.Tcp when

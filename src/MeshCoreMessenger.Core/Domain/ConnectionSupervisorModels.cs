@@ -45,14 +45,6 @@ public sealed class ConnectionAttemptProgressEventArgs(
 
 public sealed record ConnectionAttemptCompletion(Exception Error);
 
-public sealed class NodeIdentityMismatchException : Exception
-{
-    public NodeIdentityMismatchException()
-        : base("The connected Companion public key does not match the selected profile.")
-    {
-    }
-}
-
 public sealed class ConnectionAttemptPersistenceException : Exception
 {
     public ConnectionAttemptPersistenceException(string message, Exception innerException)

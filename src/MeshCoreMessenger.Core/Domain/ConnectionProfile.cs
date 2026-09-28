@@ -1,6 +1,6 @@
 namespace MeshCoreMessenger.Core.Domain;
 
-/// <summary>Persisted connection settings. Transport-specific fields are mutually exclusive.</summary>
+/// <summary>Persisted transport settings. The connected node is discovered independently per session.</summary>
 public sealed record ConnectionProfile
 {
     public required Guid Id { get; init; }
@@ -17,7 +17,6 @@ public sealed record ConnectionProfile
     public int AcknowledgementTimeoutMilliseconds { get; init; } = 30_000;
     public bool AutoConnect { get; init; }
     public bool Reconnect { get; init; } = true;
-    public byte[]? ExpectedNodePublicKey { get; init; }
     public required DateTimeOffset CreatedUtc { get; init; }
     public required DateTimeOffset UpdatedUtc { get; init; }
 }

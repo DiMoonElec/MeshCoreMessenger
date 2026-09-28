@@ -242,11 +242,6 @@ public sealed class ConnectionProfilesViewModelTests
             return Task.FromResult(saved);
         }
 
-        public Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(
-            Guid profileId,
-            ReadOnlyMemory<byte> publicKey,
-            CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
     }
 
     private sealed class FakeSerialPortCatalog(IReadOnlyList<string> ports) : ISerialPortCatalog

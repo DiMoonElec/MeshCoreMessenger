@@ -59,7 +59,7 @@ public sealed class ConnectionSupervisorTests
     public async Task PermanentFailureNeedsAttentionWithoutRetry()
     {
         var context = CreateContext();
-        context.Factory.EnqueueStart((_, _) => throw new NodeIdentityMismatchException());
+        context.Factory.EnqueueStart((_, _) => throw new DatabaseStorageException("database unavailable"));
         await using var supervisor = context.CreateSupervisor();
 
         await supervisor.StartAutoConnectAsync(CancellationToken);
@@ -626,8 +626,6 @@ public sealed class ConnectionSupervisorTests
             return Task.FromResult(_selected);
         }
         public Task<ConnectionProfile> SaveAndSelectAsync(ConnectionProfileDraft draft, CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
-        public Task<ConnectionProfile> UpdateExpectedNodePublicKeyAsync(Guid profileId, ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
     }
 

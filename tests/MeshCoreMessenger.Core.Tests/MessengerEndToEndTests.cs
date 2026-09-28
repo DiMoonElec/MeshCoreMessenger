@@ -11,7 +11,7 @@ namespace MeshCoreMessenger.Core.Tests;
 public sealed class MessengerEndToEndTests
 {
     [Fact]
-    public async Task StartupReconnectAndShutdownCommitEveryAcceptedMessageToItsSession()
+    public async Task ReconnectIdentifiesAThenBThenAAndKeepsNodeHistoriesSeparate()
     {
         using var temporary = new TemporaryDirectory();
         var paths = new TestPaths(temporary.Path);
@@ -30,13 +30,15 @@ public sealed class MessengerEndToEndTests
             Reconnect = true,
         }, CancellationToken);
         var contactKey = Key(40);
-        var firstClient = new ScriptedClient("first", contactKey);
-        var secondClient = new ScriptedClient("second", contactKey);
-        var clients = new ScriptedClientFactory(firstClient, secondClient);
+        var nodeAKey = Key(100);
+        var nodeBKey = Key(150);
+        var firstClient = new ScriptedClient("a-first", contactKey, nodeAKey);
+        var secondClient = new ScriptedClient("b", contactKey, nodeBKey);
+        var thirdClient = new ScriptedClient("a-return", contactKey, nodeAKey);
+        var clients = new ScriptedClientFactory(firstClient, secondClient, thirdClient);
         var sessionCompletions = new SessionCompletionTracker(storage.Sessions);
         var sessions = new CompanionSessionFactory(
             clients,
-            profiles,
             storage.Nodes,
             storage.Sessions,
             sessionCompletions,
@@ -67,39 +69,65 @@ public sealed class MessengerEndToEndTests
         await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
         var secondSessionId = Assert.IsType<Guid>(supervisor.Snapshot.SessionId);
         Assert.NotEqual(firstSessionId, secondSessionId);
+        firstClient.EmitLateMessage("a-first-late-after-b");
+
+        secondClient.FailConnection();
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting, generation: 2);
+        Assert.Equal(2, delay.Requests.Count);
+        delay.Complete(1);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 3);
+        var thirdSessionId = Assert.IsType<Guid>(supervisor.Snapshot.SessionId);
+        Assert.DoesNotContain(thirdSessionId, new[] { firstSessionId, secondSessionId });
+        secondClient.EmitLateMessage("b-late-after-a-return");
 
         await supervisor.ShutdownAsync(CancellationToken);
         await ingestor.FlushAsync(CancellationToken);
         await sessionCompletions.FlushAsync(CancellationToken);
 
-        Assert.Equal(2, clients.CreateCount);
+        Assert.Equal(3, clients.CreateCount);
         Assert.Equal(1, clients.MaxActiveCount);
         Assert.All(clients.Clients, client => Assert.True(client.IsDisposed));
         Assert.Equal(ExpectedCalls, firstClient.Calls);
         Assert.Equal(ExpectedCalls, secondClient.Calls);
+        Assert.Equal(ExpectedCalls, thirdClient.Calls);
 
         var rows = ReadStoredMessages(paths.DatabasePath);
         Assert.Equal(
             [
-                "first-start", "first-directory", "first-drain", "first-close",
-                "second-start", "second-directory", "second-drain", "second-close",
+                "a-first-start", "a-first-directory", "a-first-drain", "a-first-close",
+                "b-start", "b-directory", "b-drain", "b-close",
+                "a-return-start", "a-return-directory", "a-return-drain", "a-return-close",
             ],
             rows.Select(row => row.Text));
         Assert.All(rows.Take(4), row => Assert.Equal(firstSessionId, row.SessionId));
-        Assert.All(rows.Skip(4), row => Assert.Equal(secondSessionId, row.SessionId));
+        Assert.All(rows.Skip(4).Take(4), row => Assert.Equal(secondSessionId, row.SessionId));
+        Assert.All(rows.Skip(8), row => Assert.Equal(thirdSessionId, row.SessionId));
 
         var firstSession = await storage.Sessions.GetAsync(firstSessionId, CancellationToken);
         var secondSession = await storage.Sessions.GetAsync(secondSessionId, CancellationToken);
+        var thirdSession = await storage.Sessions.GetAsync(thirdSessionId, CancellationToken);
         Assert.NotNull(firstSession?.EndedUtc);
         Assert.NotNull(secondSession?.EndedUtc);
+        Assert.NotNull(thirdSession?.EndedUtc);
         Assert.Equal("Connection attempt ended", firstSession?.EndReason);
-        Assert.Equal("Application shutdown", secondSession?.EndReason);
+        Assert.Equal("Connection attempt ended", secondSession?.EndReason);
+        Assert.Equal("Application shutdown", thirdSession?.EndReason);
+        Assert.NotNull(firstSession?.NodeId);
+        Assert.NotEqual(firstSession.NodeId, secondSession?.NodeId);
+        Assert.Equal(firstSession.NodeId, thirdSession?.NodeId);
 
         var conversations = await storage.History.GetConversationsAsync(10, CancellationToken);
-        var conversation = Assert.Single(conversations);
+        Assert.Equal(2, conversations.Count);
         Assert.Equal(profile.Id, (await profiles.GetSelectedProfileAsync(CancellationToken))?.Id);
+        var nodeAConversation = Assert.Single(conversations, item => item.NodeId == firstSession.NodeId);
+        var nodeBConversation = Assert.Single(conversations, item => item.NodeId == secondSession?.NodeId);
         Assert.Equal(8, (await storage.History.GetMessagesAsync(
-            conversation.Id,
+            nodeAConversation.Id,
+            null,
+            20,
+            CancellationToken)).Count);
+        Assert.Equal(4, (await storage.History.GetMessagesAsync(
+            nodeBConversation.Id,
             null,
             20,
             CancellationToken)).Count);
@@ -175,12 +203,12 @@ public sealed class MessengerEndToEndTests
             0,
             0);
 
-    private static SelfInfo Self() =>
+    private static SelfInfo Self(byte[] publicKey) =>
         new(
             AdvertisementType.Chat,
             1,
             10,
-            Key(100),
+            publicKey,
             0,
             0,
             0,
@@ -222,7 +250,7 @@ public sealed class MessengerEndToEndTests
         }
     }
 
-    private sealed class ScriptedClient(string name, byte[] contactKey) : ICompanionClient
+    private sealed class ScriptedClient(string name, byte[] contactKey, byte[] localNodeKey) : ICompanionClient
     {
         private EventHandler<MeshCoreConnectionStateChangedEventArgs>? _connectionStateChanged;
         private EventHandler<MessageReceivedEventArgs>? _messageReceived;
@@ -266,7 +294,7 @@ public sealed class MessengerEndToEndTests
             Calls.Add("Start");
             IsStarted = true;
             EmitMessage($"{name}-start");
-            return Task.FromResult(Self());
+            return Task.FromResult(Self(localNodeKey));
         }
 
         public Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
@@ -326,6 +354,8 @@ public sealed class MessengerEndToEndTests
         }
 
         public void FailConnection() => SetConnectionState(MeshCoreConnectionState.Faulted);
+
+        public void EmitLateMessage(string text) => EmitMessage(text);
 
         private void EmitMessage(string text) =>
             _messageReceived?.Invoke(this, new MessageReceivedEventArgs(Message(contactKey, text)));

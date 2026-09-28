@@ -11,7 +11,6 @@ namespace MeshCoreMessenger.Core.Application;
 public sealed class CompanionSession : IAsyncDisposable
 {
     private readonly ICompanionClient _client;
-    private readonly IConnectionProfileManager _profiles;
     private readonly INodeStore _nodes;
     private readonly ISessionStore _sessions;
     private readonly IDurableSessionCompletion _sessionCompletions;
@@ -19,7 +18,6 @@ public sealed class CompanionSession : IAsyncDisposable
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
     private readonly Channel<CompanionSessionEvent> _events = Channel.CreateUnbounded<CompanionSessionEvent>(
         new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
-    private ConnectionProfile _profile;
     private volatile CompanionSessionState _state = CompanionSessionState.Created;
     private int _closed;
     private int _disposed;
@@ -27,9 +25,8 @@ public sealed class CompanionSession : IAsyncDisposable
     internal CompanionSession(
         Guid sessionId,
         long generation,
-        ConnectionProfile profile,
+        Guid profileId,
         ICompanionClient client,
-        IConnectionProfileManager profiles,
         INodeStore nodes,
         ISessionStore sessions,
         IDurableSessionCompletion sessionCompletions,
@@ -37,12 +34,8 @@ public sealed class CompanionSession : IAsyncDisposable
     {
         SessionId = sessionId;
         Generation = generation;
-        _profile = profile with
-        {
-            ExpectedNodePublicKey = profile.ExpectedNodePublicKey?.ToArray(),
-        };
+        ProfileId = profileId;
         _client = client;
-        _profiles = profiles;
         _nodes = nodes;
         _sessions = sessions;
         _sessionCompletions = sessionCompletions;
@@ -59,7 +52,7 @@ public sealed class CompanionSession : IAsyncDisposable
 
     public Guid SessionId { get; }
     public long Generation { get; }
-    public Guid ProfileId => _profile.Id;
+    public Guid ProfileId { get; }
     public Guid? LocalNodeId { get; private set; }
     public LocalNodeIdentity? LocalNode { get; private set; }
     public CompanionSessionState State => _state;
@@ -132,26 +125,12 @@ public sealed class CompanionSession : IAsyncDisposable
                 LocalNodeId = node.Id;
                 await _sessions.BindNodeAsync(SessionId, node.Id, cancellationToken).ConfigureAwait(false);
 
-                var expectedKey = _profile.ExpectedNodePublicKey;
-                var requiresConfirmation = expectedKey is not null &&
-                    !expectedKey.AsSpan().SequenceEqual(publicKey);
-                if (expectedKey is null)
-                {
-                    _profile = await _profiles.UpdateExpectedNodePublicKeyAsync(
-                        _profile.Id,
-                        publicKey,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                SetState(requiresConfirmation
-                    ? CompanionSessionState.NeedsAttention
-                    : CompanionSessionState.Identified);
+                SetState(CompanionSessionState.Identified);
                 return new CompanionSessionStartResult(
                     SessionId,
                     Generation,
                     node.Id,
-                    LocalNode,
-                    requiresConfirmation);
+                    LocalNode);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -184,29 +163,6 @@ public sealed class CompanionSession : IAsyncDisposable
         {
             // The original connect/start exception remains the primary failure. CloseCoreAsync
             // already attempted every cleanup step and persisted the end marker where possible.
-        }
-    }
-
-    /// <summary>Explicitly replaces the profile binding after a key mismatch.</summary>
-    public async Task UseConnectedNodeAsync(CancellationToken cancellationToken = default)
-    {
-        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
-        {
-            if (_state != CompanionSessionState.NeedsAttention || LocalNode is null)
-            {
-                throw new InvalidOperationException("The session is not waiting for node confirmation.");
-            }
-
-            _profile = await _profiles.UpdateExpectedNodePublicKeyAsync(
-                _profile.Id,
-                LocalNode.PublicKey,
-                cancellationToken).ConfigureAwait(false);
-            SetState(CompanionSessionState.Identified);
-        }
-        finally
-        {
-            _lifecycleGate.Release();
         }
     }
 

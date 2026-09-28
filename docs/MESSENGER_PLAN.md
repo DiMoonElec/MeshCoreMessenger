@@ -146,7 +146,7 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
 - [x] Профили TCP/Serial, выбор порта, сохранение настроек, автоподключение.
 - [x] ConnectionSupervisor: state machine, отмена, backoff с jitter,
   ручная остановка, смена профиля и сон/пробуждение.
-- [x] Отдельные SessionId/NodeId, проверка ключа ноды после Start, защита от
+- [x] Отдельные SessionId/NodeId, определение ноды по полному ключу после Start, защита от
   поздних событий прежней сессии.
 - [x] AutoReceiveMessages=false, загрузка справочников до начального drain,
   объединение push-сигналов и безопасная реакция на тайм-аут.
@@ -158,7 +158,7 @@ dotnet tests/MeshCoreSharp.Tests/bin/Release/net10.0/MeshCoreSharp.Tests.dll
 ### Разбиение этапа B
 
 Исходный checklist выше сохраняется как критерий всего этапа. Реализовывать B следует
-последовательно подэтапами B1–B7: каждый из них имеет отдельную проверяемую границу,
+последовательно подэтапами B1–B7 и завершающей корректировкой B7.5: каждый из них имеет отдельную проверяемую границу,
 а завершение одного подэтапа не означает выполнения исходного пункта целиком, если
 его части отнесены к следующим подэтапам.
 
@@ -179,6 +179,10 @@ directory/ingest/supervisor services и соответствующие write rep
 | MessageIngestor и commit до UI | B4, B5 |
 | Штатное закрытие | B2 (примитивы), B7 (полная последовательность) |
 | Offline-история и состояние | A4.2, B7 |
+
+Описания B1, B2 и B6 ниже сохраняют решения, принятые и проверенные на момент их
+выполнения. Последующий аудит обнаружил лишнюю связь connection profile с identity
+ноды; B7.5 явно отменяет только эту часть, не переписывая историю этапов задним числом.
 
 #### B1 — профили подключения и платформенные адаптеры (выполнено 25.09.2026)
 
@@ -265,6 +269,9 @@ regression tests `MeshCoreSharp`. Аппаратный прогон через
 создал и завершил запись сессии, определил NodeId по полному ключу и привязал ранее
 пустой профиль. Drain и RF-команды не выполнялись; порт после теста освобождён.
 Подробности — в [отчёте](testing/messenger-b2-serial-2026-09-25.md).
+
+Принятая здесь привязка profile -> expected node key позднее отменена в B7.5.
+Устойчивое определение `NodeId` по полному ключу и разделение истории сохранены.
 
 #### B3 — снимки контактов, каналов и версии привязок слотов (реализовано 25.09.2026)
 
@@ -482,6 +489,10 @@ library event barrier, дочитывание application events и ingest barri
 18/18, MeshCoreSharp regression suite — 92/92. Тесты используют fake attempts,
 управляемое время/delay/jitter и временную SQLite. Физическая нода не использовалась.
 
+Классификация неожиданного ключа как permanent failure позднее отменена в B7.5:
+другой ключ через тот же endpoint теперь является нормальным результатом Identify.
+Остальные правила `NeedsAttention`, reconnect и generation guard не изменены.
+
 В B6.1 намеренно не входили смена профиля, suspend/wake, platform power adapters,
 Desktop startup/autoconnect и UI состояния. Первые три части выполнены в B6.2;
 Desktop-интеграция и исходный checklist всего этапа B остаются для B7.
@@ -694,6 +705,47 @@ session с тем же NodeId. Shutdown завершил session и durable barr
 Проверено: полный Release build без предупреждений; Core tests — 97/97, Desktop —
 46/46, MeshCoreSharp regression suite — 92/92. **Этап B завершён 28.09.2026.**
 
+##### B7.5 — отделение transport profile от identity ноды (выполнено 28.09.2026)
+
+После финального аудита пересмотрено ранее принятое в B1/B2/B6 решение хранить
+ожидаемый ключ ноды в connection profile. Оно делало нормальную замену устройства на
+том же Serial/TCP endpoint ошибкой `NeedsAttention` и требовало ручной перепривязки.
+
+Новая модель:
+
+```text
+ConnectionProfile = способ подключения и reconnect policy
+Node              = identity по полному SelfInfo.PublicKey
+Session           = конкретная попытка с ProfileId и обнаруженным NodeId
+```
+
+Из `ConnectionProfile` и application API удалены `ExpectedNodePublicKey`, операция
+его обновления, mismatch-result/exception и `UseConnectedNodeAsync`. После `APP_START`
+`CompanionSession` всегда ищет или создаёт Node строго по полному 32-byte ключу,
+связывает с ним текущую session и продолжает directory load/drain. Ни endpoint,
+ни имя профиля, ни display name ноды в identity не участвуют. Supervisor/reconnect
+каждую generation выполняет Identify заново; ошибки БД/ingest и несовместимые ответы
+по-прежнему переходят в `NeedsAttention`.
+
+SQLite schema не менялась. Nullable-колонка `ConnectionProfiles.ExpectedNodePublicKey`
+остаётся legacy артефактом ранней схемы: текущая domain-модель и store её не читают,
+не записывают и не используют для решений. Тест с ранее заполненной колонкой
+подтверждает открытие и обновление такого профиля без миграции или потери legacy
+значения. `MeshCoreSharp` и Companion protocol не изменялись.
+
+Детерминированные fake-тесты подтверждают первую идентификацию, один NodeId для
+одного ключа через Serial/TCP и при смене display name, разные NodeId для разных
+ключей через один профиль и полный reconnect-сценарий `A -> B -> A`. Production-like
+harness с настоящими supervisor/session/coordinator/ingestor и SQLite сохраняет
+12 сообщений в двух историях: возврат A продолжает историю A, B остаётся отдельно,
+а late events закрытых sessions не попадают в активную историю. Database failure
+сохраняет `NeedsAttention` без retry; lifecycle, barriers, commit-before-UI и
+recoverable shutdown не изменены. Физическая вторая нода для проверки не требуется.
+
+Проверено: полный Release build без предупреждений; Core tests — 98/98, Desktop —
+46/46, MeshCoreSharp regression suite — 92/92; `git diff --check` чист.
+**Этап B завершён с уточнённой моделью identity 28.09.2026.**
+
 ## C. Удобный интерфейс чтения
 
 - [ ] Двухпанельное окно; «Личные», «Каналы», «Устройства»; отдельная группа
@@ -761,7 +813,7 @@ BLE, room-server login, удалённая телеметрия/CLI, вложе�
 | Запуск без сети/ноды | История доступна, одна фоновая попытка, понятная причина/задержка |
 | Отмена retry, смена профиля | Старый транспорт освобождён; поздний callback не меняет новую сессию |
 | Та же нода через TCP/Serial | Та же история по полному SelfInfo.PublicKey |
-| Другая нода по тому же адресу | Нет смешивания истории, требуется новая привязка |
+| Другая нода по тому же адресу | Автоматически определяется другой NodeId; истории не смешиваются |
 | Сообщение при старте/закрытии | Подписки заранее; барьер и commit сохраняют уже доставленные callbacks |
 | Быстрый ACK / разрыв до MSG_SENT | Delivered не затирается Accepted; неопределённый исход сохраняется Unknown |
 | Разрыв после MSG_SENT / рестарт | Никакой автоматической передачи, новая попытка только вручную |

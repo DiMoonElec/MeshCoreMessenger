@@ -128,7 +128,6 @@ public sealed class LocalStorageTests
             AcknowledgementTimeoutMilliseconds = 45_000,
             AutoConnect = true,
             Reconnect = true,
-            ExpectedNodePublicKey = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray(),
             CreatedUtc = now,
             UpdatedUtc = now,
         };
@@ -155,9 +154,58 @@ public sealed class LocalStorageTests
         Assert.Equal(profile.AcknowledgementTimeoutMilliseconds, restored.AcknowledgementTimeoutMilliseconds);
         Assert.Equal(profile.AutoConnect, restored.AutoConnect);
         Assert.Equal(profile.Reconnect, restored.Reconnect);
-        Assert.Equal(profile.ExpectedNodePublicKey, restored.ExpectedNodePublicKey);
         Assert.Equal(profile.CreatedUtc, restored.CreatedUtc);
         Assert.Equal(profile.UpdatedUtc, restored.UpdatedUtc);
+    }
+
+    [Fact]
+    public async Task LegacyExpectedNodeKeyColumnIsIgnoredWithoutRequiringMigration()
+    {
+        using var temporary = new TemporaryDirectory();
+        var paths = temporary.CreatePaths();
+        var now = DateTimeOffset.UtcNow;
+        var profile = new ConnectionProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = "Legacy profile",
+            Transport = ConnectionTransportKind.Serial,
+            SerialPortName = "/dev/cu.legacy",
+            BaudRate = 115_200,
+            OpenDelayMilliseconds = 0,
+            CommandTimeoutMilliseconds = 1_000,
+            AcknowledgementTimeoutMilliseconds = 2_000,
+            CreatedUtc = now,
+            UpdatedUtc = now,
+        };
+
+        await using (var storage = await LocalStorage.OpenAsync(paths, CancellationToken))
+        {
+            await storage.ConnectionProfiles.SaveAsync(profile, CancellationToken);
+        }
+
+        using (var legacyWriter = OpenWritable(paths.DatabasePath))
+        {
+            using var command = legacyWriter.CreateCommand();
+            command.CommandText = "UPDATE ConnectionProfiles SET ExpectedNodePublicKey = zeroblob(32) WHERE Id = $id;";
+            command.Parameters.AddWithValue("$id", profile.Id.ToString("D"));
+            Assert.Equal(1, command.ExecuteNonQuery());
+        }
+
+        await using (var reopened = await LocalStorage.OpenAsync(paths, CancellationToken))
+        {
+            var restored = await reopened.ConnectionProfiles.GetAsync(profile.Id, CancellationToken);
+            Assert.NotNull(restored);
+            Assert.Equal("Legacy profile", restored.Name);
+            await reopened.ConnectionProfiles.SaveAsync(restored with { Name = "Updated transport profile" }, CancellationToken);
+        }
+
+        using var verification = OpenReadOnly(paths.DatabasePath);
+        Assert.Equal(32, ScalarInt(
+            verification,
+            $"SELECT length(ExpectedNodePublicKey) FROM ConnectionProfiles WHERE Id = '{profile.Id:D}';"));
+        Assert.Equal(
+            "Updated transport profile",
+            ScalarString(verification, $"SELECT Name FROM ConnectionProfiles WHERE Id = '{profile.Id:D}';"));
     }
 
     [Fact]

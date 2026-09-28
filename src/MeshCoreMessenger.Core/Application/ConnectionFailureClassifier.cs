@@ -25,7 +25,6 @@ public sealed class ConnectionFailureClassifier : IConnectionFailureClassifier
         var current = Unwrap(exception);
         return current switch
         {
-            NodeIdentityMismatchException => ConnectionFailureDisposition.NeedsAttention,
             ConnectionAttemptPersistenceException => ConnectionFailureDisposition.NeedsAttention,
             ReceiveIngestException => ConnectionFailureDisposition.NeedsAttention,
             SessionCompletionPersistenceException => ConnectionFailureDisposition.NeedsAttention,

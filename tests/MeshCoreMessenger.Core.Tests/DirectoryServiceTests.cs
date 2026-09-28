@@ -346,10 +346,8 @@ public sealed class DirectoryServiceTests
 
         public async Task<CompanionSession> CreateStartedSessionAsync(FakeCompanionClient client)
         {
-            var profiles = new ConnectionProfileManager(Storage.ConnectionProfiles, Storage.Settings, TimeProvider.System);
             var factory = new CompanionSessionFactory(
                 new FakeClientFactory(client),
-                profiles,
                 Storage.Nodes,
                 Storage.Sessions,
                 new SessionCompletionTracker(Storage.Sessions),
