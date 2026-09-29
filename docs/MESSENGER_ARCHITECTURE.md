@@ -400,8 +400,16 @@ read projections даже без новых сообщений. Подробны
 Минимальный C1 shell уже следует этой модели: bounded список Nodes читается через
 `INodeStore`, история — через node-scoped `ILocalHistoryReader`, а post-commit DTO
 содержит сохранённый NodeId. Выбор `ViewedNodeId` и режим следования хранятся в
-Settings. Это основание не означает готовность вкладок, directory projections,
-постраничной навигации, unread или drafts — они остаются в C2 и последующих шагах.
+Settings. Сам по себе C1 не означал готовность directory projections, вкладок,
+постраничной навигации, unread или drafts.
+
+C2 добавляет read-only `IConversationDirectoryReader`: отдельные bounded страницы
+Chat/служебных контактов, каналов и двух unknown-групп, а также secret-free карточки.
+Stable key строится из сохранённой полной identity, не из имени или ConversationId;
+cursor дополнительно привязан к NodeId и section. Directory-only entry имеет nullable
+ConversationId и не создаёт пустую историю. Один channel fingerprint агрегирует
+несколько активных slots; AccessKind только читается из БД и не выводится из имени.
+Этот API ещё не подключён к XAML: вкладки и реакция UI на directory-only refresh — C3.
 
 ### Компоновка и сценарии
 

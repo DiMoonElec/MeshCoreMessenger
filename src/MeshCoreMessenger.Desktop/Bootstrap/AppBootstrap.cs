@@ -35,6 +35,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.Directories);
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.History);
+        services.AddSingleton(storage.ConversationDirectory);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<SessionCompletionTracker>();

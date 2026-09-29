@@ -3,7 +3,8 @@
 Актуализация: 29.09.2026. **Этапы A и B выполнены, включая B7.5: локальное
 хранилище, offline startup, приём, reconnect и восстанавливаемое закрытие готовы.
 Профиль описывает транспорт; identity определяется по полному ключу в каждой
-session. Stage C начат: C1 завершён; C2 и последующие подэтапы ещё не реализованы.**
+session. Stage C начат: C1 и C2 завершены; C3 и последующие подэтапы ещё не
+реализованы.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация, статистика и барьер callbacks;
 базовая проверка — 92 теста.
@@ -843,7 +844,7 @@ Desktop `MainWindowViewModel`, Views, dispatcher и shutdown coordinator. По �
 `C1 -> C2 -> C3 -> C4 -> C5 -> C6 -> C7 -> C8 -> C9 -> C10`.
 Каждый подэтап — отдельная реализация и приёмка; следующий автоматически не начинать.
 Имена будущих API ниже обозначают возможности, а не требование создать именно
-такие классы. C1 реализован ниже; C2–C10 пока **не реализованы**.
+такие классы. C1–C2 реализованы ниже; C3–C10 пока **не реализованы**.
 
 #### C1 — контекст собственной ноды и node-scoped чтение
 
@@ -900,9 +901,12 @@ offline history загрузилась до event loop (`Загружено ди
 Disconnect/restart и reconnect в этой ручной сессии повторно не проверялись — их
 гарантии остаются покрыты Stage B и deterministic C1 tests. Скриншот также подтвердил,
 что C1 остаётся инженерным shell; навигация/компоновка запланированы в C3/C5/C9.
-Подробности — в [ручном отчёте C1](testing/messenger-c1-ui-2026-09-29.md). C2 не начинался.
+Подробности — в [ручном отчёте C1](testing/messenger-c1-ui-2026-09-29.md). На момент
+фиксации C1 реализация C2 ещё не начиналась.
 
 #### C2 — read projections диалогов и справочников
+
+**Выполнено 29.09.2026.**
 
 **Цель:** предоставить UI достаточные committed данные для корректных вкладок.
 
@@ -930,6 +934,31 @@ Unknown не превращается в hashtag из-за `#` в имени; п
 **Готово:** эти сценарии доступны через bounded Core read API, не требуют SQL в
 ViewModel и не меняют stored identity. **Ручная UI-проверка:** не обязательна;
 достаточно SQLite integration tests, визуальная приёмка следует в C3.
+
+Фактически добавлен отдельный read-only `IConversationDirectoryReader` с пятью
+node-scoped секциями: Chat, служебные контакты, каналы, unknown contacts и unknown
+channels. Страница ограничена 200 строками; cursor несёт NodeId, section, activity
+sequence/time и stable key, поэтому cursor другой ноды/секции отклоняется. Stable key
+из полного contact public key, channel fingerprint или сохранённой unknown identity
+не зависит от nullable ConversationId. Строки Contacts/Channels без переписки
+видимы, но чтение не создаёт для них Conversations.
+
+Known entries используют актуальные committed имена и metadata через join; удалённый
+из текущего snapshot контакт с историей сохраняется с `PresentOnNode=false`.
+Один channel fingerprint в нескольких active slots возвращается одной строкой со
+списком слотов, одинаковые имена с разными fingerprints не сливаются. AccessKind
+читается как сохранённый факт: имя с `#` не превращает Unknown в hashtag. Отдельные
+карточки контакта/канала возвращают только сохранённые route/advert поля и fingerprint,
+никогда channel secret. Last-message projection сохраняет ResolutionState для
+различения unresolved/ambiguous histories.
+
+Семь SQLite integration tests покрывают Chat/Repeater/Room/Sensor/None/unknown type,
+NULL Title, rename, отсутствующий контакт с историей, unresolved/ambiguous prefix,
+все AccessKind, одинаковые имена, общий fingerprint в двух slots, directory-only
+entries, стабильные cursor pages, refresh без дублей, пустые данные, cancellation,
+bounds и изоляцию A/B. Полный Release build прошёл без предупреждений; Core tests —
+107/107, Desktop — 57/57, MeshCoreSharp — 92/92. SQLite schema, Desktop XAML,
+supervisor и MeshCoreSharp не изменялись; ручная UI-проверка для C2 не требуется.
 
 #### C3 — вкладки и read-only навигация
 

@@ -23,6 +23,7 @@ public sealed class LocalStorage : IAsyncDisposable
         Directories = new SqliteDirectoryStore(writer, reader);
         IncomingMessages = new SqliteIncomingMessageStore(writer);
         History = new SqliteLocalHistoryReader(reader);
+        ConversationDirectory = new SqliteConversationDirectoryReader(reader);
     }
 
     public ISettingsStore Settings { get; }
@@ -32,6 +33,7 @@ public sealed class LocalStorage : IAsyncDisposable
     public IDirectoryStore Directories { get; }
     public IIncomingMessageStore IncomingMessages { get; }
     public ILocalHistoryReader History { get; }
+    public IConversationDirectoryReader ConversationDirectory { get; }
 
     public static async Task<LocalStorage> OpenAsync(IAppPaths paths, CancellationToken cancellationToken = default)
     {
