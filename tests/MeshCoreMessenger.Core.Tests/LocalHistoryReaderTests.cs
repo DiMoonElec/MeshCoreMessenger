@@ -14,9 +14,15 @@ public sealed class LocalHistoryReaderTests
     {
         using var temporary = new TemporaryDirectory();
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var nodeId = Guid.NewGuid();
 
-        Assert.Empty(await storage.History.GetConversationsAsync(100, CancellationToken));
-        Assert.Empty(await storage.History.GetMessagesAsync(Guid.NewGuid(), null, 100, CancellationToken));
+        Assert.Empty(await storage.History.GetConversationsAsync(nodeId, 100, CancellationToken));
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => storage.History.GetMessagesAsync(
+            nodeId,
+            Guid.NewGuid(),
+            null,
+            100,
+            CancellationToken));
     }
 
     [Fact]
@@ -37,24 +43,17 @@ public sealed class LocalHistoryReaderTests
             ]);
 
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
-        var conversations = await storage.History.GetConversationsAsync(10, CancellationToken);
+        var conversations = await storage.History.GetConversationsAsync(firstNode, 10, CancellationToken);
 
         Assert.Collection(
             conversations,
             item =>
             {
-                Assert.Equal(latestConversation, item.Id);
-                Assert.Equal(secondNode, item.NodeId);
-                Assert.Equal("Latest", item.Title);
-                Assert.Equal("latest message", item.LastMessageText);
-                Assert.Equal(MessageDirection.Incoming, item.LastMessageDirection);
-                Assert.Equal(StoredMessageKind.Text, item.LastMessageKind);
-            },
-            item =>
-            {
                 Assert.Equal(oldConversation, item.Id);
                 Assert.Equal(firstNode, item.NodeId);
                 Assert.Equal("old message", item.LastMessageText);
+                Assert.Equal(MessageDirection.Incoming, item.LastMessageDirection);
+                Assert.Equal(StoredMessageKind.Text, item.LastMessageKind);
             },
             item =>
             {
@@ -63,6 +62,15 @@ public sealed class LocalHistoryReaderTests
                 Assert.Null(item.LastMessageSequence);
                 Assert.Null(item.LastMessageText);
             });
+
+        var secondNodeConversations = await storage.History.GetConversationsAsync(
+            secondNode,
+            10,
+            CancellationToken);
+        var secondNodeConversation = Assert.Single(secondNodeConversations);
+        Assert.Equal(latestConversation, secondNodeConversation.Id);
+        Assert.Equal("Latest", secondNodeConversation.Title);
+        Assert.Equal("latest message", secondNodeConversation.LastMessageText);
     }
 
     [Fact]
@@ -80,8 +88,9 @@ public sealed class LocalHistoryReaderTests
             ]);
 
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
-        var latest = await storage.History.GetMessagesAsync(conversation, null, 2, CancellationToken);
+        var latest = await storage.History.GetMessagesAsync(node, conversation, null, 2, CancellationToken);
         var older = await storage.History.GetMessagesAsync(
+            node,
             conversation,
             latest[0].LocalSequence,
             2,
@@ -106,11 +115,11 @@ public sealed class LocalHistoryReaderTests
 
         await using (var first = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken))
         {
-            Assert.Single(await first.History.GetConversationsAsync(10, CancellationToken));
+            Assert.Single(await first.History.GetConversationsAsync(node, 10, CancellationToken));
         }
 
         await using var reopened = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
-        var messages = await reopened.History.GetMessagesAsync(conversation, null, 10, CancellationToken);
+        var messages = await reopened.History.GetMessagesAsync(node, conversation, null, 10, CancellationToken);
         Assert.Single(messages);
         Assert.Equal("still here", messages[0].Text);
     }
@@ -124,9 +133,9 @@ public sealed class LocalHistoryReaderTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => storage.History.GetConversationsAsync(10, cancellation.Token));
+            () => storage.History.GetConversationsAsync(Guid.NewGuid(), 10, cancellation.Token));
 
-        Assert.Empty(await storage.History.GetConversationsAsync(10, CancellationToken));
+        Assert.Empty(await storage.History.GetConversationsAsync(Guid.NewGuid(), 10, CancellationToken));
     }
 
     [Theory]
@@ -138,7 +147,52 @@ public sealed class LocalHistoryReaderTests
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
 
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
-            () => storage.History.GetConversationsAsync(limit, CancellationToken));
+            () => storage.History.GetConversationsAsync(Guid.NewGuid(), limit, CancellationToken));
+    }
+
+    [Fact]
+    public async Task RejectsConversationOwnedByAnotherNode()
+    {
+        using var temporary = new TemporaryDirectory();
+        var ownerNode = Guid.NewGuid();
+        var foreignNode = Guid.NewGuid();
+        var conversation = Guid.NewGuid();
+        await SeedAsync(
+            temporary.Paths,
+            [new SeedConversation(conversation, ownerNode, "Private", 0x77, "secret")]);
+
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+
+        await Assert.ThrowsAsync<KeyNotFoundException>(() => storage.History.GetMessagesAsync(
+            foreignNode,
+            conversation,
+            null,
+            10,
+            CancellationToken));
+    }
+
+    [Fact]
+    public async Task ReadsKnownNodesInBoundedLastSeenOrderIncludingSameNames()
+    {
+        using var temporary = new TemporaryDirectory();
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        await storage.Nodes.FindOrCreateAsync(
+            Enumerable.Repeat((byte)0x10, 32).ToArray(),
+            "Same name",
+            DateTimeOffset.Parse("2026-09-25T10:00:00Z"),
+            CancellationToken);
+        var mostRecent = await storage.Nodes.FindOrCreateAsync(
+            Enumerable.Repeat((byte)0x20, 32).ToArray(),
+            "Same name",
+            DateTimeOffset.Parse("2026-09-25T11:00:00Z"),
+            CancellationToken);
+        var nodes = await storage.Nodes.GetAllAsync(1, CancellationToken);
+
+        Assert.Single(nodes);
+        Assert.Equal(mostRecent.Id, nodes[0].Id);
+        Assert.Equal("Same name", nodes[0].LastName);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(
+            () => storage.Nodes.GetAllAsync(501, CancellationToken));
     }
 
     private static async Task SeedAsync(IAppPaths paths, IReadOnlyList<SeedConversation> conversations)

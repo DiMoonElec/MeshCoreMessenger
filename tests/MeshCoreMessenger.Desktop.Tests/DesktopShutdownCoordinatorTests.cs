@@ -179,10 +179,11 @@ public sealed class DesktopShutdownCoordinatorTests
             Assert.Throws<ApplicationInstanceAlreadyRunningException>(
                 () => ApplicationInstanceLock.Acquire(paths));
             var liveSummary = Assert.Single(
-                await storage.History.GetConversationsAsync(10, CancellationToken));
+                await storage.History.GetConversationsAsync(node.Id, 10, CancellationToken));
             Assert.Equal(
                 "survives restart",
                 Assert.Single(await storage.History.GetMessagesAsync(
+                    node.Id,
                     liveSummary.Id,
                     null,
                     10,
@@ -199,10 +200,11 @@ public sealed class DesktopShutdownCoordinatorTests
         using var restartedLock = ApplicationInstanceLock.Acquire(paths);
         await using var reopened = await LocalStorage.OpenAsync(paths, CancellationToken);
         var reopenedSummary = Assert.Single(
-            await reopened.History.GetConversationsAsync(10, CancellationToken));
+            await reopened.History.GetConversationsAsync(node.Id, 10, CancellationToken));
         Assert.Equal(
             "survives restart",
             Assert.Single(await reopened.History.GetMessagesAsync(
+                node.Id,
                 reopenedSummary.Id,
                 null,
                 10,

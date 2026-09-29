@@ -6,10 +6,12 @@ namespace MeshCoreMessenger.Core.Persistence;
 public interface ILocalHistoryReader
 {
     Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
+        Guid nodeId,
         int limit,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<HistoryMessage>> GetMessagesAsync(
+        Guid nodeId,
         Guid conversationId,
         long? beforeLocalSequence,
         int limit,

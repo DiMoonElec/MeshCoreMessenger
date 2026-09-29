@@ -372,7 +372,7 @@ offline-просмотра нода могут различаться — пра
 
 ## 8. UX первой версии
 
-### Контекст ноды и чтения (план Stage C после B7.5)
+### Контекст ноды и чтения (C1 реализован; C2+ продолжают projections/навигацию)
 
 `ActiveNodeId` определяется только текущей session и snapshot supervisor после
 Identify. Данные для подписи берутся из Nodes по этому ID; имя/endpoint не служат
@@ -396,6 +396,12 @@ Disconnect очищает активную identity, сохраняя просм
 становится consumer `CompanionSession.Events`. Завершение directory sync обновляет
 read projections даже без новых сообщений. Подробный порядок реализации — C1–C10
 в MESSENGER_PLAN.md.
+
+Минимальный C1 shell уже следует этой модели: bounded список Nodes читается через
+`INodeStore`, история — через node-scoped `ILocalHistoryReader`, а post-commit DTO
+содержит сохранённый NodeId. Выбор `ViewedNodeId` и режим следования хранятся в
+Settings. Это основание не означает готовность вкладок, directory projections,
+постраничной навигации, unread или drafts — они остаются в C2 и последующих шагах.
 
 ### Компоновка и сценарии
 

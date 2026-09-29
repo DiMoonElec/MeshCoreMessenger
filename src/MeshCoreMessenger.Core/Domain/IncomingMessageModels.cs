@@ -14,6 +14,7 @@ public sealed record IncomingMessageEnvelope(
 public sealed record StoredIncomingMessage(
     Guid MessageId,
     Guid EventId,
+    Guid NodeId,
     Guid ConversationId,
     long LocalSequence,
     bool Inserted);

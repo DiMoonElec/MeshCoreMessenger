@@ -6,6 +6,41 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal sealed class SqliteNodeStore(DatabaseWorker writer, DatabaseReader reader) : INodeStore
 {
+    internal const int MaximumPageSize = 500;
+
+    public Task<IReadOnlyList<NodeRecord>> GetAllAsync(
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit is < 1 or > MaximumPageSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(limit),
+                $"Page size must be between 1 and {MaximumPageSize}.");
+        }
+
+        return reader.ExecuteAsync<IReadOnlyList<NodeRecord>>(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT Id, PublicKey, LastName, FirstSeenUtc, LastSeenUtc
+                FROM Nodes
+                ORDER BY LastSeenUtc DESC, Id ASC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$limit", limit);
+
+            var nodes = new List<NodeRecord>(limit);
+            using var result = command.ExecuteReader();
+            while (result.Read())
+            {
+                nodes.Add(Read(result));
+            }
+
+            return nodes;
+        }, cancellationToken);
+    }
+
     public Task<NodeRecord?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (id == Guid.Empty)

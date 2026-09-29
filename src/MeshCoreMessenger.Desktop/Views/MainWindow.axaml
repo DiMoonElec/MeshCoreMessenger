@@ -30,13 +30,18 @@
                     VerticalAlignment="Center">
           <StackPanel Margin="0,0,4,0"
                       VerticalAlignment="Center">
-            <TextBlock Text="{Binding Profiles.SelectedProfile.DisplayName}"
+            <TextBlock Text="{Binding ActiveProfileDisplayName, StringFormat='Профиль: {0}'}"
                        HorizontalAlignment="Right"
                        FontSize="11"
                        Opacity="0.65" />
             <TextBlock Text="{Binding ConnectionStatus}"
                        HorizontalAlignment="Right"
                        FontWeight="SemiBold" />
+            <TextBlock Text="{Binding ActiveNodeDisplayName, StringFormat='Нода: {0}'}"
+                       ToolTip.Tip="{Binding ActiveNodePublicKeyHex}"
+                       HorizontalAlignment="Right"
+                       FontSize="11"
+                       Opacity="0.75" />
             <TextBlock Text="{Binding ConnectionStatusDetail}"
                        IsVisible="{Binding HasConnectionStatusDetail}"
                        HorizontalAlignment="Right"
@@ -55,8 +60,44 @@
       <Border Grid.Column="0"
               BorderBrush="{DynamicResource ThemeBorderLowBrush}"
               BorderThickness="0,0,1,0">
-        <Grid RowDefinitions="Auto,*">
-          <Expander Grid.Row="0"
+        <Grid RowDefinitions="Auto,Auto,*">
+          <Border Grid.Row="0"
+                  Margin="8,8,8,0"
+                  Padding="8"
+                  CornerRadius="6"
+                  Background="{DynamicResource ThemeControlLowBrush}">
+            <StackPanel Spacing="6">
+              <TextBlock Text="История ноды"
+                         FontWeight="SemiBold" />
+              <ComboBox ItemsSource="{Binding KnownNodes}"
+                        SelectedItem="{Binding ViewedNode, Mode=OneWay}"
+                        SelectionChanged="OnNodeSelectionChanged"
+                        PlaceholderText="Выберите сохранённую ноду">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:KnownNodeListItem">
+                    <TextBlock Text="{Binding SelectorLabel}"
+                               TextTrimming="CharacterEllipsis" />
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button Content="К подключённой ноде"
+                      Command="{Binding FollowActiveNodeCommand}"
+                      IsVisible="{Binding CanFollowActiveNode}"
+                      HorizontalAlignment="Left" />
+              <TextBlock Text="Полный public key"
+                         IsVisible="{Binding HasViewedNode}"
+                         FontSize="11"
+                         Opacity="0.65" />
+              <TextBox Text="{Binding ViewedNodePublicKeyHex}"
+                       IsVisible="{Binding HasViewedNode}"
+                       IsReadOnly="True"
+                       FontFamily="Monospace"
+                       FontSize="10"
+                       TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
+
+          <Expander Grid.Row="1"
                     Header="Профиль подключения"
                     Margin="8">
             <ScrollViewer MaxHeight="430">
@@ -150,7 +191,7 @@
             </ScrollViewer>
           </Expander>
 
-          <ListBox Grid.Row="1"
+          <ListBox Grid.Row="2"
                    ItemsSource="{Binding Conversations}"
                    SelectedItem="{Binding SelectedConversation, Mode=OneWay}"
                    SelectionChanged="OnConversationSelectionChanged"

@@ -200,7 +200,13 @@ public sealed class ReceiveCoordinatorTests
                 throw new IOException("Disk is temporarily unavailable.");
             }
             Stored.Enqueue(envelope);
-            return Task.FromResult(new StoredIncomingMessage(Guid.NewGuid(), envelope.EventId, Guid.NewGuid(), Stored.Count, true));
+            return Task.FromResult(new StoredIncomingMessage(
+                Guid.NewGuid(),
+                envelope.EventId,
+                envelope.NodeId,
+                Guid.NewGuid(),
+                Stored.Count,
+                true));
         }
     }
 

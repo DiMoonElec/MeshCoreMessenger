@@ -85,7 +85,13 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
                 sequence = (long)lastInsert.ExecuteScalar()!;
             }
             transaction.Commit();
-            return new StoredIncomingMessage(messageId, envelope.EventId, resolution.ConversationId, sequence, true);
+            return new StoredIncomingMessage(
+                messageId,
+                envelope.EventId,
+                envelope.NodeId,
+                resolution.ConversationId,
+                sequence,
+                true);
         }
         catch
         {
@@ -173,10 +179,22 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
     private static StoredIncomingMessage? TryReadExisting(SqliteConnection connection, SqliteTransaction transaction, Guid eventId)
     {
         using var command = connection.CreateCommand(); command.Transaction = transaction;
-        command.CommandText = "SELECT Id, ConversationId, LocalSequence FROM Messages WHERE EventId = $eventId;"; Add(command, "$eventId", eventId);
+        command.CommandText = """
+            SELECT m.Id, c.NodeId, m.ConversationId, m.LocalSequence
+            FROM Messages AS m
+            INNER JOIN Conversations AS c ON c.Id = m.ConversationId
+            WHERE m.EventId = $eventId;
+            """;
+        Add(command, "$eventId", eventId);
         using var result = command.ExecuteReader();
         if (!result.Read()) return null;
-        return new StoredIncomingMessage(Guid.Parse(result.GetString(0)), eventId, Guid.Parse(result.GetString(1)), result.GetInt64(2), false);
+        return new StoredIncomingMessage(
+            Guid.Parse(result.GetString(0)),
+            eventId,
+            Guid.Parse(result.GetString(1)),
+            Guid.Parse(result.GetString(2)),
+            result.GetInt64(3),
+            false);
     }
 
     private static bool IsActiveBinding(SqliteConnection connection, SqliteTransaction transaction, ChannelBindingRecord binding)

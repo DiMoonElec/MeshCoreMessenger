@@ -83,6 +83,8 @@ public sealed class IncomingMessageStoreTests
         var separateButIdentical = await context.Storage.IncomingMessages.StoreAsync(context.Envelope(Contact(prefix, "same")), CancellationToken);
         Assert.True(firstInsert.Inserted);
         Assert.False(duplicate.Inserted);
+        Assert.Equal(context.Node.Id, firstInsert.NodeId);
+        Assert.Equal(context.Node.Id, duplicate.NodeId);
         Assert.Equal(firstInsert.MessageId, duplicate.MessageId);
         Assert.NotEqual(firstInsert.MessageId, separateButIdentical.MessageId);
 

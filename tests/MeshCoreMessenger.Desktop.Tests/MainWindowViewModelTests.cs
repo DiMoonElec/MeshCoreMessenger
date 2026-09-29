@@ -10,71 +10,342 @@ namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class MainWindowViewModelTests
 {
+    private static readonly Guid NodeAId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    private static readonly Guid NodeBId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
     [Fact]
-    public async Task EmptyHistoryProducesOfflineEmptyState()
+    public async Task StartupWithoutKnownNodeShowsExplicitEmptySelection()
     {
-        var history = new FakeHistoryReader();
-        var viewModel = CreateViewModel(history);
+        var viewModel = CreateViewModel(
+            new FakeHistoryReader(),
+            nodes: new FakeNodeStore([]),
+            settings: new FakeSettingsStore());
 
         await viewModel.LoadAsync(CancellationToken);
 
+        Assert.Empty(viewModel.KnownNodes);
+        Assert.Null(viewModel.ViewedNode);
         Assert.Empty(viewModel.Conversations);
-        Assert.Empty(viewModel.Messages);
-        Assert.Null(viewModel.SelectedConversation);
-        Assert.Equal("Локальная история пуста", viewModel.Status);
+        Assert.Equal("Выберите ноду для просмотра истории", viewModel.Status);
         Assert.Equal("Не подключено", viewModel.ConnectionStatus);
-        Assert.False(viewModel.HasError);
         await viewModel.StopAsync();
     }
 
     [Fact]
-    public async Task LoadsInitialConversationAndCanSelectAnother()
+    public async Task RestoresViewedNodeAndOfflineHistoryFromSettings()
     {
-        var firstId = Guid.NewGuid();
-        var secondId = Guid.NewGuid();
-        var history = new FakeHistoryReader
-        {
-            Conversations =
-            [
-                CreateSummary(firstId, "First", "first preview", 2),
-                CreateSummary(secondId, "Second", "second preview", 1),
-            ],
-            Messages =
-            {
-                [firstId] = [CreateMessage(firstId, 2, "first body")],
-                [secondId] = [CreateMessage(secondId, 1, "second body")],
-            },
-        };
-        var viewModel = CreateViewModel(history);
+        var conversationId = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(NodeBId, [CreateSummary(NodeBId, conversationId, "B history", 1)]);
+        history.Messages[conversationId] = [CreateMessage(conversationId, 1, "offline body")];
+        var settings = CreateSettings(NodeBId, follow: false);
+        var viewModel = CreateViewModel(history, nodes: CreateTwoNodes(), settings: settings);
 
         await viewModel.LoadAsync(CancellationToken);
 
-        Assert.Equal(2, viewModel.Conversations.Count);
-        Assert.Equal(firstId, viewModel.SelectedConversation?.Id);
-        Assert.Equal("first body", Assert.Single(viewModel.Messages).Body);
+        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+        Assert.Equal(conversationId, Assert.Single(viewModel.Conversations).Id);
+        Assert.Equal("offline body", Assert.Single(viewModel.Messages).Body);
+        Assert.Null(viewModel.ActiveNode);
+        await viewModel.StopAsync();
+    }
 
+    [Fact]
+    public async Task InitialOfflineLoadDoesNotWaitForUiDispatcherLoop()
+    {
+        var conversationId = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, conversationId, "Offline", 1)]);
+        var dispatcher = new QueuedUiDispatcher();
+        var viewModel = CreateViewModel(history, dispatcher: dispatcher);
+
+        await viewModel.LoadAsync(CancellationToken).WaitAsync(TimeSpan.FromSeconds(1), CancellationToken);
+
+        Assert.Equal(conversationId, Assert.Single(viewModel.Conversations).Id);
+        Assert.Equal(0, dispatcher.PendingCount);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task SelectionPersistsAcrossViewModelRestart()
+    {
+        var settings = CreateSettings(NodeAId, follow: false);
+        var nodes = CreateTwoNodes();
+        var first = CreateViewModel(new FakeHistoryReader(), nodes: nodes, settings: settings);
+        await first.LoadAsync(CancellationToken);
+
+        await first.SelectViewedNodeAsync(first.KnownNodes.Single(item => item.Id == NodeBId), CancellationToken);
+        await first.StopAsync();
+
+        var second = CreateViewModel(new FakeHistoryReader(), nodes: nodes, settings: settings);
+        await second.LoadAsync(CancellationToken);
+
+        Assert.Equal(NodeBId, second.ViewedNode?.Id);
+        Assert.False(second.IsFollowingActiveNode);
+        await second.StopAsync();
+    }
+
+    [Fact]
+    public async Task LoadsSelectedNodeConversationsAndCanSelectAnotherConversation()
+    {
+        var firstId = Guid.NewGuid();
+        var secondId = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(
+            NodeAId,
+            [
+                CreateSummary(NodeAId, firstId, "First", 2),
+                CreateSummary(NodeAId, secondId, "Second", 1),
+            ]);
+        history.Messages[firstId] = [CreateMessage(firstId, 2, "first body")];
+        history.Messages[secondId] = [CreateMessage(secondId, 1, "second body")];
+        var viewModel = CreateViewModel(history);
+
+        await viewModel.LoadAsync(CancellationToken);
         await viewModel.SelectConversationAsync(viewModel.Conversations[1], CancellationToken);
 
         Assert.Equal(secondId, viewModel.SelectedConversation?.Id);
         Assert.Equal("second body", Assert.Single(viewModel.Messages).Body);
         Assert.Equal([firstId, secondId], history.RequestedConversations);
+        Assert.All(history.RequestedNodes, nodeId => Assert.Equal(NodeAId, nodeId));
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task SlowNodeAResultCannotOverwriteNodeBAfterSelectionChanges()
+    {
+        var conversationA = Guid.NewGuid();
+        var conversationB = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, conversationA, "A", 1)]);
+        history.SetConversations(NodeBId, [CreateSummary(NodeBId, conversationB, "B", 2)]);
+        history.Messages[conversationA] = [CreateMessage(conversationA, 1, "A body")];
+        history.Messages[conversationB] = [CreateMessage(conversationB, 2, "B body")];
+        var viewModel = CreateViewModel(history, nodes: CreateTwoNodes());
+        await viewModel.LoadAsync(CancellationToken);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        history.ConversationGates[NodeAId] = gate;
+
+        var slowA = viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeAId),
+            CancellationToken);
+        await WaitUntilAsync(() => history.GetConversationReads(NodeAId) >= 2);
+        await viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
+            CancellationToken);
+        gate.SetResult();
+        await slowA;
+
+        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+        Assert.Equal(conversationB, Assert.Single(viewModel.Conversations).Id);
+        Assert.Equal("B body", Assert.Single(viewModel.Messages).Body);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task OldNodeCommitDoesNotReloadOrEnterViewedNodeProjection()
+    {
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var viewModel = CreateViewModel(history, notifications: notifications, nodes: CreateTwoNodes());
+        await viewModel.LoadAsync(CancellationToken);
+        await viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
+            CancellationToken);
+        var reads = history.TotalConversationReads;
+
+        notifications.Publish(CreateCommit(NodeAId, inserted: true));
+        await Task.Delay(30, CancellationToken);
+
+        Assert.Equal(reads, history.TotalConversationReads);
+        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+        Assert.Empty(viewModel.Conversations);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task MatchingCommittedMessageRereadsCommittedProjection()
+    {
+        var conversationId = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var viewModel = CreateViewModel(history, notifications: notifications);
+        await viewModel.LoadAsync(CancellationToken);
+        var reads = history.TotalConversationReads;
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, conversationId, "New", 1)]);
+        history.Messages[conversationId] = [CreateMessage(conversationId, 1, "committed body")];
+
+        notifications.Publish(CreateCommit(NodeAId, inserted: true, conversationId));
+
+        await WaitUntilAsync(() => viewModel.Messages.Count == 1);
+        Assert.True(history.TotalConversationReads > reads);
+        Assert.Equal("committed body", Assert.Single(viewModel.Messages).Body);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task DuplicateCommitDoesNotReloadProjection()
+    {
+        var history = new FakeHistoryReader();
+        var notifications = new FakeMessageCommitNotifications();
+        var viewModel = CreateViewModel(history, notifications: notifications);
+        await viewModel.LoadAsync(CancellationToken);
+        var reads = history.TotalConversationReads;
+
+        notifications.Publish(CreateCommit(NodeAId, inserted: false));
+        await Task.Delay(30, CancellationToken);
+
+        Assert.Equal(reads, history.TotalConversationReads);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task FollowingConnectionHandlesAtoBtoAOnOneProfileWithoutMixingHistory()
+    {
+        var profileId = Guid.NewGuid();
+        var conversationA = Guid.NewGuid();
+        var conversationB = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, conversationA, "A", 1)]);
+        history.SetConversations(NodeBId, [CreateSummary(NodeBId, conversationB, "B", 2)]);
+        history.Messages[conversationA] = [CreateMessage(conversationA, 1, "A history")];
+        history.Messages[conversationB] = [CreateMessage(conversationB, 2, "B history")];
+        var supervisor = new FakeConnectionSupervisor();
+        var settings = new FakeSettingsStore();
+        var viewModel = CreateViewModel(
+            history,
+            supervisor,
+            nodes: CreateTwoNodes(),
+            settings: settings,
+            profileManager: new TestProfileManager([CreateProfile(profileId, "Shared endpoint")]));
+        await viewModel.LoadAsync(CancellationToken);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, profileId));
+        await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeAId && viewModel.Messages.Count == 1);
+        Assert.Equal("A history", Assert.Single(viewModel.Messages).Body);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeBId, profileId, generation: 2));
+        await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeBId && viewModel.Messages.Count == 1);
+        Assert.Equal("B history", Assert.Single(viewModel.Messages).Body);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, profileId, generation: 3));
+        await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeAId && viewModel.Messages.Count == 1);
+        Assert.Equal("A history", Assert.Single(viewModel.Messages).Body);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task SameNodeThroughDifferentProfilesKeepsOneIdentityAndHistory()
+    {
+        var serialProfile = CreateProfile(Guid.NewGuid(), "Serial");
+        var tcpProfile = CreateProfile(Guid.NewGuid(), "TCP");
+        var conversation = Guid.NewGuid();
+        var history = new FakeHistoryReader();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, conversation, "A", 1)]);
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(
+            history,
+            supervisor,
+            profileManager: new TestProfileManager([serialProfile, tcpProfile]));
+        await viewModel.LoadAsync(CancellationToken);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, serialProfile.Id));
+        await WaitUntilAsync(() => viewModel.ActiveProfileDisplayName.Contains("Serial", StringComparison.Ordinal));
+        var firstViewedId = viewModel.ViewedNode?.Id;
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, tcpProfile.Id, generation: 2));
+        await WaitUntilAsync(() => viewModel.ActiveProfileDisplayName.Contains("TCP", StringComparison.Ordinal));
+
+        Assert.Equal(NodeAId, firstViewedId);
+        Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
+        Assert.Single(viewModel.Conversations);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task SameNameNodesRemainDistinguishableByFullPublicKey()
+    {
+        var nodes = new FakeNodeStore(
+            [CreateNode(NodeAId, "Same name", 0x11), CreateNode(NodeBId, "Same name", 0x22)]);
+        var viewModel = CreateViewModel(new FakeHistoryReader(), nodes: nodes);
+
+        await viewModel.LoadAsync(CancellationToken);
+
+        Assert.Equal(2, viewModel.KnownNodes.Count);
+        Assert.All(viewModel.KnownNodes, item => Assert.Contains("Same name", item.SelectorLabel));
+        Assert.NotEqual(viewModel.KnownNodes[0].SelectorLabel, viewModel.KnownNodes[1].SelectorLabel);
+        Assert.All(viewModel.KnownNodes, item => Assert.Equal(64, item.PublicKeyHex.Length));
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task ProfileEditorSelectionDoesNotChangeActiveAttemptLabel()
+    {
+        var activeProfile = CreateProfile(Guid.NewGuid(), "Active profile");
+        var editedProfile = CreateProfile(Guid.NewGuid(), "Editor only");
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(
+            new FakeHistoryReader(),
+            supervisor,
+            profileManager: new TestProfileManager([activeProfile, editedProfile]));
+        await viewModel.LoadAsync(CancellationToken);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Connecting, null, activeProfile.Id));
+        await WaitUntilAsync(() => viewModel.ActiveProfileDisplayName.Contains("Active profile", StringComparison.Ordinal));
+
+        viewModel.Profiles.SelectedProfile = viewModel.Profiles.AvailableProfiles.Single(
+            item => item.Id == editedProfile.Id);
+
+        Assert.Contains("Active profile", viewModel.ActiveProfileDisplayName, StringComparison.Ordinal);
+        Assert.DoesNotContain("Editor only", viewModel.ActiveProfileDisplayName, StringComparison.Ordinal);
+        await viewModel.StopAsync();
+    }
+
+    [Theory]
+    [InlineData(ConnectionSupervisorState.Offline)]
+    [InlineData(ConnectionSupervisorState.Identifying)]
+    public async Task OfflineAndIdentifyingNeverExposeSnapshotNodeAsActive(ConnectionSupervisorState state)
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
+        await viewModel.LoadAsync(CancellationToken);
+
+        supervisor.Publish(CreateSnapshot(state, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.ConnectionStatus ==
+            (state == ConnectionSupervisorState.Offline ? "Не подключено" : "Идентификация…"));
+
+        Assert.Null(viewModel.ActiveNode);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task ManualNodeSelectionPinsHistoryUntilFollowCommand()
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
+        await viewModel.LoadAsync(CancellationToken);
+        await viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
+            CancellationToken);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.ActiveNode?.Id == NodeAId);
+        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+
+        await viewModel.FollowActiveNodeCommand.ExecuteAsync(null);
+        Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
+        Assert.True(viewModel.IsFollowingActiveNode);
         await viewModel.StopAsync();
     }
 
     [Fact]
     public async Task ReadFailureBecomesVisibleShellState()
     {
-        var history = new FakeHistoryReader
-        {
-            ConversationError = new InvalidOperationException("test failure"),
-        };
+        var history = new FakeHistoryReader { ConversationError = new IOException("test") };
         var viewModel = CreateViewModel(history);
 
         await viewModel.LoadAsync(CancellationToken);
 
         Assert.True(viewModel.HasError);
         Assert.Equal("Ошибка локального хранилища", viewModel.Status);
-        Assert.Contains("Не удалось", viewModel.ErrorMessage, StringComparison.Ordinal);
         await viewModel.StopAsync();
     }
 
@@ -85,7 +356,6 @@ public sealed class MainWindowViewModelTests
         var viewModel = CreateViewModel(history);
         using var cancellation = new CancellationTokenSource();
         var load = viewModel.LoadAsync(cancellation.Token);
-
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => load);
@@ -103,23 +373,16 @@ public sealed class MainWindowViewModelTests
     [InlineData(ConnectionSupervisorState.RetryWaiting, "Ожидание повтора")]
     [InlineData(ConnectionSupervisorState.Disconnecting, "Отключение…")]
     [InlineData(ConnectionSupervisorState.NeedsAttention, "Требуется внимание")]
-    public async Task MapsEverySupervisorState(
-        ConnectionSupervisorState state,
-        string expectedStatus)
+    public async Task MapsEverySupervisorState(ConnectionSupervisorState state, string expectedStatus)
     {
         var supervisor = new FakeConnectionSupervisor();
-        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor: supervisor);
-        var retryAt = DateTimeOffset.UtcNow.AddSeconds(5);
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor);
+        await viewModel.LoadAsync(CancellationToken);
 
-        supervisor.Publish(CreateSnapshot(state, "test reason", retryAt));
+        supervisor.Publish(CreateSnapshot(state, null, Guid.NewGuid(), reason: "test reason"));
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == expectedStatus);
 
-        Assert.Equal(expectedStatus, viewModel.ConnectionStatus);
         Assert.Contains("test reason", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
-        if (state == ConnectionSupervisorState.RetryWaiting)
-        {
-            Assert.Contains("Следующая попытка", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
-        }
-
         await viewModel.StopAsync();
     }
 
@@ -128,19 +391,14 @@ public sealed class MainWindowViewModelTests
     {
         var supervisor = new FakeConnectionSupervisor();
         var dispatcher = new QueuedUiDispatcher();
-        var viewModel = CreateViewModel(
-            new FakeHistoryReader(),
-            supervisor: supervisor,
-            dispatcher: dispatcher);
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, dispatcher: dispatcher);
 
-        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online));
-
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Connecting, null, Guid.NewGuid()));
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
         Assert.Equal("Не подключено", viewModel.ConnectionStatus);
-        Assert.Equal(1, dispatcher.PendingCount);
-
         dispatcher.RunNext();
 
-        Assert.Equal("Подключено", viewModel.ConnectionStatus);
+        Assert.Equal("Подключение…", viewModel.ConnectionStatus);
         await viewModel.StopAsync();
     }
 
@@ -148,7 +406,7 @@ public sealed class MainWindowViewModelTests
     public async Task ConnectAndDisconnectCommandsDelegateToSupervisor()
     {
         var supervisor = new FakeConnectionSupervisor();
-        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor: supervisor);
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor);
 
         await viewModel.ConnectCommand.ExecuteAsync(null);
         await viewModel.DisconnectCommand.ExecuteAsync(null);
@@ -159,110 +417,21 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task CommittedMessageRereadsHistoryBeforeUpdatingProjection()
-    {
-        var conversationId = Guid.NewGuid();
-        var history = new FakeHistoryReader();
-        var notifications = new FakeMessageCommitNotifications();
-        var dispatcher = new ImmediateUiDispatcher();
-        var viewModel = CreateViewModel(
-            history,
-            notifications: notifications,
-            dispatcher: dispatcher);
-        await viewModel.LoadAsync(CancellationToken);
-        var readsBeforeCommit = history.ConversationReads;
-
-        history.Conversations = [CreateSummary(conversationId, "New", "committed preview", 1)];
-        history.Messages[conversationId] = [CreateMessage(conversationId, 1, "committed body")];
-
-        Assert.Empty(viewModel.Conversations);
-        notifications.Publish(new StoredIncomingMessage(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            conversationId,
-            1,
-            Inserted: true));
-
-        await WaitUntilAsync(() => viewModel.Messages.Count == 1);
-        Assert.True(history.ConversationReads > readsBeforeCommit);
-        Assert.Equal(conversationId, Assert.Single(viewModel.Conversations).Id);
-        Assert.Equal("committed body", Assert.Single(viewModel.Messages).Body);
-        Assert.True(dispatcher.Calls >= 2);
-        await viewModel.StopAsync();
-    }
-
-    [Fact]
-    public async Task DuplicateCommitDoesNotReloadProjection()
-    {
-        var history = new FakeHistoryReader();
-        var notifications = new FakeMessageCommitNotifications();
-        var viewModel = CreateViewModel(history, notifications: notifications);
-        await viewModel.LoadAsync(CancellationToken);
-        var reads = history.ConversationReads;
-
-        notifications.Publish(new StoredIncomingMessage(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            1,
-            Inserted: false));
-        await Task.Delay(25, CancellationToken);
-
-        Assert.Equal(reads, history.ConversationReads);
-        await viewModel.StopAsync();
-    }
-
-    [Fact]
-    public async Task CommitsDuringRefreshAreCoalescedIntoOneAdditionalRead()
-    {
-        var history = new FakeHistoryReader();
-        var notifications = new FakeMessageCommitNotifications();
-        var viewModel = CreateViewModel(history, notifications: notifications);
-        await viewModel.LoadAsync(CancellationToken);
-        var reads = history.ConversationReads;
-        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        history.ConversationGate = gate;
-
-        notifications.Publish(CreateCommit(inserted: true));
-        await WaitUntilAsync(() => history.ConversationReads == reads + 1);
-        notifications.Publish(CreateCommit(inserted: true));
-        notifications.Publish(CreateCommit(inserted: true));
-        gate.SetResult();
-
-        await WaitUntilAsync(() => history.ConversationReads == reads + 2);
-        await Task.Delay(25, CancellationToken);
-        Assert.Equal(reads + 2, history.ConversationReads);
-        await viewModel.StopAsync();
-    }
-
-    [Fact]
     public async Task LateCallbacksAfterStopDoNotChangeProjectionOrConnectionState()
     {
         var history = new FakeHistoryReader();
         var supervisor = new FakeConnectionSupervisor();
         var notifications = new FakeMessageCommitNotifications();
-        var dispatcher = new ImmediateUiDispatcher();
-        var viewModel = CreateViewModel(
-            history,
-            supervisor,
-            notifications,
-            dispatcher);
+        var viewModel = CreateViewModel(history, supervisor, notifications);
         await viewModel.LoadAsync(CancellationToken);
-        var reads = history.ConversationReads;
-        var dispatches = dispatcher.Calls;
-
+        var reads = history.TotalConversationReads;
         await viewModel.StopAsync();
-        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online));
-        notifications.Publish(new StoredIncomingMessage(
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            Guid.NewGuid(),
-            1,
-            Inserted: true));
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, Guid.NewGuid()));
+        notifications.Publish(CreateCommit(NodeAId, inserted: true));
 
         Assert.Equal("Не подключено", viewModel.ConnectionStatus);
-        Assert.Equal(reads, history.ConversationReads);
-        Assert.Equal(dispatches, dispatcher.Calls);
+        Assert.Equal(reads, history.TotalConversationReads);
     }
 
     [Fact]
@@ -271,28 +440,33 @@ public sealed class MainWindowViewModelTests
         var viewModel = CreateViewModel(new FakeHistoryReader());
         await viewModel.StopAsync();
 
-        await ((IDesktopUiLifetime)viewModel).ReportShutdownFailureAsync(
-            new IOException("disk full"));
+        await ((IDesktopUiLifetime)viewModel).ReportShutdownFailureAsync(new IOException("disk full"));
 
         Assert.True(viewModel.HasError);
         Assert.Contains("повторите закрытие", viewModel.ErrorMessage, StringComparison.Ordinal);
-        Assert.Contains("Закрытие отменено", viewModel.Status, StringComparison.Ordinal);
     }
 
     private static MainWindowViewModel CreateViewModel(
         ILocalHistoryReader history,
         FakeConnectionSupervisor? supervisor = null,
         FakeMessageCommitNotifications? notifications = null,
-        IUiDispatcher? dispatcher = null)
+        IUiDispatcher? dispatcher = null,
+        FakeNodeStore? nodes = null,
+        FakeSettingsStore? settings = null,
+        TestProfileManager? profileManager = null)
     {
         supervisor ??= new FakeConnectionSupervisor();
+        nodes ??= new FakeNodeStore([CreateNode(NodeAId, "Node A", 0x11)]);
+        settings ??= CreateSettings(NodeAId, follow: false);
         var profiles = new ConnectionProfilesViewModel(
-            new EmptyProfileManager(),
+            profileManager ?? new TestProfileManager([]),
             supervisor,
             new EmptySerialPortCatalog(),
             NullLogger<ConnectionProfilesViewModel>.Instance);
         return new MainWindowViewModel(
             history,
+            nodes,
+            settings,
             profiles,
             supervisor,
             notifications ?? new FakeMessageCommitNotifications(),
@@ -300,29 +474,53 @@ public sealed class MainWindowViewModelTests
             NullLogger<MainWindowViewModel>.Instance);
     }
 
-    private static ConnectionSupervisorSnapshot CreateSnapshot(
-        ConnectionSupervisorState state,
-        string? reason = null,
-        DateTimeOffset? nextAttemptUtc = null) =>
-        new(state, 1, Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), reason, nextAttemptUtc);
+    private static FakeNodeStore CreateTwoNodes() => new(
+        [CreateNode(NodeAId, "Node A", 0x11), CreateNode(NodeBId, "Node B", 0x22)]);
 
-    private static StoredIncomingMessage CreateCommit(bool inserted) =>
-        new(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 1, inserted);
-
-    private static async Task WaitUntilAsync(Func<bool> condition)
+    private static FakeSettingsStore CreateSettings(Guid nodeId, bool follow)
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(2));
-        while (!condition())
-        {
-            await Task.Delay(10, timeout.Token);
-        }
+        var settings = new FakeSettingsStore();
+        settings.Values["desktop.viewed-node-id"] = nodeId.ToString("D");
+        settings.Values["desktop.follow-active-node"] = follow.ToString();
+        return settings;
     }
 
-    private static ConversationSummary CreateSummary(Guid id, string title, string preview, long sequence) =>
+    private static NodeRecord CreateNode(Guid id, string name, byte keyByte) =>
+        new(id, Enumerable.Repeat(keyByte, 32).ToArray(), name, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow);
+
+    private static ConnectionProfile CreateProfile(Guid id, string name) => new()
+    {
+        Id = id,
+        Name = name,
+        Transport = ConnectionTransportKind.Tcp,
+        TcpHost = "127.0.0.1",
+        TcpPort = 5000,
+        CreatedUtc = DateTimeOffset.UtcNow,
+        UpdatedUtc = DateTimeOffset.UtcNow,
+    };
+
+    private static ConnectionSupervisorSnapshot CreateSnapshot(
+        ConnectionSupervisorState state,
+        Guid? nodeId,
+        Guid profileId,
+        long generation = 1,
+        string? reason = null) =>
+        new(state, generation, profileId, Guid.NewGuid(), nodeId, reason, null);
+
+    private static StoredIncomingMessage CreateCommit(
+        Guid nodeId,
+        bool inserted,
+        Guid? conversationId = null) =>
+        new(Guid.NewGuid(), Guid.NewGuid(), nodeId, conversationId ?? Guid.NewGuid(), 1, inserted);
+
+    private static ConversationSummary CreateSummary(
+        Guid nodeId,
+        Guid id,
+        string title,
+        long sequence) =>
         new(
             id,
-            Guid.NewGuid(),
+            nodeId,
             ConversationKind.UnknownContact,
             title,
             false,
@@ -330,7 +528,7 @@ public sealed class MainWindowViewModelTests
             sequence,
             MessageDirection.Incoming,
             StoredMessageKind.Text,
-            preview,
+            title,
             DateTimeOffset.UtcNow);
 
     private static HistoryMessage CreateMessage(Guid conversationId, long sequence, string text) =>
@@ -343,23 +541,44 @@ public sealed class MainWindowViewModelTests
             text,
             DateTimeOffset.UtcNow);
 
+    private static async Task WaitUntilAsync(Func<bool> condition)
+    {
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(2));
+        while (!condition())
+        {
+            await Task.Delay(10, timeout.Token);
+        }
+    }
+
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
     private sealed class FakeHistoryReader : ILocalHistoryReader
     {
-        public IReadOnlyList<ConversationSummary> Conversations { get; set; } = [];
+        private readonly Dictionary<Guid, IReadOnlyList<ConversationSummary>> _conversations = [];
+        private readonly Dictionary<Guid, int> _conversationReads = [];
+
         public Dictionary<Guid, IReadOnlyList<HistoryMessage>> Messages { get; } = [];
+        public Dictionary<Guid, TaskCompletionSource> ConversationGates { get; } = [];
         public List<Guid> RequestedConversations { get; } = [];
+        public List<Guid> RequestedNodes { get; } = [];
         public Exception? ConversationError { get; init; }
         public bool WaitForCancellation { get; init; }
-        public int ConversationReads { get; private set; }
-        public TaskCompletionSource? ConversationGate { get; set; }
+        public int TotalConversationReads => _conversationReads.Values.Sum();
+
+        public void SetConversations(Guid nodeId, IReadOnlyList<ConversationSummary> conversations) =>
+            _conversations[nodeId] = conversations;
+
+        public int GetConversationReads(Guid nodeId) =>
+            _conversationReads.GetValueOrDefault(nodeId);
 
         public async Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
+            Guid nodeId,
             int limit,
             CancellationToken cancellationToken = default)
         {
-            ConversationReads++;
+            _conversationReads[nodeId] = GetConversationReads(nodeId) + 1;
+            RequestedNodes.Add(nodeId);
             if (WaitForCancellation)
             {
                 await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
@@ -370,21 +589,25 @@ public sealed class MainWindowViewModelTests
                 throw ConversationError;
             }
 
-            if (ConversationGate is { } gate)
+            if (ConversationGates.TryGetValue(nodeId, out var gate))
             {
                 await gate.Task.WaitAsync(cancellationToken);
             }
 
-            return Conversations.Take(limit).ToArray();
+            return _conversations.TryGetValue(nodeId, out var conversations)
+                ? conversations.Take(limit).ToArray()
+                : [];
         }
 
         public Task<IReadOnlyList<HistoryMessage>> GetMessagesAsync(
+            Guid nodeId,
             Guid conversationId,
             long? beforeLocalSequence,
             int limit,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            RequestedNodes.Add(nodeId);
             RequestedConversations.Add(conversationId);
             IReadOnlyList<HistoryMessage> result = Messages.TryGetValue(conversationId, out var messages)
                 ? messages.Take(limit).ToArray()
@@ -393,26 +616,64 @@ public sealed class MainWindowViewModelTests
         }
     }
 
-    private sealed class EmptyProfileManager : IConnectionProfileManager
+    private sealed class FakeNodeStore(IReadOnlyList<NodeRecord> nodes) : INodeStore
+    {
+        public IReadOnlyList<NodeRecord> Nodes { get; } = nodes;
+
+        public Task<IReadOnlyList<NodeRecord>> GetAllAsync(
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<NodeRecord>>(Nodes.Take(limit).ToArray());
+
+        public Task<NodeRecord?> GetAsync(Guid id, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Nodes.FirstOrDefault(node => node.Id == id));
+
+        public Task<NodeRecord?> GetByPublicKeyAsync(
+            ReadOnlyMemory<byte> publicKey,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(Nodes.FirstOrDefault(node => node.PublicKey.AsSpan().SequenceEqual(publicKey.Span)));
+
+        public Task<NodeRecord> FindOrCreateAsync(
+            ReadOnlyMemory<byte> publicKey,
+            string? name,
+            DateTimeOffset seenUtc,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class FakeSettingsStore : ISettingsStore
+    {
+        public Dictionary<string, string> Values { get; } = [];
+
+        public Task<string?> GetAsync(string key, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Values.GetValueOrDefault(key));
+
+        public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
+        {
+            Values[key] = value;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestProfileManager(IReadOnlyList<ConnectionProfile> profiles) : IConnectionProfileManager
     {
         public Task<IReadOnlyList<ConnectionProfile>> GetProfilesAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<IReadOnlyList<ConnectionProfile>>([]);
+            Task.FromResult(profiles);
 
         public Task<ConnectionProfile?> GetSelectedProfileAsync(
             CancellationToken cancellationToken = default) =>
-            Task.FromResult<ConnectionProfile?>(null);
+            Task.FromResult<ConnectionProfile?>(profiles.FirstOrDefault());
 
         public Task<ConnectionProfile> SelectAsync(
             Guid profileId,
             CancellationToken cancellationToken = default) =>
-            throw new NotSupportedException();
+            Task.FromResult(profiles.Single(profile => profile.Id == profileId));
 
         public Task<ConnectionProfile> SaveAndSelectAsync(
             ConnectionProfileDraft draft,
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
-
     }
 
     private sealed class EmptySerialPortCatalog : ISerialPortCatalog

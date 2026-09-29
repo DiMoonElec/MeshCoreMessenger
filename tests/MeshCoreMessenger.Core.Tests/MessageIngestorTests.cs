@@ -145,7 +145,13 @@ public sealed class MessageIngestorTests
             }
             Stored.Enqueue(envelope);
             _persisted.TryAdd(envelope.EventId, 0);
-            return new StoredIncomingMessage(Guid.NewGuid(), envelope.EventId, Guid.NewGuid(), Stored.Count, true);
+            return new StoredIncomingMessage(
+                Guid.NewGuid(),
+                envelope.EventId,
+                envelope.NodeId,
+                Guid.NewGuid(),
+                Stored.Count,
+                true);
         }
         public bool IsPersisted(Guid eventId) => _persisted.ContainsKey(eventId);
     }

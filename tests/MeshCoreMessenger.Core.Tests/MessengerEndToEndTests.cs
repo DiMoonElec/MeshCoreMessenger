@@ -116,17 +116,23 @@ public sealed class MessengerEndToEndTests
         Assert.NotEqual(firstSession.NodeId, secondSession?.NodeId);
         Assert.Equal(firstSession.NodeId, thirdSession?.NodeId);
 
-        var conversations = await storage.History.GetConversationsAsync(10, CancellationToken);
-        Assert.Equal(2, conversations.Count);
         Assert.Equal(profile.Id, (await profiles.GetSelectedProfileAsync(CancellationToken))?.Id);
-        var nodeAConversation = Assert.Single(conversations, item => item.NodeId == firstSession.NodeId);
-        var nodeBConversation = Assert.Single(conversations, item => item.NodeId == secondSession?.NodeId);
+        var nodeAConversation = Assert.Single(await storage.History.GetConversationsAsync(
+            firstSession.NodeId!.Value,
+            10,
+            CancellationToken));
+        var nodeBConversation = Assert.Single(await storage.History.GetConversationsAsync(
+            secondSession!.NodeId!.Value,
+            10,
+            CancellationToken));
         Assert.Equal(8, (await storage.History.GetMessagesAsync(
+            firstSession.NodeId.Value,
             nodeAConversation.Id,
             null,
             20,
             CancellationToken)).Count);
         Assert.Equal(4, (await storage.History.GetMessagesAsync(
+            secondSession.NodeId.Value,
             nodeBConversation.Id,
             null,
             20,

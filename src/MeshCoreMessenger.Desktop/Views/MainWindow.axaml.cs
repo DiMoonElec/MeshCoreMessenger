@@ -54,6 +54,28 @@ public sealed partial class MainWindow : Window
         }
     }
 
+    private async void OnNodeSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)
+    {
+        if (DataContext is not MainWindowViewModel viewModel || sender is not ComboBox comboBox)
+        {
+            return;
+        }
+
+        var selectedNode = comboBox.SelectedItem as KnownNodeListItem;
+        if (selectedNode?.Id == viewModel.ViewedNode?.Id)
+        {
+            return;
+        }
+
+        try
+        {
+            await viewModel.SelectViewedNodeAsync(selectedNode);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
     private async Task CompleteShutdownAndCloseAsync()
     {
         try

@@ -9,9 +9,11 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
     internal const int MaximumPageSize = 500;
 
     public Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
+        Guid nodeId,
         int limit,
         CancellationToken cancellationToken = default)
     {
+        ValidateNodeId(nodeId);
         ValidateLimit(limit);
         return reader.ExecuteAsync<IReadOnlyList<ConversationSummary>>(connection =>
         {
@@ -25,9 +27,11 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
                       SELECT MAX(latest.LocalSequence)
                       FROM Messages AS latest
                       WHERE latest.ConversationId = c.Id)
+                WHERE c.NodeId = $nodeId
                 ORDER BY m.LocalSequence DESC, c.UpdatedUtc DESC, c.Id ASC
                 LIMIT $limit;
                 """;
+            command.Parameters.AddWithValue("$nodeId", nodeId.ToString("D"));
             command.Parameters.AddWithValue("$limit", limit);
 
             var conversations = new List<ConversationSummary>(limit);
@@ -53,11 +57,13 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
     }
 
     public Task<IReadOnlyList<HistoryMessage>> GetMessagesAsync(
+        Guid nodeId,
         Guid conversationId,
         long? beforeLocalSequence,
         int limit,
         CancellationToken cancellationToken = default)
     {
+        ValidateNodeId(nodeId);
         if (conversationId == Guid.Empty)
         {
             throw new ArgumentException("Conversation ID must not be empty.", nameof(conversationId));
@@ -73,6 +79,22 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
         ValidateLimit(limit);
         return reader.ExecuteAsync<IReadOnlyList<HistoryMessage>>(connection =>
         {
+            using (var ownership = connection.CreateCommand())
+            {
+                ownership.CommandText = """
+                    SELECT 1
+                    FROM Conversations
+                    WHERE Id = $conversationId AND NodeId = $nodeId;
+                    """;
+                ownership.Parameters.AddWithValue("$conversationId", conversationId.ToString("D"));
+                ownership.Parameters.AddWithValue("$nodeId", nodeId.ToString("D"));
+                if (ownership.ExecuteScalar() is null)
+                {
+                    throw new KeyNotFoundException(
+                        $"Conversation '{conversationId}' does not belong to node '{nodeId}'.");
+                }
+            }
+
             using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT Id, LocalSequence, ConversationId, Direction, MessageKind, Text, ReceivedUtc
@@ -108,6 +130,14 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
 
     private static DateTimeOffset ParseTimestamp(string value) =>
         DateTimeOffset.Parse(value, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
+
+    private static void ValidateNodeId(Guid nodeId)
+    {
+        if (nodeId == Guid.Empty)
+        {
+            throw new ArgumentException("Node ID must not be empty.", nameof(nodeId));
+        }
+    }
 
     private static void ValidateLimit(int limit)
     {
