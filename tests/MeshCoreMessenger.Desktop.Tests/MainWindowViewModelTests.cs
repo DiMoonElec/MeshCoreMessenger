@@ -615,6 +615,22 @@ public sealed class MainWindowViewModelTests
                 : [];
             return Task.FromResult(result);
         }
+
+        public Task<HistoryMessagePosition?> GetMessagePositionAsync(
+            Guid nodeId, Guid conversationId, Guid messageId,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<HistoryMessagePage> GetMessagesBeforeAsync(
+            Guid nodeId, Guid conversationId, HistoryMessagePosition? before, int limit,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<HistoryMessagePage> GetMessagesAfterAsync(
+            Guid nodeId, Guid conversationId, HistoryMessagePosition? after, int limit,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<HistoryMessagePage> GetMessagesAroundAsync(
+            HistoryMessagePosition position, int beforeLimit, int afterLimit,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeConversationDirectoryReader(ILocalHistoryReader history)

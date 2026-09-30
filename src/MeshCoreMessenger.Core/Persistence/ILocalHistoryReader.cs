@@ -16,4 +16,30 @@ public interface ILocalHistoryReader
         long? beforeLocalSequence,
         int limit,
         CancellationToken cancellationToken = default);
+
+    Task<HistoryMessagePosition?> GetMessagePositionAsync(
+        Guid nodeId,
+        Guid conversationId,
+        Guid messageId,
+        CancellationToken cancellationToken = default);
+
+    Task<HistoryMessagePage> GetMessagesBeforeAsync(
+        Guid nodeId,
+        Guid conversationId,
+        HistoryMessagePosition? before,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<HistoryMessagePage> GetMessagesAfterAsync(
+        Guid nodeId,
+        Guid conversationId,
+        HistoryMessagePosition? after,
+        int limit,
+        CancellationToken cancellationToken = default);
+
+    Task<HistoryMessagePage> GetMessagesAroundAsync(
+        HistoryMessagePosition position,
+        int beforeLimit,
+        int afterLimit,
+        CancellationToken cancellationToken = default);
 }

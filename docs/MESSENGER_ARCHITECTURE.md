@@ -420,6 +420,18 @@ post-commit уведомление перечитывают committed projection
 navigation ViewModel владеет списками, текущей короткой историей и narrow-layout
 переходом «Назад». Полноценные страницы/viewport длинной истории остаются C4–C5.
 
+C4 добавляет к `ILocalHistoryReader` единый позиционный контракт длинной истории.
+`HistoryMessagePosition` всегда содержит NodeId, ConversationId, устойчивый MessageId
+и глобальный LocalSequence; reader проверяет как node ownership диалога, так и точное
+соответствие MessageId/LocalSequence. Страницы before/after и окно around позиции
+возвращаются хронологически, ограничены 500 DTO и сообщают `HasEarlier`/`HasLater`.
+Порядок и границы строятся только по LocalSequence, поэтому ошибочный или одинаковый
+wire timestamp не влияет на навигацию. DTO дополнительно сохраняет nullable TextType,
+BinaryDataType, WireTimestamp и ResolutionState, но не экспортирует binary payload.
+Существующий индекс `IX_Messages_Conversation_Sequence` покрывает range-запросы;
+новая миграция для C4 не потребовалась. UI viewport начинает использовать контракт
+только в C5.
+
 ### Компоновка и сценарии
 
 Окно в стиле привычного desktop-мессенджера: слева навигация и список диалогов,

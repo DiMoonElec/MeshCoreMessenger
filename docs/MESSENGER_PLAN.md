@@ -3,7 +3,7 @@
 Актуализация: 29.09.2026. **Этапы A и B выполнены, включая B7.5: локальное
 хранилище, offline startup, приём, reconnect и восстанавливаемое закрытие готовы.
 Профиль описывает транспорт; identity определяется по полному ключу в каждой
-session. Stage C начат: C1–C3 завершены; C4 и последующие подэтапы ещё не
+session. Stage C начат: C1–C4 завершены; C5 и последующие подэтапы ещё не
 реализованы.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация, статистика и барьер callbacks;
@@ -1017,6 +1017,8 @@ Serial-ноде. На wide layout проверены вкладка канало
 
 #### C4 — API страниц истории и адресуемой позиции
 
+**Выполнено 30.09.2026.**
+
 **Цель:** подготовить одно основание для scroll, first unread и результатов поиска.
 
 **Scope:** дополнить bounded history API чтением до/после sequence и вокруг конкретного
@@ -1039,6 +1041,27 @@ room-post/TextType, binary и отсутствующий wire timestamp не в�
 **Готово:** переход к произвольному сообщению требует только ограниченного набора
 страниц; нет OFFSET-прохода с материализацией всей истории.
 **Ручная UI-проверка:** не требуется, UI использует API с C5.
+
+Фактически `ILocalHistoryReader` дополнен методами получения точной позиции по
+MessageId, хронологических страниц before/after и bounded-окна around. Позиция
+включает NodeId, ConversationId, MessageId и LocalSequence; чужой scope отклоняется,
+а подменённая пара MessageId/LocalSequence не принимается. Каждая страница содержит
+первую/последнюю позицию и независимые признаки `HasEarlier`/`HasLater`; старый
+`GetMessagesAsync` сохранён для совместимости C1–C3.
+
+`HistoryMessage` теперь также проецирует nullable TextType, BinaryDataType и
+WireTimestamp, а также ResolutionState. Binary payload намеренно не попал в read DTO.
+SQL использует keyset range по LocalSequence и возвращает данные хронологически;
+timestamps не участвуют в сортировке. `EXPLAIN QUERY PLAN` на fixture из 100 000
+сообщений подтвердил использование существующего
+`IX_Messages_Conversation_Sequence`, поэтому SQLite schema не менялась.
+
+Семь новых SQLite integration tests покрывают начало/конец/середину и пустой диалог,
+глобальные gaps, одинаковые timestamps, соседние страницы, append между страницами,
+wrong node/conversation и forged position, cancellation/bounds, TextType/binary/
+missing wire timestamp, а также лимит 500 DTO на 100 000 сообщениях. Release build
+прошёл без предупреждений; Core tests — 114/114, Desktop — 65/65, MeshCoreSharp —
+92/92. Ручная проверка не требуется; C5 ещё не начинался.
 
 #### C5 — ограниченное окно истории и поведение прокрутки
 
