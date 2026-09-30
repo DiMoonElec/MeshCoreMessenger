@@ -16,7 +16,7 @@ internal interface IDesktopUiLifetime
 }
 
 /// <summary>
-/// Quiesces Desktop work and accepts application exit only after durable ingress has flushed.
+/// Quiesces Desktop work and accepts application exit only after all durable writers have flushed.
 /// A failed attempt remains retryable and never owns or disposes SQLite or the instance lock.
 /// </summary>
 internal sealed class DesktopShutdownCoordinator(
@@ -24,6 +24,7 @@ internal sealed class DesktopShutdownCoordinator(
     IDesktopConnectionLifecycle connections,
     IDurableMessageIngress ingress,
     IDurableSessionCompletion sessionCompletions,
+    IDurableReadStateWrites readStates,
     ILogger<DesktopShutdownCoordinator> logger) : IDesktopShutdownCoordinator
 {
     private readonly object _gate = new();
@@ -123,10 +124,16 @@ internal sealed class DesktopShutdownCoordinator(
                 {
                     await sessionCompletions.RetryAsync(CancellationToken.None).ConfigureAwait(false);
                 }
+
+                if (readStates.IsPaused)
+                {
+                    await readStates.RetryAsync(CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             await ingress.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await sessionCompletions.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            await readStates.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             lock (_gate)
             {
                 _completed = true;
@@ -148,7 +155,7 @@ internal sealed class DesktopShutdownCoordinator(
             }
 
             throw new DesktopShutdownException(
-                "Application shutdown was canceled because local message persistence did not complete.",
+                "Application shutdown was canceled because local persistence did not complete.",
                 exception);
         }
     }

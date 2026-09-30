@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
+using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
@@ -56,6 +57,8 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public ConversationNavigationViewModel(
         IConversationDirectoryReader directory,
         ILocalHistoryReader history,
+        IConversationReadStateStore readStates,
+        IDurableReadStateWrites readWrites,
         ISettingsStore settings,
         IUiDispatcher dispatcher,
         ILogger logger)
@@ -63,7 +66,8 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         _directory = directory;
         _settings = settings;
         _dispatcher = dispatcher;
-        History = new HistoryWindowViewModel(history, dispatcher, logger);
+        History = new HistoryWindowViewModel(history, readStates, readWrites, dispatcher, logger);
+        History.ReadStateChanged += OnReadStateChanged;
         Tabs =
         [
             new(MessengerNavigationTab.Personal, "Личные"),
@@ -401,6 +405,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
         _lifetimeCancellation.Cancel();
         LoadMoreCommand.Cancel();
+        History.ReadStateChanged -= OnReadStateChanged;
         await History.StopAsync().ConfigureAwait(false);
         if (LoadMoreCommand.ExecutionTask is { } execution)
         {
@@ -523,6 +528,22 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         SelectedConversation = conversation;
         ContactDetails = projection.Contact;
         ChannelDetails = projection.Channel;
+    }
+
+    private void OnReadStateChanged(ConversationReadState state)
+    {
+        if (state.NodeId != _nodeId)
+        {
+            return;
+        }
+
+        foreach (var item in _loadedPrimary.Concat(_loadedUnknown))
+        {
+            if (item.Id == state.ConversationId)
+            {
+                item.ApplyUnreadCount(state.UnreadCount);
+            }
+        }
     }
 
     private void ApplyEmpty(string status)
@@ -759,8 +780,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     }
 }
 
-public sealed class ConversationListItem
+public sealed class ConversationListItem : ObservableObject
 {
+    private long _unreadCount;
+
     public ConversationListItem(ConversationDirectoryEntry entry)
     {
         Entry = entry ?? throw new ArgumentNullException(nameof(entry));
@@ -793,6 +816,7 @@ public sealed class ConversationListItem
             ChannelAccessKind.SharedSecret => "Общий секрет",
             _ => "Тип доступа неизвестен",
         };
+        _unreadCount = entry.UnreadCount;
     }
 
     internal ConversationDirectoryEntry Entry { get; }
@@ -809,6 +833,18 @@ public sealed class ConversationListItem
     public string AccessLabel { get; }
     public bool IsPresentOnNode => Entry.PresentOnNode is not false;
     public bool HasConversation => Id is not null;
+    public long UnreadCount => _unreadCount;
+    public bool HasUnreadMessages => UnreadCount > 0;
+    public string UnreadLabel => UnreadCount > 99 ? "99+" : UnreadCount.ToString();
+
+    internal void ApplyUnreadCount(long value)
+    {
+        if (SetProperty(ref _unreadCount, value, nameof(UnreadCount)))
+        {
+            OnPropertyChanged(nameof(HasUnreadMessages));
+            OnPropertyChanged(nameof(UnreadLabel));
+        }
+    }
 
     private static string DescribeType(ConversationDirectoryEntry entry) => entry.Section switch
     {

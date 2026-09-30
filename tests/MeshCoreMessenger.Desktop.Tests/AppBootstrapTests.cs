@@ -28,6 +28,7 @@ public sealed class AppBootstrapTests
         Assert.Same(paths, services.GetRequiredService<IAppPaths>());
         Assert.Same(storage, services.GetRequiredService<LocalStorage>());
         Assert.Same(storage.History, services.GetRequiredService<ILocalHistoryReader>());
+        Assert.Same(storage.ReadStates, services.GetRequiredService<IConversationReadStateStore>());
         Assert.NotNull(services.GetRequiredService<IConnectionProfileManager>());
         Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
@@ -36,6 +37,9 @@ public sealed class AppBootstrapTests
         Assert.Same(
             services.GetRequiredService<SessionCompletionTracker>(),
             services.GetRequiredService<IDurableSessionCompletion>());
+        Assert.Same(
+            services.GetRequiredService<ConversationReadStateTracker>(),
+            services.GetRequiredService<IDurableReadStateWrites>());
         Assert.NotNull(services.GetRequiredService<IConnectionAttemptFactory>());
         Assert.NotNull(services.GetRequiredService<IConnectionFailureClassifier>());
         Assert.NotNull(services.GetRequiredService<IReconnectDelay>());

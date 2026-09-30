@@ -24,7 +24,7 @@ public sealed class DesktopShutdownCoordinatorTests
         await coordinator.ShutdownAsync(CancellationToken);
 
         Assert.True(coordinator.IsCompleted);
-        Assert.Equal(["ui", "connections", "flush", "session-flush"], order);
+        Assert.Equal(["ui", "connections", "flush", "session-flush", "read-flush"], order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
         Assert.Equal(1, ingress.FlushCount);
@@ -77,7 +77,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.False(ingress.IsPaused);
         Assert.Equal(0, ingress.PendingMessageCount);
         Assert.Equal(
-            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush"],
+            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush", "read-flush"],
             order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
@@ -114,9 +114,68 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "report",
-                "session-retry", "flush", "session-flush",
+                "session-retry", "flush", "session-flush", "read-flush",
             ],
             order);
+    }
+
+    [Fact]
+    public async Task FailedReadStateWriteIsRetriedWithoutReportingFalseShutdownSuccess()
+    {
+        var order = new List<string>();
+        var reads = new FakeReadStateWrites(order) { PendingCount = 1 };
+        reads.Failures.Enqueue(new IOException("read watermark failed"));
+        var coordinator = CreateCoordinator(
+            new FakeUi(order),
+            new FakeConnections(order),
+            new FakeIngress(order),
+            new FakeSessionCompletions(order),
+            reads);
+
+        var failure = await Assert.ThrowsAsync<DesktopShutdownException>(
+            () => coordinator.ShutdownAsync(CancellationToken));
+
+        Assert.IsType<ReadStatePersistenceException>(failure.InnerException);
+        Assert.False(coordinator.IsCompleted);
+        Assert.True(reads.IsPaused);
+        Assert.Equal(1, reads.PendingCount);
+
+        await coordinator.ShutdownAsync(CancellationToken);
+
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(0, reads.PendingCount);
+        Assert.Equal(
+            [
+                "ui", "connections", "flush", "session-flush", "read-flush", "report",
+                "read-retry", "flush", "session-flush", "read-flush",
+            ],
+            order);
+    }
+
+    [Fact]
+    public async Task ShutdownWaitsForAcceptedReadStateWrites()
+    {
+        var order = new List<string>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var reads = new FakeReadStateWrites(order)
+        {
+            PendingCount = 1,
+            FlushGate = gate,
+        };
+        var coordinator = CreateCoordinator(
+            new FakeUi(order),
+            new FakeConnections(order),
+            new FakeIngress(order),
+            new FakeSessionCompletions(order),
+            reads);
+
+        var shutdown = coordinator.ShutdownAsync(CancellationToken);
+        await reads.FlushStarted.Task.WaitAsync(CancellationToken);
+
+        Assert.False(shutdown.IsCompleted);
+        gate.SetResult();
+        await shutdown;
+        Assert.True(coordinator.IsCompleted);
     }
 
     [Fact]
@@ -215,8 +274,15 @@ public sealed class DesktopShutdownCoordinatorTests
         IDesktopUiLifetime ui,
         IDesktopConnectionLifecycle connections,
         IDurableMessageIngress ingress,
-        IDurableSessionCompletion sessionCompletions) =>
-        new(ui, connections, ingress, sessionCompletions, NullLogger<DesktopShutdownCoordinator>.Instance);
+        IDurableSessionCompletion sessionCompletions,
+        IDurableReadStateWrites? readStates = null) =>
+        new(
+            ui,
+            connections,
+            ingress,
+            sessionCompletions,
+            readStates ?? new FakeReadStateWrites(order: ingress is FakeIngress fake ? fake.Order : []),
+            NullLogger<DesktopShutdownCoordinator>.Instance);
 
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
@@ -255,6 +321,7 @@ public sealed class DesktopShutdownCoordinatorTests
 
     private sealed class FakeIngress(List<string> order) : IDurableMessageIngress
     {
+        public List<string> Order => order;
         public Queue<Exception> Failures { get; } = [];
         public TaskCompletionSource FlushStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -324,6 +391,48 @@ public sealed class DesktopShutdownCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             order.Add("session-retry");
+            IsPaused = false;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeReadStateWrites(List<string> order) : IDurableReadStateWrites
+    {
+        public Queue<Exception> Failures { get; } = [];
+        public TaskCompletionSource FlushStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource? FlushGate { get; init; }
+        public bool IsPaused { get; private set; }
+        public int PendingCount { get; set; }
+
+        public Task<ConversationReadState> AdvanceAsync(
+            HistoryMessagePosition through,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
+
+        public async Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("read-flush");
+            FlushStarted.TrySetResult();
+            if (FlushGate is not null)
+            {
+                await FlushGate.Task.WaitAsync(cancellationToken);
+            }
+
+            if (Failures.TryDequeue(out var failure))
+            {
+                IsPaused = true;
+                throw new ReadStatePersistenceException(failure);
+            }
+
+            PendingCount = 0;
+        }
+
+        public Task RetryAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("read-retry");
             IsPaused = false;
             return Task.CompletedTask;
         }

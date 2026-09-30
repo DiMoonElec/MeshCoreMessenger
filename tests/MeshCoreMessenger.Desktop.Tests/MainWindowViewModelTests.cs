@@ -81,7 +81,7 @@ public sealed class MainWindowViewModelTests
         await second.LoadAsync(CancellationToken);
 
         Assert.Equal(NodeBId, second.ViewedNode?.Id);
-        Assert.False(second.IsFollowingActiveNode);
+        Assert.True(second.CanSelectViewedNode);
         await second.StopAsync();
     }
 
@@ -317,7 +317,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task ManualNodeSelectionPinsHistoryUntilFollowCommand()
+    public async Task IdentifiedNodeReplacesOfflineSelectionAndLocksNodeSelector()
     {
         var supervisor = new FakeConnectionSupervisor();
         var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
@@ -326,13 +326,42 @@ public sealed class MainWindowViewModelTests
             viewModel.KnownNodes.Single(item => item.Id == NodeBId),
             CancellationToken);
 
-        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, Guid.NewGuid()));
-        await WaitUntilAsync(() => viewModel.ActiveNode?.Id == NodeAId);
-        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeAId);
 
-        await viewModel.FollowActiveNodeCommand.ExecuteAsync(null);
+        Assert.False(viewModel.CanSelectViewedNode);
         Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
-        Assert.True(viewModel.IsFollowingActiveNode);
+
+        await viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
+            CancellationToken);
+
+        Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task DisconnectRestoresOfflineNodeSelectionWithoutChangingActiveHistoryEarly()
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
+        await viewModel.LoadAsync(CancellationToken);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeAId);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Disconnecting, null, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Отключение…");
+
+        Assert.False(viewModel.CanSelectViewedNode);
+        Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Offline, null, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.CanSelectViewedNode);
+        await viewModel.SelectViewedNodeAsync(
+            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
+            CancellationToken);
+
+        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
         await viewModel.StopAsync();
     }
 
@@ -383,6 +412,7 @@ public sealed class MainWindowViewModelTests
         await WaitUntilAsync(() => viewModel.ConnectionStatus == expectedStatus);
 
         Assert.Contains("test reason", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
+        Assert.Equal(state == ConnectionSupervisorState.Offline, viewModel.CanSelectViewedNode);
         await viewModel.StopAsync();
     }
 
@@ -463,9 +493,12 @@ public sealed class MainWindowViewModelTests
             supervisor,
             new EmptySerialPortCatalog(),
             NullLogger<ConnectionProfilesViewModel>.Instance);
+        var readStates = new FakeConversationReadStateService();
         return new MainWindowViewModel(
             new FakeConversationDirectoryReader(history),
             history,
+            readStates,
+            readStates,
             nodes,
             settings,
             profiles,

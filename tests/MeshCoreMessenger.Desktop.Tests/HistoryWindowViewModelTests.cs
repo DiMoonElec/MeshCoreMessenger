@@ -207,6 +207,251 @@ public sealed class HistoryWindowViewModelTests
     }
 
     [Fact]
+    public async Task ReadWatermarkRequiresActiveWindowAndVisibleFirstUnreadBoundary()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 10);
+        var readStates = new FakeConversationReadStateService();
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            2,
+            8,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 3))));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+
+        model.ReportVisibleRange(3, 5, isWindowActive: false, isAtVisualEnd: false);
+        model.ReportVisibleRange(4, 6, isWindowActive: true, isAtVisualEnd: false);
+        Assert.Empty(readStates.Advances);
+        Assert.Equal(8, model.UnreadCount);
+
+        model.ReportVisibleRange(3, 5, isWindowActive: true, isAtVisualEnd: false);
+        await WaitUntilAsync(() => readStates.Advances.Count == 1);
+
+        Assert.Equal(5, Assert.Single(readStates.Advances).LocalSequence);
+        await WaitUntilAsync(() => model.UnreadCount == 0);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task OverlappingScrollRangesContinueWhilePreviousReadWriteIsPending()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 10);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readStates = new FakeConversationReadStateService { AdvanceGate = gate };
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            10,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+
+        model.ReportVisibleRange(1, 3, isWindowActive: true, isAtVisualEnd: false);
+        await WaitUntilAsync(() => readStates.Advances.Count == 1);
+        model.ReportVisibleRange(3, 5, isWindowActive: true, isAtVisualEnd: false);
+        await WaitUntilAsync(() => readStates.Advances.Count == 2);
+        model.ReportVisibleRange(5, 7, isWindowActive: true, isAtVisualEnd: false);
+        await WaitUntilAsync(() => readStates.Advances.Count == 3);
+
+        Assert.Equal([3, 5, 7], readStates.Advances.Select(item => item.LocalSequence));
+        model.ReportVisibleRange(9, 10, isWindowActive: true, isAtVisualEnd: true);
+        Assert.Equal(3, readStates.Advances.Count);
+
+        gate.SetResult();
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task OpeningAndLoadingPagesNeverMarksMessagesReadByItself()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 250);
+        var readStates = new FakeConversationReadStateService();
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            250,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        var model = Create(reader, readStates: readStates);
+
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        await model.LoadOlderAsync(CancellationToken);
+        await model.JumpToLatestAsync(CancellationToken);
+
+        Assert.Empty(readStates.Advances);
+        Assert.Equal(250, model.UnreadCount);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task JumpToFirstUnreadLoadsAroundExactPositionAndRequestsItsAnchor()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 250);
+        var readStates = new FakeConversationReadStateService();
+        var firstUnread = Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 50));
+        readStates.Set(new ConversationReadState(NodeA, conversation, 49, 201, firstUnread));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        HistoryScrollRequestEventArgs? request = null;
+        model.ScrollRequested += (_, args) => request = args;
+
+        await model.JumpToFirstUnreadAsync(CancellationToken);
+
+        Assert.Equal(50, request?.AnchorSequence);
+        Assert.False(request?.ScrollToEnd);
+        Assert.Contains(model.Messages, item => item.LocalSequence == 50);
+        Assert.InRange(model.Messages.Count, 1, HistoryWindowViewModel.PageSize);
+        Assert.Empty(readStates.Advances);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task FailedReadWriteKeepsUnreadStateAndSurfacesError()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 3);
+        var readStates = new FakeConversationReadStateService
+        {
+            AdvanceFailure = new IOException("disk full"),
+        };
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            3,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+
+        model.ReportVisibleRange(1, 3, isWindowActive: true, isAtVisualEnd: true);
+        await WaitUntilAsync(() => model.HasReadError);
+
+        Assert.Equal(3, model.UnreadCount);
+        Assert.Equal(1, model.FirstUnreadPosition?.LocalSequence);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task StopWaitsForAcceptedReadWriteWithoutCancellingIt()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 2);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readStates = new FakeConversationReadStateService { AdvanceGate = gate };
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            2,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        model.ReportVisibleRange(1, 2, isWindowActive: true, isAtVisualEnd: true);
+        await WaitUntilAsync(() => readStates.Advances.Count == 1);
+
+        var stop = model.StopAsync();
+        Assert.False(stop.IsCompleted);
+        gate.SetResult();
+        await stop;
+
+        Assert.Equal(2, Assert.Single(readStates.Advances).LocalSequence);
+    }
+
+    [Fact]
+    public async Task IncomingDuringReadCommitRemainsUnreadUntilItIsActuallyVisible()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 2);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readStates = new FakeConversationReadStateService { AdvanceGate = gate };
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            2,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        readStates.AdvanceResult = through => through.LocalSequence == 2
+            ? new ConversationReadState(
+                NodeA,
+                conversation,
+                2,
+                1,
+                Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 3)))
+            : new ConversationReadState(NodeA, conversation, 3, 0, null);
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        model.ReportVisibleRange(1, 2, isWindowActive: true, isAtVisualEnd: true);
+        await WaitUntilAsync(() => readStates.Advances.Count == 1);
+
+        var thirdCommit = reader.Append(NodeA, conversation, 3);
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversation,
+            0,
+            3,
+            Position(NodeA, conversation, reader.MessageAt(NodeA, conversation, 1))));
+        await model.HandleCommittedMessageAsync(thirdCommit, CancellationToken);
+        gate.SetResult();
+        await WaitUntilAsync(() => model.UnreadCount == 1);
+
+        Assert.Equal([2], readStates.Advances.Select(item => item.LocalSequence));
+        model.ReportVisibleRange(1, 3, isWindowActive: true, isAtVisualEnd: true);
+        await WaitUntilAsync(() => readStates.Advances.Count == 2 && model.UnreadCount == 0);
+        Assert.Equal([2, 3], readStates.Advances.Select(item => item.LocalSequence));
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task LateReadCompletionCannotChangeNewConversationState()
+    {
+        var conversationA = Guid.NewGuid();
+        var conversationB = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversationA, 2);
+        reader.Seed(NodeB, conversationB, 2);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var readStates = new FakeConversationReadStateService { AdvanceGate = gate };
+        readStates.Set(new ConversationReadState(
+            NodeA,
+            conversationA,
+            0,
+            2,
+            Position(NodeA, conversationA, reader.MessageAt(NodeA, conversationA, 1))));
+        readStates.Set(new ConversationReadState(
+            NodeB,
+            conversationB,
+            0,
+            2,
+            Position(NodeB, conversationB, reader.MessageAt(NodeB, conversationB, 1))));
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversationA, CancellationToken, dispatchResult: false);
+        model.ReportVisibleRange(1, 2, isWindowActive: true, isAtVisualEnd: true);
+        await WaitUntilAsync(() => readStates.Advances.Count == 1);
+
+        await model.OpenAsync(NodeB, conversationB, CancellationToken, dispatchResult: false);
+        gate.SetResult();
+        await Task.Delay(20, CancellationToken);
+
+        Assert.Equal(2, model.UnreadCount);
+        Assert.Equal(conversationB, model.FirstUnreadPosition?.ConversationId);
+        Assert.All(model.Messages, item => Assert.Equal(conversationB, item.ConversationId));
+        await model.StopAsync();
+    }
+
+    [Fact]
     public void HistoryControlUsesVirtualizingPanelWithBoundedCache()
     {
         var control = new VirtualizedHistoryListBox();
@@ -218,14 +463,29 @@ public sealed class HistoryWindowViewModelTests
 
     private static HistoryWindowViewModel Create(
         FakeHistoryReader reader,
-        IUiDispatcher? dispatcher = null) =>
-        new(reader, dispatcher ?? new ImmediateUiDispatcher(), NullLogger.Instance);
+        IUiDispatcher? dispatcher = null,
+        FakeConversationReadStateService? readStates = null)
+    {
+        readStates ??= new FakeConversationReadStateService();
+        return new(
+            reader,
+            readStates,
+            readStates,
+            dispatcher ?? new ImmediateUiDispatcher(),
+            NullLogger.Instance);
+    }
 
     private static (int First, int Last) Range(HistoryWindowViewModel model) =>
         (Number(model.Messages[0]), Number(model.Messages[^1]));
 
     private static int Number(HistoryMessageListItem item) =>
         int.Parse(item.CopyText[8..], System.Globalization.CultureInfo.InvariantCulture);
+
+    private static HistoryMessagePosition Position(
+        Guid nodeId,
+        Guid conversationId,
+        HistoryMessage message) =>
+        new(nodeId, conversationId, message.Id, message.LocalSequence);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {
@@ -256,6 +516,10 @@ public sealed class HistoryWindowViewModelTests
                     .Select(number => Message(conversationId, number))
                     .ToList());
         }
+
+        public HistoryMessage MessageAt(Guid nodeId, Guid conversationId, int number) =>
+            History(nodeId, conversationId).Single(item =>
+                int.Parse(item.Text![8..], System.Globalization.CultureInfo.InvariantCulture) == number);
 
         public StoredIncomingMessage Append(Guid nodeId, Guid conversationId, int number)
         {
@@ -333,7 +597,26 @@ public sealed class HistoryWindowViewModelTests
 
         public Task<HistoryMessagePage> GetMessagesAroundAsync(
             HistoryMessagePosition position, int beforeLimit, int afterLimit,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            var all = History(position.NodeId, position.ConversationId);
+            var anchorIndex = all.ToList().FindIndex(item =>
+                item.Id == position.MessageId && item.LocalSequence == position.LocalSequence);
+            if (anchorIndex < 0)
+            {
+                throw new KeyNotFoundException();
+            }
+
+            var first = Math.Max(0, anchorIndex - beforeLimit);
+            var lastExclusive = Math.Min(all.Count, anchorIndex + afterLimit + 1);
+            var items = all.Skip(first).Take(lastExclusive - first).ToArray();
+            return Task.FromResult(new HistoryMessagePage(
+                items,
+                Position(position.NodeId, position.ConversationId, items[0]),
+                Position(position.NodeId, position.ConversationId, items[^1]),
+                first > 0,
+                lastExclusive < all.Count));
+        }
 
         public async Task WaitForInitialReadAsync(Guid conversationId, CancellationToken cancellationToken)
         {

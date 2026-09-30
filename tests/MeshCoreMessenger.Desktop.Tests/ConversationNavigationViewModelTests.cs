@@ -21,6 +21,23 @@ public sealed class ConversationNavigationViewModelTests
     }
 
     [Fact]
+    public void ConversationItemExposesAndUpdatesBoundedUnreadBadge()
+    {
+        var item = new ConversationListItem(Entry(
+            NodeA,
+            "unread",
+            ConversationDirectorySection.UnknownContacts,
+            Guid.NewGuid(),
+            unreadCount: 125));
+
+        Assert.True(item.HasUnreadMessages);
+        Assert.Equal("99+", item.UnreadLabel);
+        item.ApplyUnreadCount(0);
+        Assert.False(item.HasUnreadMessages);
+        Assert.Equal("0", item.UnreadLabel);
+    }
+
+    [Fact]
     public async Task TabsKeepChatServiceChannelAndUnknownEntriesInTheirGroups()
     {
         var directory = new FakeDirectoryReader();
@@ -200,13 +217,18 @@ public sealed class ConversationNavigationViewModelTests
         FakeDirectoryReader directory,
         FakeHistoryReader? history = null,
         FakeSettingsStore? settings = null,
-        IUiDispatcher? dispatcher = null) =>
-        new(
+        IUiDispatcher? dispatcher = null)
+    {
+        var readStates = new FakeConversationReadStateService();
+        return new(
             directory,
             history ?? new FakeHistoryReader(),
+            readStates,
+            readStates,
             settings ?? new FakeSettingsStore(),
             dispatcher ?? new ImmediateUiDispatcher(),
             NullLogger.Instance);
+    }
 
     private static ConversationDirectoryEntry Entry(
         Guid nodeId,
@@ -216,7 +238,8 @@ public sealed class ConversationNavigationViewModelTests
         string? name = null,
         int? contactType = 1,
         ChannelAccessKind? access = null,
-        long sequence = 1) =>
+        long sequence = 1,
+        long unreadCount = 0) =>
         new(
             nodeId,
             key,
@@ -244,7 +267,8 @@ public sealed class ConversationNavigationViewModelTests
             null,
             null,
             null,
-            null);
+            null,
+            unreadCount);
 
     private static async Task WaitUntilAsync(Func<bool> condition)
     {

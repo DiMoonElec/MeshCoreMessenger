@@ -35,12 +35,16 @@ public static class AppBootstrap
         services.AddSingleton(storage.Directories);
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.History);
+        services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.ConversationDirectory);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<SessionCompletionTracker>();
         services.AddSingleton<IDurableSessionCompletion>(provider =>
             provider.GetRequiredService<SessionCompletionTracker>());
+        services.AddSingleton<ConversationReadStateTracker>();
+        services.AddSingleton<IDurableReadStateWrites>(provider =>
+            provider.GetRequiredService<ConversationReadStateTracker>());
         services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
         services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<DirectoryService>();

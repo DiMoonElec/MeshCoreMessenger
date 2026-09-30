@@ -39,7 +39,8 @@ public sealed record ConversationDirectoryEntry(
     StoredMessageKind? LastMessageKind,
     MessageResolutionState? LastMessageResolutionState,
     string? LastMessageText,
-    DateTimeOffset? LastMessageUtc);
+    DateTimeOffset? LastMessageUtc,
+    long UnreadCount = 0);
 
 public sealed record ConversationDirectoryPage(
     IReadOnlyList<ConversationDirectoryEntry> Items,

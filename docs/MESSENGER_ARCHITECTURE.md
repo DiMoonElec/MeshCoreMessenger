@@ -382,11 +382,14 @@ Snapshot.ProfileId, а выбор в редакторе профиля отоб�
 
 `ViewedNodeId` — выбранная собственная нода, чья история открыта в UI. При offline
 startup восстановить её из локальных Settings с проверкой существования; при
-отсутствии выбора показать selector/пустое состояние. В режиме следования
-подключению успешный Online выбирает фактическую ноду. Явный выбор другой сохранённой
-ноды удерживает её offline-историю; действие «К подключённой ноде» возвращает следование.
-Disconnect очищает активную identity, сохраняя просматриваемую историю. Видимая
-подпись должна объяснять различие, если подключена A, а пользователь читает B.
+отсутствии выбора показать selector/пустое состояние. Selector доступен только в
+состоянии `Offline`. После Identify, начиная с `Synchronizing`, UI автоматически
+выбирает фактическую active node; ручной просмотр истории другой ноды запрещён до
+полного Disconnect -> Offline. Connecting/Identifying/RetryWaiting/Disconnecting
+также блокируют смену node context. Reconnect заново определяет identity и выбирает
+её историю. Disconnect очищает active identity, сохраняет последний ViewedNodeId и
+снова разрешает выбирать сохранённые истории. Таким образом connected UI никогда
+не показывает историю B как текущую при session с нодой A.
 
 Навигация, запросы страниц/поиска и записи read position/draft несут NodeId. Core
 проверяет принадлежность ConversationId ноде. Контекст UI имеет собственную revision
@@ -399,8 +402,9 @@ read projections даже без новых сообщений. Подробны
 
 Минимальный C1 shell уже следует этой модели: bounded список Nodes читается через
 `INodeStore`, история — через node-scoped `ILocalHistoryReader`, а post-commit DTO
-содержит сохранённый NodeId. Выбор `ViewedNodeId` и режим следования хранятся в
-Settings. Сам по себе C1 не означал готовность directory projections, вкладок,
+содержит сохранённый NodeId. Последний `ViewedNodeId` хранится в Settings; прежняя
+настройка режима следования оставлена только как игнорируемый legacy-ключ. Сам по
+себе C1 не означал готовность directory projections, вкладок,
 постраничной навигации, unread или drafts.
 
 C2 добавил read-only `IConversationDirectoryReader`: отдельные bounded страницы
@@ -515,6 +519,28 @@ revision и фиксированный node/conversation owner; позднее �
 ошибка оставляет DTO/текст и SQLite живыми для повторного сохранения. Нынешний
 идемпотентный StopAsync нельзя использовать как одноразовое место сохранения,
 если следующая попытка shutdown уже не повторит неуспешную запись.
+
+C6 использует существующий `Conversations.LastReadSequence` без миграции схемы.
+`IConversationReadStateStore` возвращает node-scoped watermark, число только
+incoming-сообщений после него и точную позицию первого непрочитанного. Продвижение
+принимает существующую `HistoryMessagePosition`, проверяет полное совпадение
+NodeId/ConversationId/MessageId/LocalSequence и атомарно применяет только
+монотонное увеличение. Outgoing не входит в unread count, но может быть последней
+видимой границей, через которую прочитаны предшествующие incoming.
+
+Desktop не пишет watermark от загрузки страницы, выбора диалога или поиска.
+`HistoryWindowViewModel` принимает только фактически видимые containers, когда окно
+активно и history control видим. Запись разрешена, только если первый непрочитанный
+входит в видимый диапазон; если он остался выше viewport, более поздний участок не
+закрывает gap. Переход к первому непрочитанному использует C4 around-position API.
+Пока SQLite write находится в полёте, ViewModel накапливает только перекрывающиеся
+или соседние фактически видимые диапазоны и может coalesce-ить их до более поздней
+границы. Это не теряет нормальный непрерывный scroll из-за latency writer, но
+по-прежнему не разрешает перескочить ни одного невидимого message item.
+`ConversationReadStateTracker` сериализует и объединяет принятые цели, сохраняет
+неуспешную цель для явного retry и входит отдельным durable barrier в recoverable
+shutdown. Поэтому UI меняет unread projection только после успешного SQLite commit,
+а late completion старого node/conversation context новую историю не меняет.
 
 ## 9. Пакеты и «дешифровка»
 

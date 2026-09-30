@@ -114,13 +114,23 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        var realized = HistoryList.GetRealizedContainers()
-            .Select(container => HistoryList.IndexFromContainer(container))
-            .Where(index => index >= 0)
+        var visible = HistoryList.GetRealizedContainers()
+            .Select(container => new
+            {
+                Index = HistoryList.IndexFromContainer(container),
+                Origin = container.TranslatePoint(default, HistoryList),
+                Height = container.Bounds.Height,
+            })
+            .Where(item =>
+                item.Index >= 0 &&
+                item.Origin is { } origin &&
+                origin.Y + item.Height > 0 &&
+                origin.Y < HistoryList.Bounds.Height)
+            .Select(item => item.Index)
             .Order()
             .ToArray();
-        var firstIndex = realized.FirstOrDefault(-1);
-        var lastIndex = realized.LastOrDefault(-1);
+        var firstIndex = visible.FirstOrDefault(-1);
+        var lastIndex = visible.LastOrDefault(-1);
         var first = firstIndex >= 0 && firstIndex < viewModel.Navigation.History.Messages.Count
             ? viewModel.Navigation.History.Messages[firstIndex].LocalSequence
             : (long?)null;
@@ -130,7 +140,11 @@ public sealed partial class MainWindow : Window
         var isAtEnd = scrollViewer is null
             ? lastIndex == viewModel.Navigation.History.Messages.Count - 1
             : scrollViewer.Offset.Y + scrollViewer.Viewport.Height >= scrollViewer.Extent.Height - 2;
-        viewModel.Navigation.History.ReportVisibleRange(first, last, IsActive, isAtEnd);
+        viewModel.Navigation.History.ReportVisibleRange(
+            first,
+            last,
+            IsActive && HistoryList.IsEffectivelyVisible,
+            isAtEnd);
 
         if (firstIndex is >= 0 and <= 2 && viewModel.Navigation.History.CanLoadOlder)
         {

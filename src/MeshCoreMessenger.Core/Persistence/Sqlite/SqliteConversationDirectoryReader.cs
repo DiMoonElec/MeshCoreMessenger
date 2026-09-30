@@ -166,7 +166,7 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                    ContactType, PresentOnNode, AccessKind, ActiveSlots, IsArchived,
                    UpdatedUtc, ActivitySequence, ActivityUtc, LastMessageSequence,
                    LastMessageDirection, LastMessageKind, LastMessageResolutionState,
-                   LastMessageText, LastMessageUtc
+                   LastMessageText, LastMessageUtc, UnreadCount
             FROM entries
             WHERE $cursorSequence IS NULL
                OR ActivitySequence < $cursorSequence
@@ -207,7 +207,12 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                message.MessageKind AS LastMessageKind,
                message.ResolutionState AS LastMessageResolutionState,
                message.Text AS LastMessageText,
-               message.ReceivedUtc AS LastMessageUtc
+               message.ReceivedUtc AS LastMessageUtc,
+               (SELECT COUNT(*)
+                FROM Messages AS unread
+                WHERE unread.ConversationId = conversation.Id
+                  AND unread.Direction = {(int)MessageDirection.Incoming}
+                  AND unread.LocalSequence > COALESCE(conversation.LastReadSequence, 0)) AS UnreadCount
         FROM Contacts AS contact
         LEFT JOIN Conversations AS conversation
           ON conversation.NodeId = contact.NodeId
@@ -256,7 +261,12 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                message.MessageKind AS LastMessageKind,
                message.ResolutionState AS LastMessageResolutionState,
                message.Text AS LastMessageText,
-               message.ReceivedUtc AS LastMessageUtc
+               message.ReceivedUtc AS LastMessageUtc,
+               (SELECT COUNT(*)
+                FROM Messages AS unread
+                WHERE unread.ConversationId = conversation.Id
+                  AND unread.Direction = {(int)MessageDirection.Incoming}
+                  AND unread.LocalSequence > COALESCE(conversation.LastReadSequence, 0)) AS UnreadCount
         FROM Channels AS channel
         LEFT JOIN Conversations AS conversation
           ON conversation.NodeId = channel.NodeId
@@ -290,7 +300,12 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                message.MessageKind AS LastMessageKind,
                message.ResolutionState AS LastMessageResolutionState,
                message.Text AS LastMessageText,
-               message.ReceivedUtc AS LastMessageUtc
+               message.ReceivedUtc AS LastMessageUtc,
+               (SELECT COUNT(*)
+                FROM Messages AS unread
+                WHERE unread.ConversationId = conversation.Id
+                  AND unread.Direction = {(int)MessageDirection.Incoming}
+                  AND unread.LocalSequence > conversation.LastReadSequence) AS UnreadCount
         FROM Conversations AS conversation
         LEFT JOIN Messages AS message
           ON message.LocalSequence = (
@@ -323,7 +338,8 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
         result.IsDBNull(16) ? null : (StoredMessageKind)result.GetInt32(16),
         result.IsDBNull(17) ? null : (MessageResolutionState)result.GetInt32(17),
         result.IsDBNull(18) ? null : result.GetString(18),
-        result.IsDBNull(19) ? null : ParseTimestamp(result.GetString(19)));
+        result.IsDBNull(19) ? null : ParseTimestamp(result.GetString(19)),
+        result.GetInt64(20));
 
     private static IReadOnlyList<byte> ParseSlots(string? value)
     {

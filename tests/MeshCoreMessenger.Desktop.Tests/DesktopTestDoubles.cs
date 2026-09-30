@@ -1,5 +1,6 @@
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
+using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
 
 namespace MeshCoreMessenger.Desktop.Tests;
@@ -128,5 +129,70 @@ internal sealed class QueuedUiDispatcher : IUiDispatcher
         {
             item.Completion.SetException(exception);
         }
+    }
+}
+
+internal sealed class FakeConversationReadStateService
+    : IConversationReadStateStore, IDurableReadStateWrites
+{
+    private readonly Dictionary<(Guid NodeId, Guid ConversationId), ConversationReadState> _states = [];
+
+    public List<HistoryMessagePosition> Advances { get; } = [];
+    public Func<HistoryMessagePosition, ConversationReadState>? AdvanceResult { get; set; }
+    public Exception? AdvanceFailure { get; set; }
+    public TaskCompletionSource? AdvanceGate { get; set; }
+    public bool IsPaused => AdvanceFailure is not null;
+    public int PendingCount => 0;
+
+    public void Set(ConversationReadState state) =>
+        _states[(state.NodeId, state.ConversationId)] = state;
+
+    public Task<ConversationReadState> GetAsync(
+        Guid nodeId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_states.GetValueOrDefault((nodeId, conversationId)) ??
+            new ConversationReadState(nodeId, conversationId, 0, 0, null));
+    }
+
+    public async Task<ConversationReadState> AdvanceAsync(
+        HistoryMessagePosition through,
+        CancellationToken cancellationToken = default)
+    {
+        Advances.Add(through);
+        if (AdvanceGate is { } gate)
+        {
+            await gate.Task.WaitAsync(cancellationToken);
+        }
+
+        if (AdvanceFailure is { } failure)
+        {
+            throw failure;
+        }
+
+        var state = AdvanceResult?.Invoke(through) ??
+            new ConversationReadState(
+                through.NodeId,
+                through.ConversationId,
+                through.LocalSequence,
+                0,
+                null);
+        Set(state);
+        return state;
+    }
+
+    public Task FlushAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+
+    public Task RetryAsync(CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        AdvanceFailure = null;
+        return Task.CompletedTask;
     }
 }

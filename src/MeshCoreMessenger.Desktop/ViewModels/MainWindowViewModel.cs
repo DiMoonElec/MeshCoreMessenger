@@ -14,7 +14,6 @@ namespace MeshCoreMessenger.Desktop.ViewModels;
 public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 {
     internal const string ViewedNodeSettingKey = "desktop.viewed-node-id";
-    internal const string FollowActiveNodeSettingKey = "desktop.follow-active-node";
 
     private const int KnownNodePageSize = 500;
     private readonly INodeStore _nodes;
@@ -38,7 +37,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private string _activeProfileDisplayName = "Не выбран";
     private string? _errorMessage;
     private bool _isLoading;
-    private bool _isFollowingActiveNode = true;
+    private ConnectionSupervisorState _connectionState;
     private bool _isConnectionSettingsOpen;
     private long _viewContextVersion;
     private long _connectionStateVersion;
@@ -48,6 +47,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public MainWindowViewModel(
         IConversationDirectoryReader directory,
         ILocalHistoryReader history,
+        IConversationReadStateStore readStates,
+        IDurableReadStateWrites readWrites,
         INodeStore nodes,
         ISettingsStore settings,
         ConnectionProfilesViewModel profiles,
@@ -63,16 +64,18 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _commitNotifications = commitNotifications;
         _dispatcher = dispatcher;
         _logger = logger;
+        _connectionState = supervisor.Snapshot.State;
         Navigation = new ConversationNavigationViewModel(
             directory,
             history,
+            readStates,
+            readWrites,
             settings,
             dispatcher,
             logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
-        FollowActiveNodeCommand = new AsyncRelayCommand(FollowActiveNodeAsync);
         ToggleConnectionSettingsCommand = new RelayCommand(
             () => IsConnectionSettingsOpen = !IsConnectionSettingsOpen);
         CloseConnectionSettingsCommand = new RelayCommand(() => IsConnectionSettingsOpen = false);
@@ -119,7 +122,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                 OnPropertyChanged(nameof(HasActiveNode));
                 OnPropertyChanged(nameof(ActiveNodeDisplayName));
                 OnPropertyChanged(nameof(ActiveNodePublicKeyHex));
-                OnPropertyChanged(nameof(CanFollowActiveNode));
             }
         }
     }
@@ -137,7 +139,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             {
                 OnPropertyChanged(nameof(HasViewedNode));
                 OnPropertyChanged(nameof(ViewedNodePublicKeyHex));
-                OnPropertyChanged(nameof(CanFollowActiveNode));
             }
         }
     }
@@ -145,25 +146,10 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public bool HasViewedNode => ViewedNode is not null;
     public string? ViewedNodePublicKeyHex => ViewedNode?.PublicKeyHex;
 
-    public bool IsFollowingActiveNode
-    {
-        get => _isFollowingActiveNode;
-        private set
-        {
-            if (SetProperty(ref _isFollowingActiveNode, value))
-            {
-                OnPropertyChanged(nameof(CanFollowActiveNode));
-            }
-        }
-    }
-
-    public bool CanFollowActiveNode =>
-        ActiveNode is not null &&
-        (!IsFollowingActiveNode || ViewedNode?.Id != ActiveNode.Id);
+    public bool CanSelectViewedNode => _connectionState == ConnectionSupervisorState.Offline;
 
     public IAsyncRelayCommand ConnectCommand { get; }
     public IAsyncRelayCommand DisconnectCommand { get; }
-    public IAsyncRelayCommand FollowActiveNodeCommand { get; }
     public IRelayCommand ToggleConnectionSettingsCommand { get; }
     public IRelayCommand CloseConnectionSettingsCommand { get; }
     public ConnectionProfilesViewModel Profiles { get; }
@@ -219,17 +205,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             await Profiles.LoadAsync(linkedCancellation.Token);
             var nodes = await _nodes.GetAllAsync(KnownNodePageSize, linkedCancellation.Token);
             var viewedNodeSetting = await _settings.GetAsync(ViewedNodeSettingKey, linkedCancellation.Token);
-            var followSetting = await _settings.GetAsync(FollowActiveNodeSettingKey, linkedCancellation.Token);
 
             ReplaceKnownNodes(nodes);
-            IsFollowingActiveNode = !bool.TryParse(followSetting, out var follow) || follow;
 
             var snapshot = _supervisor.Snapshot;
             var activeNode = await ReadSnapshotNodeAsync(snapshot, linkedCancellation.Token);
             ApplyConnectionPresentation(snapshot, activeNode);
 
             KnownNodeListItem? viewedNode = null;
-            if (IsFollowingActiveNode && snapshot.State == ConnectionSupervisorState.Online)
+            if (ActiveNode is not null)
             {
                 viewedNode = ActiveNode;
             }
@@ -275,7 +259,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             throw new ArgumentException("The selected node is not in the known-node list.", nameof(node));
         }
 
-        return Track(SelectViewedNodeCoreAsync(node, followActiveNode: false, cancellationToken));
+        return CanSelectViewedNode
+            ? Track(SelectViewedNodeCoreAsync(node, cancellationToken))
+            : Task.CompletedTask;
     }
 
     public Task SelectConversationAsync(
@@ -304,7 +290,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _lifetimeCancellation.Cancel();
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
-        FollowActiveNodeCommand.Cancel();
         _projectionRefreshSignal.Release();
         await Navigation.StopAsync().ConfigureAwait(false);
         await Profiles.StopAsync().ConfigureAwait(false);
@@ -319,7 +304,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                 {
                     ConnectCommand.ExecutionTask,
                     DisconnectCommand.ExecutionTask,
-                    FollowActiveNodeCommand.ExecutionTask,
                 }.OfType<Task>(),
             ];
         }
@@ -407,9 +391,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
     }
 
-    private Task FollowActiveNodeAsync(CancellationToken cancellationToken) =>
-        SelectViewedNodeCoreAsync(ActiveNode, followActiveNode: true, cancellationToken);
-
     private async Task SelectNavigationTabCoreAsync(
         MessengerNavigationTabItem tab,
         CancellationToken cancellationToken)
@@ -436,7 +417,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private async Task SelectViewedNodeCoreAsync(
         KnownNodeListItem? node,
-        bool followActiveNode,
         CancellationToken cancellationToken)
     {
         try
@@ -444,12 +424,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
-            IsFollowingActiveNode = followActiveNode;
             var version = ApplyViewedNode(node);
-            await PersistViewedNodeAsync(
-                node,
-                followActiveNode,
-                linkedCancellation.Token);
+            await PersistViewedNodeAsync(node, linkedCancellation.Token);
             if (node is not null)
             {
                 await LoadViewedHistoryAsync(node.Id, version, linkedCancellation.Token);
@@ -497,9 +473,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                     }
 
                     ApplyConnectionPresentation(snapshot, node);
-                    if (snapshot.State == ConnectionSupervisorState.Online &&
-                        IsFollowingActiveNode &&
-                        ActiveNode is { } activeNode &&
+                    if (ActiveNode is { } activeNode &&
                         ViewedNode?.Id != activeNode.Id)
                     {
                         followedNode = activeNode;
@@ -513,7 +487,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             {
                 await PersistViewedNodeAsync(
                     followedNode,
-                    followActiveNode: true,
                     _lifetimeCancellation.Token);
                 await LoadViewedHistoryAsync(nodeId, contextVersion, _lifetimeCancellation.Token);
             }
@@ -549,6 +522,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private void ApplyConnectionPresentation(ConnectionSupervisorSnapshot snapshot, NodeRecord? node)
     {
+        if (_connectionState != snapshot.State)
+        {
+            _connectionState = snapshot.State;
+            OnPropertyChanged(nameof(CanSelectViewedNode));
+        }
+
         (ConnectionStatus, ConnectionStatusDetail) = DescribeConnection(snapshot);
         ActiveProfileDisplayName = snapshot.ProfileId is { } profileId
             ? Profiles.AvailableProfiles.FirstOrDefault(item => item.Id == profileId)?.DisplayName
@@ -648,21 +627,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private async Task PersistViewedNodeAsync(
         KnownNodeListItem? node,
-        bool followActiveNode,
         CancellationToken cancellationToken)
     {
         await _viewSelectionPersistence.WaitAsync(cancellationToken);
         try
         {
-            if (ViewedNode?.Id != node?.Id || IsFollowingActiveNode != followActiveNode)
+            if (ViewedNode?.Id != node?.Id)
             {
                 return;
             }
 
-            await _settings.SetAsync(
-                FollowActiveNodeSettingKey,
-                followActiveNode.ToString(),
-                cancellationToken);
             await _settings.SetAsync(
                 ViewedNodeSettingKey,
                 node?.Id.ToString("D") ?? string.Empty,
