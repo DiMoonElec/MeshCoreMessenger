@@ -618,19 +618,66 @@ public sealed class MainWindowViewModelTests
 
         public Task<HistoryMessagePosition?> GetMessagePositionAsync(
             Guid nodeId, Guid conversationId, Guid messageId,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            var message = Messages.GetValueOrDefault(conversationId)?.FirstOrDefault(item => item.Id == messageId);
+            return Task.FromResult(message is null
+                ? null
+                : new HistoryMessagePosition(nodeId, conversationId, message.Id, message.LocalSequence));
+        }
 
         public Task<HistoryMessagePage> GetMessagesBeforeAsync(
             Guid nodeId, Guid conversationId, HistoryMessagePosition? before, int limit,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            RequestedNodes.Add(nodeId);
+            RequestedConversations.Add(conversationId);
+            return Task.FromResult(Page(
+                nodeId,
+                conversationId,
+                (Messages.GetValueOrDefault(conversationId) ?? [])
+                    .Where(item => before is null || item.LocalSequence < before.LocalSequence)
+                    .OrderByDescending(item => item.LocalSequence)
+                    .Take(limit)
+                    .OrderBy(item => item.LocalSequence)
+                    .ToArray()));
+        }
 
         public Task<HistoryMessagePage> GetMessagesAfterAsync(
             Guid nodeId, Guid conversationId, HistoryMessagePosition? after, int limit,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default)
+        {
+            RequestedNodes.Add(nodeId);
+            RequestedConversations.Add(conversationId);
+            return Task.FromResult(Page(
+                nodeId,
+                conversationId,
+                (Messages.GetValueOrDefault(conversationId) ?? [])
+                    .Where(item => after is null || item.LocalSequence > after.LocalSequence)
+                    .OrderBy(item => item.LocalSequence)
+                    .Take(limit)
+                    .ToArray()));
+        }
 
         public Task<HistoryMessagePage> GetMessagesAroundAsync(
             HistoryMessagePosition position, int beforeLimit, int afterLimit,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        private HistoryMessagePage Page(
+            Guid nodeId,
+            Guid conversationId,
+            IReadOnlyList<HistoryMessage> items)
+        {
+            var all = Messages.GetValueOrDefault(conversationId) ?? [];
+            var first = items.FirstOrDefault();
+            var last = items.LastOrDefault();
+            return new HistoryMessagePage(
+                items,
+                first is null ? null : new(nodeId, conversationId, first.Id, first.LocalSequence),
+                last is null ? null : new(nodeId, conversationId, last.Id, last.LocalSequence),
+                first is not null && all.Any(item => item.LocalSequence < first.LocalSequence),
+                last is not null && all.Any(item => item.LocalSequence > last.LocalSequence));
+        }
     }
 
     private sealed class FakeConversationDirectoryReader(ILocalHistoryReader history)

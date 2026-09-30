@@ -432,6 +432,24 @@ BinaryDataType, WireTimestamp и ResolutionState, но не экспортиру
 новая миграция для C4 не потребовалась. UI viewport начинает использовать контракт
 только в C5.
 
+C5 выделяет `HistoryWindowViewModel` как владельца активного окна истории. Оно
+загружает страницы по 100 сообщений через C4 и удерживает не более пяти страниц /
+500 `HistoryMessageListItem`: prepend удаляет дальний конец, append — дальнее начало,
+а выгруженный диапазон остаётся повторно доступен по position API. ObservableCollection
+меняется только через UI dispatcher (кроме синхронной pre-loop загрузки startup).
+Directory refresh сохраняет окно при том же stable conversation, поэтому commit
+больше не вызывает полный Clear/reload.
+
+Viewport сообщает фактически реализованный диапазон LocalSequence, активность окна
+и нахождение у визуального конца, но C5 ничего не записывает как прочитанное. При
+prepend UI получает sequence прежнего первого элемента как stable anchor; при
+commit автопрокрутка разрешена только у фактического конца. В середине истории
+commit лишь создаёт дедуплицированный индикатор новых сообщений и доступную newer-
+страницу; команда к последнему сообщению перечитывает bounded latest page. Список
+использует `VirtualizingStackPanel`, а тело сообщения — `SelectableTextBlock` для
+Unicode copy. Binary, CLI/signed text и room-post получают честные read-only labels.
+Эти visible-range сигналы становятся входом C6, но read watermark в C5 отсутствует.
+
 ### Компоновка и сценарии
 
 Окно в стиле привычного desktop-мессенджера: слева навигация и список диалогов,

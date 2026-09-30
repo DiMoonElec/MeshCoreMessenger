@@ -3,6 +3,7 @@ using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.ViewModels;
+using MeshCoreMessenger.Desktop.Views;
 using Xunit;
 
 namespace MeshCoreMessenger.Desktop.Tests;
@@ -11,6 +12,13 @@ public sealed class ConversationNavigationViewModelTests
 {
     private static readonly Guid NodeA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid NodeB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
+
+    [Fact]
+    public void TechnicalListResetDoesNotBecomeConversationDeselection()
+    {
+        Assert.Null(MainWindow.ConversationSelectionToApply(null));
+        Assert.Null(MainWindow.ConversationSelectionToApply(new object()));
+    }
 
     [Fact]
     public async Task TabsKeepChatServiceChannelAndUnknownEntriesInTheirGroups()
@@ -321,15 +329,17 @@ public sealed class ConversationNavigationViewModelTests
 
         public Task<HistoryMessagePosition?> GetMessagePositionAsync(
             Guid nodeId, Guid conversationId, Guid messageId,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) => Task.FromResult<HistoryMessagePosition?>(null);
 
         public Task<HistoryMessagePage> GetMessagesBeforeAsync(
             Guid nodeId, Guid conversationId, HistoryMessagePosition? before, int limit,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HistoryMessagePage([], null, null, false, false));
 
         public Task<HistoryMessagePage> GetMessagesAfterAsync(
             Guid nodeId, Guid conversationId, HistoryMessagePosition? after, int limit,
-            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HistoryMessagePage([], null, null, false, false));
 
         public Task<HistoryMessagePage> GetMessagesAroundAsync(
             HistoryMessagePosition position, int beforeLimit, int afterLimit,

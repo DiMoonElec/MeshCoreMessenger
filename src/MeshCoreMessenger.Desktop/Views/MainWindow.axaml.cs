@@ -1,5 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Interactivity;
+using Avalonia.Threading;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.ViewModels;
 
@@ -10,8 +12,17 @@ public sealed partial class MainWindow : Window
     private readonly IDesktopShutdownCoordinator? _shutdown;
     private bool _shutdownAccepted;
     private bool _shutdownRequestActive;
+    private HistoryWindowViewModel? _subscribedHistory;
 
-    public MainWindow() => InitializeComponent();
+    public MainWindow()
+    {
+        InitializeComponent();
+        HistoryList.AddHandler(ScrollViewer.ScrollChangedEvent, OnHistoryScrollChanged);
+        DataContextChanged += OnWindowDataContextChanged;
+        Activated += OnWindowActivationChanged;
+        Deactivated += OnWindowActivationChanged;
+        Opened += (_, _) => Dispatcher.UIThread.Post(ScrollHistoryToEnd);
+    }
 
     public MainWindow(IDesktopShutdownCoordinator shutdown)
         : this()
@@ -39,21 +50,129 @@ public sealed partial class MainWindow : Window
         _ = CompleteShutdownAndCloseAsync();
     }
 
+    protected override void OnClosed(EventArgs eventArgs)
+    {
+        if (_subscribedHistory is not null)
+        {
+            _subscribedHistory.ScrollRequested -= OnHistoryScrollRequested;
+            _subscribedHistory = null;
+        }
+
+        base.OnClosed(eventArgs);
+    }
+
+    private void OnWindowDataContextChanged(object? sender, EventArgs eventArgs)
+    {
+        if (_subscribedHistory is not null)
+        {
+            _subscribedHistory.ScrollRequested -= OnHistoryScrollRequested;
+        }
+
+        _subscribedHistory = (DataContext as MainWindowViewModel)?.Navigation.History;
+        if (_subscribedHistory is not null)
+        {
+            _subscribedHistory.ScrollRequested += OnHistoryScrollRequested;
+            Dispatcher.UIThread.Post(() => ScrollHistoryToEnd());
+        }
+    }
+
+    private void OnHistoryScrollRequested(object? sender, HistoryScrollRequestEventArgs eventArgs)
+    {
+        Dispatcher.UIThread.Post(() =>
+        {
+            if (eventArgs.ScrollToEnd)
+            {
+                ScrollHistoryToEnd();
+                return;
+            }
+
+            if (eventArgs.AnchorSequence is { } sequence)
+            {
+                var anchor = HistoryList.Items
+                    .OfType<HistoryMessageListItem>()
+                    .FirstOrDefault(item => item.LocalSequence == sequence);
+                if (anchor is not null)
+                {
+                    HistoryList.ScrollIntoView(anchor);
+                }
+            }
+        });
+    }
+
+    private void OnHistoryScrollChanged(object? sender, ScrollChangedEventArgs eventArgs)
+    {
+        ReportHistoryViewport(eventArgs.Source as ScrollViewer);
+    }
+
+    private void OnWindowActivationChanged(object? sender, EventArgs eventArgs) =>
+        ReportHistoryViewport();
+
+    private void ReportHistoryViewport(ScrollViewer? scrollViewer = null)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var realized = HistoryList.GetRealizedContainers()
+            .Select(container => HistoryList.IndexFromContainer(container))
+            .Where(index => index >= 0)
+            .Order()
+            .ToArray();
+        var firstIndex = realized.FirstOrDefault(-1);
+        var lastIndex = realized.LastOrDefault(-1);
+        var first = firstIndex >= 0 && firstIndex < viewModel.Navigation.History.Messages.Count
+            ? viewModel.Navigation.History.Messages[firstIndex].LocalSequence
+            : (long?)null;
+        var last = lastIndex >= 0 && lastIndex < viewModel.Navigation.History.Messages.Count
+            ? viewModel.Navigation.History.Messages[lastIndex].LocalSequence
+            : (long?)null;
+        var isAtEnd = scrollViewer is null
+            ? lastIndex == viewModel.Navigation.History.Messages.Count - 1
+            : scrollViewer.Offset.Y + scrollViewer.Viewport.Height >= scrollViewer.Extent.Height - 2;
+        viewModel.Navigation.History.ReportVisibleRange(first, last, IsActive, isAtEnd);
+
+        if (firstIndex is >= 0 and <= 2 && viewModel.Navigation.History.CanLoadOlder)
+        {
+            viewModel.Navigation.History.LoadOlderCommand.Execute(null);
+        }
+
+        if (isAtEnd && viewModel.Navigation.History.CanLoadNewer)
+        {
+            viewModel.Navigation.History.LoadNewerCommand.Execute(null);
+        }
+    }
+
+    private void ScrollHistoryToEnd()
+    {
+        if (HistoryList.ItemCount > 0)
+        {
+            HistoryList.ScrollIntoView(HistoryList.ItemCount - 1);
+        }
+    }
+
     private async void OnConversationSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)
     {
-        if (DataContext is not MainWindowViewModel viewModel || sender is not ListBox listBox)
+        if (DataContext is not MainWindowViewModel viewModel ||
+            sender is not ListBox listBox ||
+            ConversationSelectionToApply(listBox.SelectedItem) is not { } conversation)
         {
             return;
         }
 
         try
         {
-            await viewModel.SelectConversationAsync(listBox.SelectedItem as ConversationListItem);
+            await viewModel.SelectConversationAsync(conversation);
         }
         catch (OperationCanceledException)
         {
         }
     }
+
+    // Collection refreshes briefly clear ListBox.SelectedItem. That is not a user request to
+    // close the current conversation and must not race the restored stable-key selection.
+    internal static ConversationListItem? ConversationSelectionToApply(object? selectedItem) =>
+        selectedItem as ConversationListItem;
 
     private async void OnNavigationTabSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)
     {

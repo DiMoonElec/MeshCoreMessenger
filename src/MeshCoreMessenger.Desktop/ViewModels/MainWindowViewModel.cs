@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -25,6 +26,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _projectionRefreshSignal = new(0);
     private readonly SemaphoreSlim _viewSelectionPersistence = new(1, 1);
+    private readonly ConcurrentQueue<StoredIncomingMessage> _pendingCommittedMessages = new();
     private readonly object _pendingLoadsGate = new();
     private readonly HashSet<Task> _pendingLoads = [];
     private readonly Task _projectionRefreshWorker;
@@ -576,6 +578,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             return;
         }
 
+        _pendingCommittedMessages.Enqueue(args.Message);
         RequestProjectionRefresh();
     }
 
@@ -621,6 +624,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)
     {
         await Navigation.RefreshAsync(cancellationToken);
+        while (_pendingCommittedMessages.TryDequeue(out var message))
+        {
+            await Navigation.HandleCommittedMessageAsync(message, cancellationToken);
+        }
+
         await _dispatcher.InvokeAsync(() => Status = Navigation.Status, cancellationToken);
     }
 

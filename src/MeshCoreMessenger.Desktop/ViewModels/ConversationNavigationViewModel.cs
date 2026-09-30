@@ -31,12 +31,9 @@ public sealed record ChannelAccessFilterItem(ChannelAccessFilter Filter, string 
 public sealed class ConversationNavigationViewModel : ObservableObject
 {
     private const int DirectoryPageSize = 100;
-    private const int MessagePageSize = 100;
     private readonly IConversationDirectoryReader _directory;
-    private readonly ILocalHistoryReader _history;
     private readonly ISettingsStore _settings;
     private readonly IUiDispatcher _dispatcher;
-    private readonly ILogger _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _persistence = new(1, 1);
     private readonly List<ConversationListItem> _loadedPrimary = [];
@@ -64,10 +61,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ILogger logger)
     {
         _directory = directory;
-        _history = history;
         _settings = settings;
         _dispatcher = dispatcher;
-        _logger = logger;
+        History = new HistoryWindowViewModel(history, dispatcher, logger);
         Tabs =
         [
             new(MessengerNavigationTab.Personal, "Личные"),
@@ -92,7 +88,8 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public ObservableCollection<ConversationListItem> PrimaryConversations { get; } = [];
     public ObservableCollection<ConversationListItem> UnknownConversations { get; } = [];
     public ObservableCollection<ConversationListItem> Conversations { get; } = [];
-    public ObservableCollection<HistoryMessageListItem> Messages { get; } = [];
+    public HistoryWindowViewModel History { get; }
+    public ObservableCollection<HistoryMessageListItem> Messages => History.Messages;
     public IAsyncRelayCommand LoadMoreCommand { get; }
     public IRelayCommand BackCommand { get; }
 
@@ -162,8 +159,8 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public bool HasPrimaryConversations => PrimaryConversations.Count > 0;
     public bool HasUnknownConversations => UnknownConversations.Count > 0;
     public bool HasSelection => SelectedConversation is not null;
-    public bool HasMessages => Messages.Count > 0;
-    public bool HasEmptyHistory => HasSelection && !HasMessages;
+    public bool HasMessages => History.HasMessages;
+    public bool HasEmptyHistory => HasSelection && History.HasEmptyHistory;
     public bool IsEmpty => Conversations.Count == 0;
     public bool CanLoadMore => _primaryCursor is not null || _unknownCursor is not null;
     public string PrimaryGroupTitle => SelectedTab.Tab switch
@@ -246,6 +243,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             : MessengerNavigationTab.Personal;
         var selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId), linked.Token);
         var projection = await ReadProjectionAsync(nodeId, tab, selectedKey, linked.Token);
+        var applied = false;
         await ApplyAsync(
             () =>
             {
@@ -255,9 +253,18 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 }
 
                 ApplyProjection(projection);
+                applied = true;
             },
             dispatchResult,
             linked.Token);
+        if (applied)
+        {
+            await History.OpenAsync(
+                nodeId,
+                projection.SelectedConversationId,
+                linked.Token,
+                dispatchResult);
+        }
     }
 
     public async Task SelectTabAsync(
@@ -280,15 +287,24 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         using var linked = CreateLinkedCancellation(cancellationToken);
         var selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId.Value), linked.Token);
         var projection = await ReadProjectionAsync(nodeId.Value, tab.Tab, selectedKey, linked.Token);
+        var applied = false;
         await _dispatcher.InvokeAsync(
             () =>
             {
                 if (IsCurrent(nodeId.Value, version))
                 {
                     ApplyProjection(projection);
+                    applied = true;
                 }
             },
             linked.Token);
+        if (applied)
+        {
+            await History.OpenAsync(
+                nodeId.Value,
+                projection.SelectedConversationId,
+                linked.Token);
+        }
         await PersistSelectionAsync(nodeId.Value, linked.Token);
     }
 
@@ -325,6 +341,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 ShowDetail();
             },
             linked.Token);
+        if (nodeId is { } currentNodeId && IsCurrent(currentNodeId, version))
+        {
+            await History.OpenAsync(currentNodeId, conversation?.Id, linked.Token);
+        }
         if (nodeId is not null)
         {
             await PersistSelectionAsync(nodeId.Value, linked.Token);
@@ -341,19 +361,36 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
         var version = Interlocked.Increment(ref _contextVersion);
         var selectedKey = SelectedConversation?.StableKey;
+        var selectedConversationId = SelectedConversation?.Id;
         var tab = SelectedTab.Tab;
         using var linked = CreateLinkedCancellation(cancellationToken);
         var projection = await ReadProjectionAsync(nodeId.Value, tab, selectedKey, linked.Token);
+        var applied = false;
+        var conversationChanged = false;
         await _dispatcher.InvokeAsync(
             () =>
             {
                 if (IsCurrent(nodeId.Value, version))
                 {
                     ApplyProjection(projection);
+                    conversationChanged = projection.SelectedConversationId != selectedConversationId;
+                    applied = true;
                 }
             },
             linked.Token);
+        if (applied && conversationChanged)
+        {
+            await History.OpenAsync(
+                nodeId.Value,
+                projection.SelectedConversationId,
+                linked.Token);
+        }
     }
+
+    public Task HandleCommittedMessageAsync(
+        StoredIncomingMessage message,
+        CancellationToken cancellationToken = default) =>
+        History.HandleCommittedMessageAsync(message, cancellationToken);
 
     public async Task StopAsync()
     {
@@ -364,6 +401,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
         _lifetimeCancellation.Cancel();
         LoadMoreCommand.Cancel();
+        await History.StopAsync().ConfigureAwait(false);
         if (LoadMoreCommand.ExecutionTask is { } execution)
         {
             try
@@ -433,7 +471,13 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         var selection = selected is null
             ? SelectionProjection.Empty
             : await ReadSelectionAsync(nodeId, selected, cancellationToken);
-        return new(tab, primary, unknown, selected?.StableKey, selection);
+        return new(
+            tab,
+            primary,
+            unknown,
+            selected?.StableKey,
+            selected?.ConversationId,
+            selection);
     }
 
     private async Task<SelectionProjection> ReadSelectionAsync(
@@ -441,9 +485,6 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ConversationDirectoryEntry entry,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<HistoryMessage> messages = entry.ConversationId is { } conversationId
-            ? await _history.GetMessagesAsync(nodeId, conversationId, null, MessagePageSize, cancellationToken)
-            : [];
         ContactDetailsProjection? contact = null;
         ChannelDetailsProjection? channel = null;
         if (entry.Section is ConversationDirectorySection.ChatContacts or ConversationDirectorySection.ServiceContacts)
@@ -455,7 +496,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             channel = await _directory.GetChannelDetailsAsync(nodeId, entry.Identity, cancellationToken);
         }
 
-        return new(messages, contact, channel);
+        return new(contact, channel);
     }
 
     private void ApplyProjection(NavigationProjection projection)
@@ -482,13 +523,6 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         SelectedConversation = conversation;
         ContactDetails = projection.Contact;
         ChannelDetails = projection.Channel;
-        Messages.Clear();
-        foreach (var message in projection.Messages)
-        {
-            Messages.Add(new HistoryMessageListItem(message));
-        }
-        OnPropertyChanged(nameof(HasMessages));
-        OnPropertyChanged(nameof(HasEmptyHistory));
     }
 
     private void ApplyEmpty(string status)
@@ -498,9 +532,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         Conversations.Clear();
         _loadedPrimary.Clear();
         _loadedUnknown.Clear();
-        Messages.Clear();
-        OnPropertyChanged(nameof(HasMessages));
-        OnPropertyChanged(nameof(HasEmptyHistory));
+        History.Clear();
         SelectedConversation = null;
         ContactDetails = null;
         ChannelDetails = null;
@@ -716,14 +748,14 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ConversationDirectoryPage Primary,
         ConversationDirectoryPage Unknown,
         string? SelectedStableKey,
+        Guid? SelectedConversationId,
         SelectionProjection Selection);
 
     private sealed record SelectionProjection(
-        IReadOnlyList<HistoryMessage> Messages,
         ContactDetailsProjection? Contact,
         ChannelDetailsProjection? Channel)
     {
-        public static SelectionProjection Empty { get; } = new([], null, null);
+        public static SelectionProjection Empty { get; } = new(null, null);
     }
 }
 
@@ -801,16 +833,39 @@ public sealed class HistoryMessageListItem
     public HistoryMessageListItem(HistoryMessage message)
     {
         ArgumentNullException.ThrowIfNull(message);
+        Id = message.Id;
         LocalSequence = message.LocalSequence;
+        ConversationId = message.ConversationId;
         Direction = message.Direction == MessageDirection.Outgoing ? "Вы" : "Входящее";
+        Kind = message.MessageKind;
+        TextType = message.TextType;
+        BinaryDataType = message.BinaryDataType;
+        ContentLabel = message.MessageKind switch
+        {
+            StoredMessageKind.Binary when message.BinaryDataType is { } type => $"Двоичное сообщение · тип {type}",
+            StoredMessageKind.Binary => "Двоичное сообщение",
+            StoredMessageKind.Text when message.TextType == 1 => "Служебный текст",
+            StoredMessageKind.Text when message.TextType == 2 => "Подписанный текст / room post",
+            StoredMessageKind.Text when message.TextType is > 2 => $"Текст неизвестного типа {message.TextType}",
+            _ => string.Empty,
+        };
         Body = message.MessageKind == StoredMessageKind.Binary
-            ? "Двоичное сообщение"
+            ? ContentLabel
             : message.Text ?? string.Empty;
+        CopyText = message.Text ?? Body;
         ReceivedTime = message.ReceivedUtc.ToLocalTime().ToString("g");
     }
 
+    public Guid Id { get; }
     public long LocalSequence { get; }
+    public Guid ConversationId { get; }
+    public StoredMessageKind Kind { get; }
+    public int? TextType { get; }
+    public ushort? BinaryDataType { get; }
     public string Direction { get; }
+    public string ContentLabel { get; }
     public string Body { get; }
+    public string CopyText { get; }
     public string ReceivedTime { get; }
+    public bool HasContentLabel => !string.IsNullOrEmpty(ContentLabel) && Kind != StoredMessageKind.Binary;
 }

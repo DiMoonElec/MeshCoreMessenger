@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+        xmlns:controls="using:MeshCoreMessenger.Desktop.Controls"
         x:Class="MeshCoreMessenger.Desktop.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
@@ -155,27 +156,44 @@
           <Grid Grid.Row="1">
             <TextBlock Text="Выберите запись слева" IsVisible="{Binding !Navigation.HasSelection}"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
-            <TextBlock Text="У этой записи пока нет сообщений" IsVisible="{Binding Navigation.HasEmptyHistory}"
+            <TextBlock Text="У этой записи пока нет сообщений" IsVisible="{Binding Navigation.History.HasEmptyHistory}"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.35" />
-            <ListBox ItemsSource="{Binding Navigation.Messages}"
-                     IsVisible="{Binding Navigation.HasMessages}" Padding="18"
-                     SelectionMode="Single" Background="Transparent">
-              <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:HistoryMessageListItem">
-                  <Border Margin="0,4" Padding="12,9" CornerRadius="8"
-                          Background="{DynamicResource ThemeControlLowBrush}"
-                          MaxWidth="680" HorizontalAlignment="Stretch">
-                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
-                      <TextBlock Text="{Binding Direction}" FontSize="11" FontWeight="SemiBold" Opacity="0.68" />
-                      <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding ReceivedTime}"
-                                 FontSize="11" Opacity="0.55" />
-                      <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Margin="0,4,0,0"
-                                 Text="{Binding Body}" TextWrapping="Wrap" />
-                    </Grid>
-                  </Border>
-                </DataTemplate>
-              </ListBox.ItemTemplate>
-            </ListBox>
+            <Grid IsVisible="{Binding Navigation.History.HasMessages}" RowDefinitions="Auto,*">
+              <Button Grid.Row="0" Content="Загрузить более ранние"
+                      Command="{Binding Navigation.History.LoadOlderCommand}"
+                      IsVisible="{Binding Navigation.History.CanLoadOlder}"
+                      HorizontalAlignment="Center" Margin="8" />
+              <controls:VirtualizedHistoryListBox x:Name="HistoryList"
+                       Grid.Row="1" ItemsSource="{Binding Navigation.History.Messages}"
+                       Padding="18" SelectionMode="Single" Background="Transparent">
+                <ListBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:HistoryMessageListItem">
+                    <Border Margin="0,4" Padding="12,9" CornerRadius="8"
+                            Background="{DynamicResource ThemeControlLowBrush}"
+                            MaxWidth="680" HorizontalAlignment="Stretch">
+                      <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                        <TextBlock Text="{Binding Direction}" FontSize="11" FontWeight="SemiBold" Opacity="0.68" />
+                        <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding ReceivedTime}"
+                                   FontSize="11" Opacity="0.55" />
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding ContentLabel}"
+                                   IsVisible="{Binding HasContentLabel}" FontSize="10" Opacity="0.55" />
+                        <SelectableTextBlock Grid.Row="2" Grid.ColumnSpan="2" Margin="0,4,0,0"
+                                             Text="{Binding Body}" TextWrapping="Wrap" />
+                      </Grid>
+                    </Border>
+                  </DataTemplate>
+                </ListBox.ItemTemplate>
+              </controls:VirtualizedHistoryListBox>
+              <StackPanel Grid.Row="1" VerticalAlignment="Bottom" HorizontalAlignment="Center"
+                          Margin="0,0,0,14" Spacing="6">
+                <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}"
+                        Command="{Binding Navigation.History.JumpToLatestCommand}"
+                        IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
+                <Button Content="Загрузить более новые"
+                        Command="{Binding Navigation.History.LoadNewerCommand}"
+                        IsVisible="{Binding Navigation.History.CanLoadNewer}" />
+              </StackPanel>
+            </Grid>
           </Grid>
         </Grid>
       </Grid>
