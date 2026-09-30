@@ -1,3 +1,4 @@
+using Avalonia;
 using Avalonia.Controls;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.ViewModels;
@@ -52,6 +53,44 @@ public sealed partial class MainWindow : Window
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private async void OnNavigationTabSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)
+    {
+        if (DataContext is not MainWindowViewModel viewModel ||
+            sender is not ListBox listBox ||
+            listBox.SelectedItem is not MessengerNavigationTabItem tab ||
+            tab.Tab == viewModel.Navigation.SelectedTab.Tab)
+        {
+            return;
+        }
+
+        try
+        {
+            await viewModel.SelectNavigationTabAsync(tab);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void OnWindowSizeChanged(object? sender, SizeChangedEventArgs eventArgs)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var narrow = eventArgs.NewSize.Width < 760;
+        viewModel.SetNarrowLayout(narrow);
+        ConversationColumns.ColumnDefinitions[0].Width = narrow
+            ? new GridLength(1, GridUnitType.Star)
+            : new GridLength(340);
+        ConversationColumns.ColumnDefinitions[1].Width = narrow
+            ? new GridLength(0)
+            : new GridLength(1, GridUnitType.Star);
+        Grid.SetColumn(DetailPane, narrow ? 0 : 1);
+        Grid.SetColumnSpan(DetailPane, narrow ? 2 : 1);
     }
 
     private async void OnNodeSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)

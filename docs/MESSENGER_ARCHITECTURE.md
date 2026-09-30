@@ -372,7 +372,7 @@ offline-просмотра нода могут различаться — пра
 
 ## 8. UX первой версии
 
-### Контекст ноды и чтения (C1 реализован; C2+ продолжают projections/навигацию)
+### Контекст ноды и чтения (C1–C3 реализованы)
 
 `ActiveNodeId` определяется только текущей session и snapshot supervisor после
 Identify. Данные для подписи берутся из Nodes по этому ID; имя/endpoint не служат
@@ -403,13 +403,22 @@ read projections даже без новых сообщений. Подробны
 Settings. Сам по себе C1 не означал готовность directory projections, вкладок,
 постраничной навигации, unread или drafts.
 
-C2 добавляет read-only `IConversationDirectoryReader`: отдельные bounded страницы
+C2 добавил read-only `IConversationDirectoryReader`: отдельные bounded страницы
 Chat/служебных контактов, каналов и двух unknown-групп, а также secret-free карточки.
 Stable key строится из сохранённой полной identity, не из имени или ConversationId;
 cursor дополнительно привязан к NodeId и section. Directory-only entry имеет nullable
 ConversationId и не создаёт пустую историю. Один channel fingerprint агрегирует
 несколько активных slots; AccessKind только читается из БД и не выводится из имени.
-Этот API ещё не подключён к XAML: вкладки и реакция UI на directory-only refresh — C3.
+В C3 этот API подключён к отдельной `ConversationNavigationViewModel`: XAML показывает
+«Личные», «Каналы» и «Устройства», отдельные unknown-группы и фильтр каналов по
+сохранённому `AccessKind`. Выбор вкладки и stable key последней записи сохраняются
+отдельно для каждой просматриваемой ноды. Directory-only entry открывает пустую
+read-only карточку без создания Conversation; Online после directory sync и
+post-commit уведомление перечитывают committed projection. Результаты чтений имеют
+собственную context revision, поэтому поздняя загрузка старой ноды не меняет новую.
+`MainWindowViewModel` остаётся владельцем connection/active/viewed-node shell, а
+navigation ViewModel владеет списками, текущей короткой историей и narrow-layout
+переходом «Назад». Полноценные страницы/viewport длинной истории остаются C4–C5.
 
 ### Компоновка и сценарии
 

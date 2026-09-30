@@ -16,10 +16,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     internal const string FollowActiveNodeSettingKey = "desktop.follow-active-node";
 
     private const int KnownNodePageSize = 500;
-    private const int ConversationPageSize = 200;
-    private const int MessagePageSize = 100;
-
-    private readonly ILocalHistoryReader _history;
     private readonly INodeStore _nodes;
     private readonly ISettingsStore _settings;
     private readonly IConnectionSupervisor _supervisor;
@@ -34,7 +30,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly Task _projectionRefreshWorker;
     private KnownNodeListItem? _viewedNode;
     private KnownNodeListItem? _activeNode;
-    private ConversationListItem? _selectedConversation;
     private string _status = "Загрузка локальной истории…";
     private string _connectionStatus;
     private string? _connectionStatusDetail;
@@ -42,13 +37,14 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private string? _errorMessage;
     private bool _isLoading;
     private bool _isFollowingActiveNode = true;
+    private bool _isConnectionSettingsOpen;
     private long _viewContextVersion;
     private long _connectionStateVersion;
-    private Guid? _loadedConversationId;
     private int _projectionRefreshRequested;
     private int _stopped;
 
     public MainWindowViewModel(
+        IConversationDirectoryReader directory,
         ILocalHistoryReader history,
         INodeStore nodes,
         ISettingsStore settings,
@@ -58,7 +54,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IUiDispatcher dispatcher,
         ILogger<MainWindowViewModel> logger)
     {
-        _history = history;
         _nodes = nodes;
         _settings = settings;
         Profiles = profiles;
@@ -66,10 +61,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _commitNotifications = commitNotifications;
         _dispatcher = dispatcher;
         _logger = logger;
+        Navigation = new ConversationNavigationViewModel(
+            directory,
+            history,
+            settings,
+            dispatcher,
+            logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
         FollowActiveNodeCommand = new AsyncRelayCommand(FollowActiveNodeAsync);
+        ToggleConnectionSettingsCommand = new RelayCommand(
+            () => IsConnectionSettingsOpen = !IsConnectionSettingsOpen);
+        CloseConnectionSettingsCommand = new RelayCommand(() => IsConnectionSettingsOpen = false);
         _supervisor.StateChanged += OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted += OnMessageCommitted;
         _projectionRefreshWorker = Track(ProcessProjectionRefreshesAsync());
@@ -158,15 +162,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public IAsyncRelayCommand ConnectCommand { get; }
     public IAsyncRelayCommand DisconnectCommand { get; }
     public IAsyncRelayCommand FollowActiveNodeCommand { get; }
+    public IRelayCommand ToggleConnectionSettingsCommand { get; }
+    public IRelayCommand CloseConnectionSettingsCommand { get; }
     public ConnectionProfilesViewModel Profiles { get; }
+    public ConversationNavigationViewModel Navigation { get; }
     public ObservableCollection<KnownNodeListItem> KnownNodes { get; } = [];
-    public ObservableCollection<ConversationListItem> Conversations { get; } = [];
-    public ObservableCollection<HistoryMessageListItem> Messages { get; } = [];
+    public ObservableCollection<ConversationListItem> Conversations => Navigation.Conversations;
+    public ObservableCollection<HistoryMessageListItem> Messages => Navigation.Messages;
+    public ConversationListItem? SelectedConversation => Navigation.SelectedConversation;
 
-    public ConversationListItem? SelectedConversation
+    public bool IsConnectionSettingsOpen
     {
-        get => _selectedConversation;
-        private set => SetProperty(ref _selectedConversation, value);
+        get => _isConnectionSettingsOpen;
+        private set => SetProperty(ref _isConnectionSettingsOpen, value);
     }
 
     public string Status
@@ -236,6 +244,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                     version,
                     linkedCancellation.Token,
                     dispatchResult: false);
+                Status = Navigation.Status;
             }
         }
         catch (OperationCanceledException)
@@ -271,20 +280,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ConversationListItem? conversation,
         CancellationToken cancellationToken = default)
     {
-        if (conversation is not null && conversation.NodeId != ViewedNode?.Id)
-        {
-            throw new ArgumentException("The conversation does not belong to the viewed node.", nameof(conversation));
-        }
-
-        if (conversation is not null &&
-            SelectedConversation?.Id == conversation.Id &&
-            _loadedConversationId == conversation.Id)
-        {
-            return Task.CompletedTask;
-        }
-
         return Track(SelectConversationCoreAsync(conversation, cancellationToken));
     }
+
+    public Task SelectNavigationTabAsync(
+        MessengerNavigationTabItem tab,
+        CancellationToken cancellationToken = default) =>
+        Track(SelectNavigationTabCoreAsync(tab, cancellationToken));
+
+    public void SetNarrowLayout(bool value) => Navigation.SetNarrowLayout(value);
 
     public async Task StopAsync()
     {
@@ -300,6 +304,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         DisconnectCommand.Cancel();
         FollowActiveNodeCommand.Cancel();
         _projectionRefreshSignal.Release();
+        await Navigation.StopAsync().ConfigureAwait(false);
         await Profiles.StopAsync().ConfigureAwait(false);
 
         Task[] pending;
@@ -403,6 +408,30 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private Task FollowActiveNodeAsync(CancellationToken cancellationToken) =>
         SelectViewedNodeCoreAsync(ActiveNode, followActiveNode: true, cancellationToken);
 
+    private async Task SelectNavigationTabCoreAsync(
+        MessengerNavigationTabItem tab,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken,
+                _lifetimeCancellation.Token);
+            await Navigation.SelectTabAsync(tab, linkedCancellation.Token);
+            Status = Navigation.Status;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Could not change the navigation tab.");
+            ErrorMessage = "Не удалось открыть выбранный раздел.";
+            Status = "Ошибка локального хранилища";
+        }
+    }
+
     private async Task SelectViewedNodeCoreAsync(
         KnownNodeListItem? node,
         bool followActiveNode,
@@ -422,6 +451,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             if (node is not null)
             {
                 await LoadViewedHistoryAsync(node.Id, version, linkedCancellation.Token);
+                Status = Navigation.Status;
             }
         }
         catch (OperationCanceledException)
@@ -484,6 +514,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                     followActiveNode: true,
                     _lifetimeCancellation.Token);
                 await LoadViewedHistoryAsync(nodeId, contextVersion, _lifetimeCancellation.Token);
+            }
+
+            if (snapshot.State == ConnectionSupervisorState.Online &&
+                followedNodeId is null &&
+                snapshot.NodeId == ViewedNode?.Id)
+            {
+                RequestProjectionRefresh();
             }
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested)
@@ -583,57 +620,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)
     {
-        Guid? nodeId = null;
-        Guid? selectedId = null;
-        long contextVersion = 0;
-        await _dispatcher.InvokeAsync(
-            () =>
-            {
-                nodeId = ViewedNode?.Id;
-                selectedId = SelectedConversation?.Id;
-                contextVersion = Volatile.Read(ref _viewContextVersion);
-            },
-            cancellationToken);
-
-        if (nodeId is null)
-        {
-            return;
-        }
-
-        var summaries = await _history.GetConversationsAsync(
-            nodeId.Value,
-            ConversationPageSize,
-            cancellationToken);
-        var targetId = selectedId is { } id && summaries.Any(summary => summary.Id == id)
-            ? id
-            : summaries.FirstOrDefault()?.Id;
-        var messages = targetId is { } conversationId
-            ? await _history.GetMessagesAsync(
-                nodeId.Value,
-                conversationId,
-                beforeLocalSequence: null,
-                MessagePageSize,
-                cancellationToken)
-            : [];
-
-        await _dispatcher.InvokeAsync(
-            () =>
-            {
-                if (Volatile.Read(ref _stopped) != 0)
-                {
-                    return;
-                }
-
-                if (contextVersion != Volatile.Read(ref _viewContextVersion) ||
-                    ViewedNode?.Id != nodeId)
-                {
-                    RequestProjectionRefresh();
-                    return;
-                }
-
-                ApplyProjection(summaries, targetId, messages);
-            },
-            cancellationToken);
+        await Navigation.RefreshAsync(cancellationToken);
+        await _dispatcher.InvokeAsync(() => Status = Navigation.Status, cancellationToken);
     }
 
     private async Task LoadViewedHistoryAsync(
@@ -642,72 +630,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         CancellationToken cancellationToken,
         bool dispatchResult = true)
     {
-        var summaries = await _history.GetConversationsAsync(
-            nodeId,
-            ConversationPageSize,
-            cancellationToken);
-        var targetId = summaries.FirstOrDefault()?.Id;
-        var messages = targetId is { } conversationId
-            ? await _history.GetMessagesAsync(
-                nodeId,
-                conversationId,
-                beforeLocalSequence: null,
-                MessagePageSize,
-                cancellationToken)
-            : [];
-
-        void ApplyIfCurrent()
+        if (contextVersion != Volatile.Read(ref _viewContextVersion) || ViewedNode?.Id != nodeId)
         {
-            if (Volatile.Read(ref _stopped) != 0 ||
-                contextVersion != Volatile.Read(ref _viewContextVersion) ||
-                ViewedNode?.Id != nodeId)
-            {
-                return;
-            }
-
-            ApplyProjection(summaries, targetId, messages);
+            return;
         }
 
-        if (dispatchResult)
-        {
-            await _dispatcher.InvokeAsync(ApplyIfCurrent, cancellationToken);
-        }
-        else
-        {
-            ApplyIfCurrent();
-        }
-    }
-
-    private void ApplyProjection(
-        IReadOnlyList<ConversationSummary> summaries,
-        Guid? targetId,
-        IReadOnlyList<HistoryMessage> messages)
-    {
-        if (summaries.Any(summary => summary.NodeId != ViewedNode?.Id))
-        {
-            throw new InvalidOperationException("The history projection crossed a node boundary.");
-        }
-
-        Conversations.Clear();
-        foreach (var summary in summaries)
-        {
-            Conversations.Add(new ConversationListItem(summary));
-        }
-
-        SelectedConversation = targetId is { } currentId
-            ? Conversations.First(item => item.Id == currentId)
-            : null;
-        Messages.Clear();
-        foreach (var message in messages)
-        {
-            Messages.Add(new HistoryMessageListItem(message));
-        }
-
-        _loadedConversationId = targetId;
-        Status = Conversations.Count == 0
-            ? "История выбранной ноды пуста"
-            : $"Загружено диалогов: {Conversations.Count}";
-        ErrorMessage = null;
+        await Navigation.LoadNodeAsync(nodeId, cancellationToken, dispatchResult);
     }
 
     private async Task PersistViewedNodeAsync(
@@ -742,10 +670,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     {
         var version = Interlocked.Increment(ref _viewContextVersion);
         ViewedNode = node;
-        SelectedConversation = null;
-        _loadedConversationId = null;
-        Conversations.Clear();
-        Messages.Clear();
+        Navigation.ClearNode();
         ErrorMessage = null;
         Status = node is null ? "Выберите ноду для просмотра истории" : "Загрузка истории ноды…";
         return version;
@@ -828,42 +753,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ConversationListItem? conversation,
         CancellationToken cancellationToken)
     {
-        var nodeId = ViewedNode?.Id;
-        var version = Interlocked.Increment(ref _viewContextVersion);
-        SelectedConversation = conversation;
-        _loadedConversationId = null;
-        Messages.Clear();
-        ErrorMessage = null;
-        if (conversation is null || nodeId is null)
-        {
-            return;
-        }
-
         try
         {
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
-            var messages = await _history.GetMessagesAsync(
-                nodeId.Value,
-                conversation.Id,
-                beforeLocalSequence: null,
-                MessagePageSize,
-                linkedCancellation.Token);
-
-            if (version != Volatile.Read(ref _viewContextVersion) || ViewedNode?.Id != nodeId)
-            {
-                return;
-            }
-
-            Messages.Clear();
-            foreach (var message in messages)
-            {
-                Messages.Add(new HistoryMessageListItem(message));
-            }
-
-            _loadedConversationId = conversation.Id;
-            Status = $"Загружено диалогов: {Conversations.Count}";
+            await Navigation.SelectConversationAsync(conversation, linkedCancellation.Token);
+            Status = Navigation.Status;
         }
         catch (OperationCanceledException)
         {
@@ -871,7 +767,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Could not load conversation {ConversationId}.", conversation.Id);
+            _logger.LogError(exception, "Could not load a conversation.");
             ErrorMessage = "Не удалось прочитать сообщения выбранного диалога.";
             Status = "Ошибка локального хранилища";
         }
@@ -897,56 +793,4 @@ public sealed class KnownNodeListItem
     public string ShortPublicKey { get; }
     public string HeaderLabel { get; }
     public string SelectorLabel { get; }
-}
-
-public sealed class ConversationListItem
-{
-    public ConversationListItem(ConversationSummary summary)
-    {
-        ArgumentNullException.ThrowIfNull(summary);
-        Id = summary.Id;
-        NodeId = summary.NodeId;
-        Kind = summary.Kind;
-        Title = string.IsNullOrWhiteSpace(summary.Title)
-            ? summary.Kind switch
-            {
-                ConversationKind.Channel or ConversationKind.UnknownChannel => "Канал без названия",
-                ConversationKind.Contact or ConversationKind.UnknownContact => "Неизвестный контакт",
-                _ => "Диалог без названия",
-            }
-            : summary.Title;
-        Preview = summary.LastMessageKind switch
-        {
-            StoredMessageKind.Binary => "Двоичное сообщение",
-            StoredMessageKind.Text when !string.IsNullOrEmpty(summary.LastMessageText) => summary.LastMessageText,
-            _ => "Нет сообщений",
-        };
-        ActivityTime = (summary.LastMessageUtc ?? summary.UpdatedUtc).ToLocalTime().ToString("g");
-    }
-
-    public Guid Id { get; }
-    public Guid NodeId { get; }
-    public ConversationKind Kind { get; }
-    public string Title { get; }
-    public string Preview { get; }
-    public string ActivityTime { get; }
-}
-
-public sealed class HistoryMessageListItem
-{
-    public HistoryMessageListItem(HistoryMessage message)
-    {
-        ArgumentNullException.ThrowIfNull(message);
-        LocalSequence = message.LocalSequence;
-        Direction = message.Direction == MessageDirection.Outgoing ? "Вы" : "Входящее";
-        Body = message.MessageKind == StoredMessageKind.Binary
-            ? "Двоичное сообщение"
-            : message.Text ?? string.Empty;
-        ReceivedTime = message.ReceivedUtc.ToLocalTime().ToString("g");
-    }
-
-    public long LocalSequence { get; }
-    public string Direction { get; }
-    public string Body { get; }
-    public string ReceivedTime { get; }
 }

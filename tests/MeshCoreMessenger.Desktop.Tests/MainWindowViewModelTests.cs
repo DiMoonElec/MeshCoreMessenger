@@ -464,6 +464,7 @@ public sealed class MainWindowViewModelTests
             new EmptySerialPortCatalog(),
             NullLogger<ConnectionProfilesViewModel>.Instance);
         return new MainWindowViewModel(
+            new FakeConversationDirectoryReader(history),
             history,
             nodes,
             settings,
@@ -614,6 +615,65 @@ public sealed class MainWindowViewModelTests
                 : [];
             return Task.FromResult(result);
         }
+    }
+
+    private sealed class FakeConversationDirectoryReader(ILocalHistoryReader history)
+        : IConversationDirectoryReader
+    {
+        public async Task<ConversationDirectoryPage> GetPageAsync(
+            Guid nodeId,
+            ConversationDirectorySection section,
+            ConversationDirectoryCursor? after,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            var summaries = await history.GetConversationsAsync(nodeId, limit, cancellationToken);
+            var items = summaries
+                .Where(summary => Section(summary.Kind) == section)
+                .Select(summary => new ConversationDirectoryEntry(
+                    summary.NodeId,
+                    summary.Id.ToString("N"),
+                    section,
+                    summary.Kind,
+                    summary.Id.ToByteArray(),
+                    summary.Id,
+                    summary.Title,
+                    null,
+                    null,
+                    null,
+                    [],
+                    summary.IsArchived,
+                    summary.UpdatedUtc,
+                    summary.LastMessageSequence ?? 0,
+                    summary.LastMessageUtc ?? summary.UpdatedUtc,
+                    summary.LastMessageSequence,
+                    summary.LastMessageDirection,
+                    summary.LastMessageKind,
+                    MessageResolutionState.Resolved,
+                    summary.LastMessageText,
+                    summary.LastMessageUtc))
+                .ToArray();
+            return new ConversationDirectoryPage(items, null);
+        }
+
+        public Task<ContactDetailsProjection?> GetContactDetailsAsync(
+            Guid nodeId,
+            ReadOnlyMemory<byte> publicKey,
+            CancellationToken cancellationToken = default) => Task.FromResult<ContactDetailsProjection?>(null);
+
+        public Task<ChannelDetailsProjection?> GetChannelDetailsAsync(
+            Guid nodeId,
+            ReadOnlyMemory<byte> keyFingerprint,
+            CancellationToken cancellationToken = default) => Task.FromResult<ChannelDetailsProjection?>(null);
+
+        private static ConversationDirectorySection Section(ConversationKind kind) => kind switch
+        {
+            ConversationKind.Contact => ConversationDirectorySection.ChatContacts,
+            ConversationKind.Channel => ConversationDirectorySection.Channels,
+            ConversationKind.UnknownContact => ConversationDirectorySection.UnknownContacts,
+            ConversationKind.UnknownChannel => ConversationDirectorySection.UnknownChannels,
+            _ => throw new ArgumentOutOfRangeException(nameof(kind)),
+        };
     }
 
     private sealed class FakeNodeStore(IReadOnlyList<NodeRecord> nodes) : INodeStore
