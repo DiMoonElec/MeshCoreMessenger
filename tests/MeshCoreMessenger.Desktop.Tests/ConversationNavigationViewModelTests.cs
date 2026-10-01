@@ -213,6 +213,54 @@ public sealed class ConversationNavigationViewModelTests
         await model.StopAsync();
     }
 
+    [Fact]
+    public async Task DirectorySearchUsesCurrentNodeAndTabAndTreatsMetacharactersLiterally()
+    {
+        var directory = new FakeDirectoryReader();
+        directory.Set(NodeA, ConversationDirectorySection.ChatContacts,
+            Entry(NodeA, "matching", ConversationDirectorySection.ChatContacts, name: "Кот 🐈 100%_one"),
+            Entry(NodeA, "case", ConversationDirectorySection.ChatContacts, name: "кот 🐈 100%_two"),
+            Entry(NodeA, "other", ConversationDirectorySection.ChatContacts, name: "Other"));
+        directory.Set(NodeB, ConversationDirectorySection.ChatContacts,
+            Entry(NodeB, "foreign", ConversationDirectorySection.ChatContacts, name: "Кот 🐈 100%_foreign"));
+        var model = Create(directory);
+        await model.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+
+        model.DirectorySearchText = "Кот 🐈 100%_";
+        await WaitUntilAsync(() => !model.IsDirectorySearching);
+
+        Assert.Equal("matching", Assert.Single(model.Conversations).StableKey);
+        Assert.All(model.Conversations, item => Assert.Equal(NodeA, item.NodeId));
+        Assert.Contains("Совпадений: 1", model.DirectorySearchStatus, StringComparison.Ordinal);
+
+        model.DirectorySearchText = string.Empty;
+        Assert.Equal(3, model.Conversations.Count);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task RapidDirectoryQueryCannotApplyAnOlderQueuedResult()
+    {
+        var directory = new FakeDirectoryReader();
+        directory.Set(NodeA, ConversationDirectorySection.ChatContacts,
+            Entry(NodeA, "first", ConversationDirectorySection.ChatContacts, name: "First match"),
+            Entry(NodeA, "second", ConversationDirectorySection.ChatContacts, name: "Second match"));
+        var dispatcher = new QueuedUiDispatcher();
+        var model = Create(directory, dispatcher: dispatcher);
+        await model.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+
+        model.DirectorySearchText = "First";
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        model.DirectorySearchText = "Second";
+        await WaitUntilAsync(() => dispatcher.PendingCount == 2);
+        dispatcher.RunNext();
+        dispatcher.RunNext();
+        await WaitUntilAsync(() => !model.IsDirectorySearching);
+
+        Assert.Equal("second", Assert.Single(model.Conversations).StableKey);
+        await model.StopAsync();
+    }
+
     private static ConversationNavigationViewModel Create(
         FakeDirectoryReader directory,
         FakeHistoryReader? history = null,
@@ -227,6 +275,7 @@ public sealed class ConversationNavigationViewModelTests
             readStates,
             settings ?? new FakeSettingsStore(),
             dispatcher ?? new ImmediateUiDispatcher(),
+            new ImmediateSearchDelay(),
             NullLogger.Instance);
     }
 
@@ -308,6 +357,22 @@ public sealed class ConversationNavigationViewModelTests
             return new ConversationDirectoryPage(items.Take(limit).ToArray(), null);
         }
 
+        public Task<ConversationDirectoryPage> SearchPageAsync(
+            Guid nodeId,
+            ConversationDirectorySection section,
+            string query,
+            ConversationDirectoryCursor? after,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var items = (_entries.GetValueOrDefault((nodeId, section)) ?? [])
+                .Where(item => item.DisplayName?.Contains(query, StringComparison.Ordinal) == true)
+                .Take(limit)
+                .ToArray();
+            return Task.FromResult(new ConversationDirectoryPage(items, null));
+        }
+
         public Task<ContactDetailsProjection?> GetContactDetailsAsync(
             Guid nodeId,
             ReadOnlyMemory<byte> publicKey,
@@ -368,6 +433,11 @@ public sealed class ConversationNavigationViewModelTests
         public Task<HistoryMessagePage> GetMessagesAroundAsync(
             HistoryMessagePosition position, int beforeLimit, int afterLimit,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public Task<HistoryMessageSearchPage> SearchMessagesAsync(
+            Guid nodeId, Guid conversationId, string query, HistoryMessagePosition? before, int limit,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HistoryMessageSearchPage([], null));
     }
 
     private sealed class FakeSettingsStore : ISettingsStore

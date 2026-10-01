@@ -38,6 +38,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.ConversationDirectory);
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<ISearchDelay, SystemSearchDelay>();
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<SessionCompletionTracker>();
         services.AddSingleton<IDurableSessionCompletion>(provider =>

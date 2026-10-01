@@ -6,7 +6,8 @@
         x:DataType="vm:MainWindowViewModel"
         Title="{Binding Title}"
         Width="1040" Height="700" MinWidth="560" MinHeight="440"
-        SizeChanged="OnWindowSizeChanged">
+        SizeChanged="OnWindowSizeChanged"
+        KeyDown="OnWindowKeyDown">
   <Grid RowDefinitions="Auto,*">
     <Border Grid.Row="0" Padding="18,11"
             BorderBrush="{DynamicResource ThemeBorderLowBrush}" BorderThickness="0,0,0,1">
@@ -77,8 +78,16 @@
               </ListBox>
             </Border>
 
-            <Grid Grid.Row="2" RowDefinitions="Auto,*">
-              <ComboBox Grid.Row="0" Margin="14,10,14,0"
+            <Grid Grid.Row="2" RowDefinitions="Auto,Auto,*">
+              <StackPanel Grid.Row="0" Margin="14,10,14,0" Spacing="3">
+                <TextBox x:Name="DirectorySearchBox"
+                         Text="{Binding Navigation.DirectorySearchText, Mode=TwoWay}"
+                         PlaceholderText="Поиск по имени" />
+                <TextBlock Text="{Binding Navigation.DirectorySearchStatus}"
+                           IsVisible="{Binding Navigation.HasDirectorySearchStatus}"
+                           FontSize="10" Opacity="0.58" />
+              </StackPanel>
+              <ComboBox Grid.Row="1" Margin="14,8,14,0"
                         ItemsSource="{Binding Navigation.ChannelFilters}"
                         SelectedItem="{Binding Navigation.SelectedChannelFilter, Mode=TwoWay}"
                         IsVisible="{Binding Navigation.IsChannelTab}">
@@ -86,7 +95,7 @@
                   <DataTemplate x:DataType="vm:ChannelAccessFilterItem"><TextBlock Text="{Binding Title}" /></DataTemplate>
                 </ComboBox.ItemTemplate>
               </ComboBox>
-              <ScrollViewer Grid.Row="1">
+              <ScrollViewer Grid.Row="2">
                 <StackPanel Margin="8,8,8,14" Spacing="5">
                   <TextBlock Text="{Binding Navigation.EmptyText}" IsVisible="{Binding Navigation.IsEmpty}"
                              Margin="10,24" HorizontalAlignment="Center" Opacity="0.55" />
@@ -169,7 +178,43 @@
               </StackPanel>
             </Grid>
           </Border>
-          <Grid Grid.Row="1">
+          <Grid Grid.Row="1" RowDefinitions="Auto,*">
+            <Grid Grid.Row="0" Margin="18,10,18,6" ColumnDefinitions="*,Auto">
+              <TextBox x:Name="HistorySearchBox"
+                       Text="{Binding Navigation.History.SearchText, Mode=TwoWay}"
+                       PlaceholderText="Поиск в переписке"
+                       IsEnabled="{Binding Navigation.HasSelection}" />
+              <TextBlock Grid.Column="1" Margin="10,0,0,0"
+                         Text="{Binding Navigation.History.SearchStatus}"
+                         IsVisible="{Binding Navigation.History.HasSearchStatus}"
+                         VerticalAlignment="Center" FontSize="10" Opacity="0.58" />
+            </Grid>
+            <Border Grid.Row="1" IsVisible="{Binding Navigation.History.IsSearchActive}"
+                    BorderBrush="{DynamicResource ThemeBorderLowBrush}" BorderThickness="0,1,0,0">
+              <Grid RowDefinitions="*,Auto">
+                <ListBox x:Name="HistorySearchResults"
+                         ItemsSource="{Binding Navigation.History.SearchResults}"
+                         SelectionChanged="OnHistorySearchResultSelectionChanged"
+                         Background="Transparent" Padding="18,8">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:HistorySearchResultListItem">
+                      <Grid Margin="4,6" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto">
+                        <TextBlock Text="{Binding Direction}" FontSize="10" FontWeight="SemiBold" Opacity="0.62" />
+                        <TextBlock Grid.Column="1" Margin="10,0,0,0" Text="{Binding ReceivedTime}"
+                                   FontSize="10" Opacity="0.55" />
+                        <TextBlock Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Preview}"
+                                   TextWrapping="Wrap" MaxLines="3" />
+                      </Grid>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <Button Grid.Row="1" Content="Показать ещё"
+                        Command="{Binding Navigation.History.LoadMoreSearchResultsCommand}"
+                        IsVisible="{Binding Navigation.History.CanLoadMoreSearchResults}"
+                        HorizontalAlignment="Center" Margin="8" />
+              </Grid>
+            </Border>
+            <Grid Grid.Row="1" IsVisible="{Binding !Navigation.History.IsSearchActive}">
             <TextBlock Text="Выберите запись слева" IsVisible="{Binding !Navigation.HasSelection}"
                        HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.5" />
             <TextBlock Text="У этой записи пока нет сообщений" IsVisible="{Binding Navigation.History.HasEmptyHistory}"
@@ -186,6 +231,7 @@
                   <DataTemplate x:DataType="vm:HistoryMessageListItem">
                     <Border Margin="0,4" Padding="12,9" CornerRadius="8"
                             Background="{DynamicResource ThemeControlLowBrush}"
+                            BorderBrush="#1976D2" BorderThickness="{Binding SearchBorderThickness}"
                             MaxWidth="680" HorizontalAlignment="Stretch">
                       <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
                         <TextBlock Text="{Binding Direction}" FontSize="11" FontWeight="SemiBold" Opacity="0.68" />
@@ -209,6 +255,7 @@
                         Command="{Binding Navigation.History.LoadNewerCommand}"
                         IsVisible="{Binding Navigation.History.CanLoadNewer}" />
               </StackPanel>
+            </Grid>
             </Grid>
           </Grid>
         </Grid>

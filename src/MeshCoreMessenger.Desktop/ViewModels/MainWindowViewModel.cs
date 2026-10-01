@@ -55,6 +55,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IConnectionSupervisor supervisor,
         IMessageCommitNotifications commitNotifications,
         IUiDispatcher dispatcher,
+        ISearchDelay searchDelay,
         ILogger<MainWindowViewModel> logger)
     {
         _nodes = nodes;
@@ -72,6 +73,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             readWrites,
             settings,
             dispatcher,
+            searchDelay,
             logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);

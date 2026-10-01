@@ -80,6 +80,48 @@ internal sealed class ImmediateUiDispatcher : IUiDispatcher
     }
 }
 
+internal sealed class ImmediateSearchDelay : ISearchDelay
+{
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class ControlledSearchDelay : ISearchDelay
+{
+    private readonly object _gate = new();
+    private readonly List<DelayRequest> _requests = [];
+
+    public IReadOnlyList<DelayRequest> Requests
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _requests];
+            }
+        }
+    }
+
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var request = new DelayRequest(delay, cancellationToken);
+            _requests.Add(request);
+            return request.Completion.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    internal sealed record DelayRequest(TimeSpan Delay, CancellationToken CancellationToken)
+    {
+        public TaskCompletionSource Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+}
+
 internal sealed class QueuedUiDispatcher : IUiDispatcher
 {
     private readonly Queue<(Action Action, TaskCompletionSource Completion, CancellationToken Cancellation)> _queue = [];

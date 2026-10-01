@@ -320,6 +320,43 @@ public sealed class ConversationDirectoryReaderTests
                 cancellation.Token));
     }
 
+    [Fact]
+    public async Task NameSearchIsLiteralCaseSensitivePagedAndNodeScoped()
+    {
+        await using var context = await ProjectionContext.CreateAsync();
+        var contactsA = new[]
+        {
+            Contact(91, "Кот 🐈 100%_one", (int)AdvertisementType.Chat),
+            Contact(92, "Кот 🐈 100%_two", (int)AdvertisementType.Chat),
+            Contact(93, "кот 🐈 100%_lower", (int)AdvertisementType.Chat),
+            Contact(94, "Quote 'node'", (int)AdvertisementType.Chat),
+        };
+        await context.ApplyDirectoryAsync(context.NodeA, context.SessionA, contactsA, []);
+        await context.ApplyDirectoryAsync(
+            context.NodeB,
+            context.SessionB,
+            [Contact(95, "Кот 🐈 100%_foreign", (int)AdvertisementType.Chat)],
+            []);
+
+        var first = await context.Storage.ConversationDirectory.SearchPageAsync(
+            context.NodeA.Id, ConversationDirectorySection.ChatContacts, "Кот 🐈 100%_", null, 1, CancellationToken);
+        Assert.Single(first.Items);
+        Assert.NotNull(first.NextCursor);
+        var second = await context.Storage.ConversationDirectory.SearchPageAsync(
+            context.NodeA.Id, ConversationDirectorySection.ChatContacts,
+            "Кот 🐈 100%_", first.NextCursor, 1, CancellationToken);
+        Assert.Single(second.Items);
+        Assert.Null(second.NextCursor);
+        Assert.All(first.Items.Concat(second.Items), item => Assert.Equal(context.NodeA.Id, item.NodeId));
+        Assert.DoesNotContain(first.Items.Concat(second.Items), item => item.DisplayName!.Contains("lower"));
+
+        var quoted = await context.Storage.ConversationDirectory.SearchPageAsync(
+            context.NodeA.Id, ConversationDirectorySection.ChatContacts, "'node'", null, 10, CancellationToken);
+        Assert.Equal("Quote 'node'", Assert.Single(quoted.Items).DisplayName);
+        Assert.Empty((await context.Storage.ConversationDirectory.SearchPageAsync(
+            context.NodeA.Id, ConversationDirectorySection.ChatContacts, string.Empty, null, 10, CancellationToken)).Items);
+    }
+
     private static DirectoryContactSnapshot Contact(byte seed, string name, int type) =>
         Contact(Key(seed), name, type);
 

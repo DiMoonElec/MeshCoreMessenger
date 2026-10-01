@@ -50,3 +50,15 @@ public sealed record HistoryMessagePage(
     HistoryMessagePosition? LastPosition,
     bool HasEarlier,
     bool HasLater);
+
+/// <summary>A literal, case-sensitive text match with an exact navigation target.</summary>
+public sealed record HistoryMessageSearchResult(
+    HistoryMessagePosition Position,
+    MessageDirection Direction,
+    string Text,
+    DateTimeOffset ReceivedUtc);
+
+/// <summary>A bounded newest-first page of local message search results.</summary>
+public sealed record HistoryMessageSearchPage(
+    IReadOnlyList<HistoryMessageSearchResult> Items,
+    HistoryMessagePosition? NextCursor);

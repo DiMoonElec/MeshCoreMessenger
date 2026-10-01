@@ -461,10 +461,94 @@ public sealed class HistoryWindowViewModelTests
         Assert.Equal(VirtualizedHistoryListBox.ItemCacheLength, panel.CacheLength);
     }
 
+    [Fact]
+    public async Task SearchIsPagedAndJumpLoadsAnOutsideResultWithoutMarkingItRead()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 300);
+        var readStates = new FakeConversationReadStateService();
+        var model = Create(reader, readStates: readStates);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        HistoryScrollRequestEventArgs? request = null;
+        model.ScrollRequested += (_, args) => request = args;
+
+        model.SearchText = "message 1";
+        await WaitUntilAsync(() => !model.IsSearching && model.SearchResults.Count > 0);
+        Assert.InRange(model.SearchResults.Count, 1, HistoryWindowViewModel.SearchPageSize);
+        Assert.True(model.CanLoadMoreSearchResults);
+        var result = model.SearchResults.First(item => item.Position.LocalSequence < 201);
+
+        await model.JumpToSearchResultAsync(result, CancellationToken);
+
+        Assert.Contains(model.Messages, item => item.LocalSequence == result.Position.LocalSequence);
+        Assert.True(model.Messages.Single(item => item.LocalSequence == result.Position.LocalSequence).IsSearchMatch);
+        Assert.Equal(result.Position.LocalSequence, request?.AnchorSequence);
+        Assert.Empty(readStates.Advances);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task MissingSearchTargetSurfacesAnErrorAndRapidOldResultCannotReplaceNewQuery()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 50);
+        var dispatcher = new QueuedUiDispatcher();
+        var model = Create(reader, dispatcher);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+
+        model.SearchText = "message 1";
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        model.SearchText = "message 4";
+        await WaitUntilAsync(() => dispatcher.PendingCount == 2);
+        dispatcher.RunNext();
+        dispatcher.RunNext();
+        await WaitUntilAsync(() => !model.IsSearching);
+        Assert.NotEmpty(model.SearchResults);
+        Assert.All(model.SearchResults, item => Assert.Contains("message 4", item.Preview, StringComparison.Ordinal));
+
+        var missing = model.SearchResults[0];
+        reader.Remove(NodeA, conversation, missing.Position.MessageId);
+        var jump = model.JumpToSearchResultAsync(missing, CancellationToken);
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        dispatcher.RunNext();
+        await jump;
+        Assert.Contains("больше не существует", model.SearchStatus, StringComparison.Ordinal);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task DebounceIsInjectableAndRapidQueryCancelsWithoutBlockingTheCaller()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 50);
+        var delay = new ControlledSearchDelay();
+        var model = Create(reader, searchDelay: delay);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+
+        model.SearchText = "message 1";
+        Assert.True(model.IsSearching);
+        Assert.Single(delay.Requests);
+        Assert.Equal(TimeSpan.FromMilliseconds(250), delay.Requests[0].Delay);
+
+        model.SearchText = "message 4";
+        Assert.Equal(2, delay.Requests.Count);
+        Assert.True(delay.Requests[0].CancellationToken.IsCancellationRequested);
+        Assert.Empty(model.SearchResults);
+
+        delay.Requests[1].Completion.SetResult();
+        await WaitUntilAsync(() => !model.IsSearching);
+        Assert.All(model.SearchResults, item => Assert.Contains("message 4", item.Preview, StringComparison.Ordinal));
+        await model.StopAsync();
+    }
+
     private static HistoryWindowViewModel Create(
         FakeHistoryReader reader,
         IUiDispatcher? dispatcher = null,
-        FakeConversationReadStateService? readStates = null)
+        FakeConversationReadStateService? readStates = null,
+        ISearchDelay? searchDelay = null)
     {
         readStates ??= new FakeConversationReadStateService();
         return new(
@@ -472,6 +556,7 @@ public sealed class HistoryWindowViewModelTests
             readStates,
             readStates,
             dispatcher ?? new ImmediateUiDispatcher(),
+            searchDelay ?? new ImmediateSearchDelay(),
             NullLogger.Instance);
     }
 
@@ -536,6 +621,13 @@ public sealed class HistoryWindowViewModelTests
             }
             return new StoredIncomingMessage(
                 message.Id, Guid.NewGuid(), nodeId, conversationId, message.LocalSequence, true);
+        }
+
+        public void Remove(Guid nodeId, Guid conversationId, Guid messageId)
+        {
+            var history = _histories[conversationId];
+            Assert.Equal(nodeId, history.NodeId);
+            history.Messages.RemoveAll(item => item.Id == messageId);
         }
 
         public Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
@@ -616,6 +708,31 @@ public sealed class HistoryWindowViewModelTests
                 Position(position.NodeId, position.ConversationId, items[^1]),
                 first > 0,
                 lastExclusive < all.Count));
+        }
+
+        public Task<HistoryMessageSearchPage> SearchMessagesAsync(
+            Guid nodeId,
+            Guid conversationId,
+            string query,
+            HistoryMessagePosition? before,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var all = History(nodeId, conversationId);
+            var matches = all
+                .Where(item => item.MessageKind == StoredMessageKind.Text &&
+                    item.Text?.Contains(query, StringComparison.Ordinal) == true &&
+                    (before is null || item.LocalSequence < before.LocalSequence))
+                .OrderByDescending(item => item.LocalSequence)
+                .Take(limit + 1)
+                .ToArray();
+            var items = matches.Take(limit)
+                .Select(item => new HistoryMessageSearchResult(
+                    Position(nodeId, conversationId, item), item.Direction, item.Text!, item.ReceivedUtc))
+                .ToArray();
+            var next = matches.Length > limit ? items[^1].Position : null;
+            return Task.FromResult(new HistoryMessageSearchPage(items, next));
         }
 
         public async Task WaitForInitialReadAsync(Guid conversationId, CancellationToken cancellationToken)

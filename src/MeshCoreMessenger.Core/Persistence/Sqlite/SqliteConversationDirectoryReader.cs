@@ -21,12 +21,46 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
         ValidateCursor(after, nodeId, section);
         ValidateLimit(limit);
 
+        return ReadPageAsync(nodeId, section, query: null, after, limit, cancellationToken);
+    }
+
+    public Task<ConversationDirectoryPage> SearchPageAsync(
+        Guid nodeId,
+        ConversationDirectorySection section,
+        string query,
+        ConversationDirectoryCursor? after,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateNodeId(nodeId);
+        ValidateSection(section);
+        ArgumentNullException.ThrowIfNull(query);
+        ValidateCursor(after, nodeId, section);
+        ValidateLimit(limit);
+        if (query.Length == 0)
+        {
+            return Task.FromResult(new ConversationDirectoryPage([], null));
+        }
+
+        return ReadPageAsync(nodeId, section, query, after, limit, cancellationToken);
+    }
+
+    private Task<ConversationDirectoryPage> ReadPageAsync(
+        Guid nodeId,
+        ConversationDirectorySection section,
+        string? query,
+        ConversationDirectoryCursor? after,
+        int limit,
+        CancellationToken cancellationToken)
+    {
         return reader.ExecuteAsync(connection =>
         {
             using var command = connection.CreateCommand();
             command.CommandText = BuildPageQuery(section);
             command.Parameters.AddWithValue("$nodeId", nodeId.ToString("D"));
             command.Parameters.AddWithValue("$chatContactType", (int)AdvertisementType.Chat);
+            command.Parameters.Add("$query", SqliteType.Text).Value =
+                query is null ? DBNull.Value : query;
             command.Parameters.Add("$cursorSequence", SqliteType.Integer).Value =
                 after is null ? DBNull.Value : after.ActivitySequence;
             command.Parameters.Add("$cursorUtc", SqliteType.Text).Value =
@@ -168,13 +202,14 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                    LastMessageDirection, LastMessageKind, LastMessageResolutionState,
                    LastMessageText, LastMessageUtc, UnreadCount
             FROM entries
-            WHERE $cursorSequence IS NULL
-               OR ActivitySequence < $cursorSequence
-               OR (ActivitySequence = $cursorSequence
-                   AND julianday(ActivityUtc) < julianday($cursorUtc))
-               OR (ActivitySequence = $cursorSequence
-                   AND julianday(ActivityUtc) = julianday($cursorUtc)
-                   AND StableKey > $cursorStableKey)
+            WHERE ($query IS NULL OR instr(COALESCE(DisplayName, ''), $query) > 0)
+              AND ($cursorSequence IS NULL
+                OR ActivitySequence < $cursorSequence
+                OR (ActivitySequence = $cursorSequence
+                    AND julianday(ActivityUtc) < julianday($cursorUtc))
+                OR (ActivitySequence = $cursorSequence
+                    AND julianday(ActivityUtc) = julianday($cursorUtc)
+                    AND StableKey > $cursorStableKey))
             ORDER BY ActivitySequence DESC, julianday(ActivityUtc) DESC, StableKey ASC
             LIMIT $limit;
             """;

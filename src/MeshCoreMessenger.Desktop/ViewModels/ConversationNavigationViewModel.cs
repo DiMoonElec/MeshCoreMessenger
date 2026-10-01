@@ -35,21 +35,33 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     private readonly IConversationDirectoryReader _directory;
     private readonly ISettingsStore _settings;
     private readonly IUiDispatcher _dispatcher;
+    private readonly ISearchDelay _searchDelay;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _persistence = new(1, 1);
     private readonly List<ConversationListItem> _loadedPrimary = [];
     private readonly List<ConversationListItem> _loadedUnknown = [];
+    private readonly List<ConversationListItem> _searchPrimary = [];
+    private readonly List<ConversationListItem> _searchUnknown = [];
+    private readonly object _searchGate = new();
+    private readonly HashSet<Task> _searchTasks = [];
     private Guid? _nodeId;
     private MessengerNavigationTabItem _selectedTab;
     private ConversationListItem? _selectedConversation;
     private ConversationDirectoryCursor? _primaryCursor;
     private ConversationDirectoryCursor? _unknownCursor;
+    private ConversationDirectoryCursor? _searchPrimaryCursor;
+    private ConversationDirectoryCursor? _searchUnknownCursor;
     private ContactDetailsProjection? _contactDetails;
     private ChannelDetailsProjection? _channelDetails;
     private string _status = "Выберите ноду для просмотра истории";
     private string? _errorMessage;
     private bool _isNarrowLayout;
     private bool _isShowingDetail;
+    private string _directorySearchText = string.Empty;
+    private bool _isDirectorySearching;
+    private string? _directorySearchError;
+    private CancellationTokenSource? _directorySearchCancellation;
+    private long _directorySearchRevision;
     private ChannelAccessFilterItem _selectedChannelFilter;
     private long _contextVersion;
     private int _stopped;
@@ -61,12 +73,20 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         IDurableReadStateWrites readWrites,
         ISettingsStore settings,
         IUiDispatcher dispatcher,
+        ISearchDelay searchDelay,
         ILogger logger)
     {
         _directory = directory;
         _settings = settings;
         _dispatcher = dispatcher;
-        History = new HistoryWindowViewModel(history, readStates, readWrites, dispatcher, logger);
+        _searchDelay = searchDelay;
+        History = new HistoryWindowViewModel(
+            history,
+            readStates,
+            readWrites,
+            dispatcher,
+            searchDelay,
+            logger);
         History.ReadStateChanged += OnReadStateChanged;
         Tabs =
         [
@@ -120,6 +140,42 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     public bool IsChannelTab => SelectedTab.Tab == MessengerNavigationTab.Channels;
 
+    public string DirectorySearchText
+    {
+        get => _directorySearchText;
+        set
+        {
+            if (SetProperty(ref _directorySearchText, value ?? string.Empty))
+            {
+                QueueDirectorySearch();
+                OnPropertyChanged(nameof(IsDirectorySearchActive));
+                OnPropertyChanged(nameof(DirectorySearchStatus));
+                OnPropertyChanged(nameof(HasDirectorySearchStatus));
+            }
+        }
+    }
+
+    public bool IsDirectorySearchActive => DirectorySearchText.Length > 0;
+    public bool IsDirectorySearching
+    {
+        get => _isDirectorySearching;
+        private set
+        {
+            if (SetProperty(ref _isDirectorySearching, value))
+            {
+                OnPropertyChanged(nameof(DirectorySearchStatus));
+                OnPropertyChanged(nameof(HasDirectorySearchStatus));
+            }
+        }
+    }
+    public string DirectorySearchStatus => _directorySearchError ??
+        (IsDirectorySearching
+            ? "Поиск…"
+            : IsDirectorySearchActive
+                ? $"Совпадений: {Conversations.Count}"
+                : string.Empty);
+    public bool HasDirectorySearchStatus => !string.IsNullOrEmpty(DirectorySearchStatus);
+
     public ConversationListItem? SelectedConversation
     {
         get => _selectedConversation;
@@ -166,7 +222,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public bool HasMessages => History.HasMessages;
     public bool HasEmptyHistory => HasSelection && History.HasEmptyHistory;
     public bool IsEmpty => Conversations.Count == 0;
-    public bool CanLoadMore => _primaryCursor is not null || _unknownCursor is not null;
+    public bool CanLoadMore => IsDirectorySearchActive
+        ? _searchPrimaryCursor is not null || _searchUnknownCursor is not null
+        : _primaryCursor is not null || _unknownCursor is not null;
     public string PrimaryGroupTitle => SelectedTab.Tab switch
     {
         MessengerNavigationTab.Personal => "Контакты",
@@ -178,7 +236,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ? "Неопознанные каналы"
         : "Неопознанные контакты";
     public bool HasUnknownGroup => SelectedTab.Tab is not MessengerNavigationTab.Devices;
-    public string EmptyText => SelectedTab.Tab switch
+    public string EmptyText => IsDirectorySearchActive
+        ? "Совпадений не найдено"
+        : SelectedTab.Tab switch
     {
         MessengerNavigationTab.Personal => "Личных диалогов пока нет",
         MessengerNavigationTab.Channels => "Каналов пока нет",
@@ -228,6 +288,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     public void ClearNode()
     {
+        ResetDirectorySearch();
         Interlocked.Increment(ref _contextVersion);
         _nodeId = null;
         ApplyEmpty("Выберите ноду для просмотра истории");
@@ -238,6 +299,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         CancellationToken cancellationToken = default,
         bool dispatchResult = true)
     {
+        ResetDirectorySearch();
         var version = Interlocked.Increment(ref _contextVersion);
         _nodeId = nodeId;
         using var linked = CreateLinkedCancellation(cancellationToken);
@@ -287,6 +349,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             return;
         }
 
+        ResetDirectorySearch();
         var version = Interlocked.Increment(ref _contextVersion);
         using var linked = CreateLinkedCancellation(cancellationToken);
         var selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId.Value), linked.Token);
@@ -404,6 +467,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         }
 
         _lifetimeCancellation.Cancel();
+        CancelDirectorySearch();
         LoadMoreCommand.Cancel();
         History.ReadStateChanged -= OnReadStateChanged;
         await History.StopAsync().ConfigureAwait(false);
@@ -416,6 +480,19 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             catch (OperationCanceledException)
             {
             }
+        }
+
+        Task[] searchTasks;
+        lock (_searchGate)
+        {
+            searchTasks = [.. _searchTasks];
+        }
+        try
+        {
+            await Task.WhenAll(searchTasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -430,26 +507,47 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         var version = Volatile.Read(ref _contextVersion);
         var tab = SelectedTab.Tab;
         var (primarySection, unknownSection) = Sections(tab);
+        var searchQuery = IsDirectorySearchActive ? DirectorySearchText : null;
+        var searchRevision = Volatile.Read(ref _directorySearchRevision);
+        var primaryCursor = searchQuery is null ? _primaryCursor : _searchPrimaryCursor;
+        var unknownCursor = searchQuery is null ? _unknownCursor : _searchUnknownCursor;
         using var linked = CreateLinkedCancellation(cancellationToken);
-        var primary = _primaryCursor is null
+        var primary = primaryCursor is null
             ? null
-            : await _directory.GetPageAsync(nodeId.Value, primarySection, _primaryCursor, DirectoryPageSize, linked.Token);
-        var unknown = unknownSection is null || _unknownCursor is null
+            : searchQuery is null
+                ? await _directory.GetPageAsync(nodeId.Value, primarySection, primaryCursor, DirectoryPageSize, linked.Token)
+                : await _directory.SearchPageAsync(nodeId.Value, primarySection, searchQuery, primaryCursor, DirectoryPageSize, linked.Token);
+        var unknown = unknownSection is null || unknownCursor is null
             ? null
-            : await _directory.GetPageAsync(nodeId.Value, unknownSection.Value, _unknownCursor, DirectoryPageSize, linked.Token);
+            : searchQuery is null
+                ? await _directory.GetPageAsync(nodeId.Value, unknownSection.Value, unknownCursor, DirectoryPageSize, linked.Token)
+                : await _directory.SearchPageAsync(nodeId.Value, unknownSection.Value, searchQuery, unknownCursor, DirectoryPageSize, linked.Token);
         await _dispatcher.InvokeAsync(
             () =>
             {
-                if (!IsCurrent(nodeId.Value, version) || SelectedTab.Tab != tab)
+                if (!IsCurrent(nodeId.Value, version) ||
+                    SelectedTab.Tab != tab ||
+                    (searchQuery is not null &&
+                     (DirectorySearchText != searchQuery || searchRevision != Volatile.Read(ref _directorySearchRevision))))
                 {
                     return;
                 }
 
-                AppendPage(_loadedPrimary, primary);
-                AppendPage(_loadedUnknown, unknown);
+                var primaryTarget = searchQuery is null ? _loadedPrimary : _searchPrimary;
+                var unknownTarget = searchQuery is null ? _loadedUnknown : _searchUnknown;
+                AppendPage(primaryTarget, primary);
+                AppendPage(unknownTarget, unknown);
                 ApplyFilter();
-                _primaryCursor = primary?.NextCursor;
-                _unknownCursor = unknown?.NextCursor;
+                if (searchQuery is null)
+                {
+                    _primaryCursor = primary?.NextCursor;
+                    _unknownCursor = unknown?.NextCursor;
+                }
+                else
+                {
+                    _searchPrimaryCursor = primary?.NextCursor;
+                    _searchUnknownCursor = unknown?.NextCursor;
+                }
                 RaiseListProperties();
             },
             linked.Token);
@@ -553,12 +651,16 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         Conversations.Clear();
         _loadedPrimary.Clear();
         _loadedUnknown.Clear();
+        _searchPrimary.Clear();
+        _searchUnknown.Clear();
         History.Clear();
         SelectedConversation = null;
         ContactDetails = null;
         ChannelDetails = null;
         _primaryCursor = null;
         _unknownCursor = null;
+        _searchPrimaryCursor = null;
+        _searchUnknownCursor = null;
         Status = status;
         ErrorMessage = null;
         _isShowingDetail = false;
@@ -609,14 +711,16 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     private void ApplyFilter()
     {
+        var primarySource = IsDirectorySearchActive ? _searchPrimary : _loadedPrimary;
+        var unknownSource = IsDirectorySearchActive ? _searchUnknown : _loadedUnknown;
         PrimaryConversations.Clear();
-        foreach (var item in _loadedPrimary.Where(IsVisibleByFilter))
+        foreach (var item in primarySource.Where(IsVisibleByFilter))
         {
             PrimaryConversations.Add(item);
         }
 
         UnknownConversations.Clear();
-        foreach (var item in _loadedUnknown)
+        foreach (var item in unknownSource)
         {
             UnknownConversations.Add(item);
         }
@@ -655,6 +759,8 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         OnPropertyChanged(nameof(UnknownGroupTitle));
         OnPropertyChanged(nameof(HasUnknownGroup));
         OnPropertyChanged(nameof(EmptyText));
+        OnPropertyChanged(nameof(DirectorySearchStatus));
+        OnPropertyChanged(nameof(HasDirectorySearchStatus));
         OnPropertyChanged(nameof(IsChannelTab));
         LoadMoreCommand.NotifyCanExecuteChanged();
     }
@@ -747,7 +853,157 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     private bool IsCurrent(Guid nodeId, long version) =>
         Volatile.Read(ref _stopped) == 0 &&
         _nodeId == nodeId &&
-        Volatile.Read(ref _contextVersion) == version;
+            Volatile.Read(ref _contextVersion) == version;
+
+    private void QueueDirectorySearch()
+    {
+        var revision = Interlocked.Increment(ref _directorySearchRevision);
+        CancelDirectorySearch();
+        _directorySearchError = null;
+        _searchPrimary.Clear();
+        _searchUnknown.Clear();
+        _searchPrimaryCursor = null;
+        _searchUnknownCursor = null;
+        if (!IsDirectorySearchActive || _nodeId is null)
+        {
+            IsDirectorySearching = false;
+            ApplyFilter();
+            return;
+        }
+
+        IsDirectorySearching = true;
+        ApplyFilter();
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+        _directorySearchCancellation = cancellation;
+        TrackSearch(SearchDirectoryAsync(
+            _nodeId.Value,
+            SelectedTab.Tab,
+            DirectorySearchText,
+            revision,
+            cancellation));
+    }
+
+    private async Task SearchDirectoryAsync(
+        Guid nodeId,
+        MessengerNavigationTab tab,
+        string query,
+        long revision,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await _searchDelay.DelayAsync(TimeSpan.FromMilliseconds(250), cancellation.Token);
+            var (primarySection, unknownSection) = Sections(tab);
+            var primaryTask = _directory.SearchPageAsync(
+                nodeId, primarySection, query, null, DirectoryPageSize, cancellation.Token);
+            var unknownTask = unknownSection is { } section
+                ? _directory.SearchPageAsync(nodeId, section, query, null, DirectoryPageSize, cancellation.Token)
+                : Task.FromResult(new ConversationDirectoryPage([], null));
+            await Task.WhenAll(primaryTask, unknownTask);
+            var primary = await primaryTask;
+            var unknown = await unknownTask;
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (!IsCurrentSearch(nodeId, tab, query, revision))
+                    {
+                        return;
+                    }
+
+                    Replace(_searchPrimary, primary.Items);
+                    Replace(_searchUnknown, unknown.Items);
+                    _searchPrimaryCursor = primary.NextCursor;
+                    _searchUnknownCursor = unknown.NextCursor;
+                    IsDirectorySearching = false;
+                    ApplyFilter();
+                },
+                cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception)
+        {
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (IsCurrentSearch(nodeId, tab, query, revision))
+                    {
+                        _directorySearchError = "Не удалось выполнить локальный поиск.";
+                        IsDirectorySearching = false;
+                        RaiseListProperties();
+                    }
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            lock (_searchGate)
+            {
+                if (ReferenceEquals(_directorySearchCancellation, cancellation))
+                {
+                    _directorySearchCancellation = null;
+                }
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private bool IsCurrentSearch(
+        Guid nodeId,
+        MessengerNavigationTab tab,
+        string query,
+        long revision) =>
+        _nodeId == nodeId &&
+        SelectedTab.Tab == tab &&
+        DirectorySearchText == query &&
+        Volatile.Read(ref _directorySearchRevision) == revision &&
+        Volatile.Read(ref _stopped) == 0;
+
+    private void ResetDirectorySearch()
+    {
+        CancelDirectorySearch();
+        Interlocked.Increment(ref _directorySearchRevision);
+        _directorySearchText = string.Empty;
+        _directorySearchError = null;
+        _searchPrimary.Clear();
+        _searchUnknown.Clear();
+        _searchPrimaryCursor = null;
+        _searchUnknownCursor = null;
+        IsDirectorySearching = false;
+        OnPropertyChanged(nameof(DirectorySearchText));
+        OnPropertyChanged(nameof(IsDirectorySearchActive));
+        OnPropertyChanged(nameof(DirectorySearchStatus));
+        OnPropertyChanged(nameof(HasDirectorySearchStatus));
+    }
+
+    private void CancelDirectorySearch()
+    {
+        lock (_searchGate)
+        {
+            _directorySearchCancellation?.Cancel();
+            _directorySearchCancellation = null;
+        }
+    }
+
+    private void TrackSearch(Task task)
+    {
+        lock (_searchGate)
+        {
+            _searchTasks.Add(task);
+        }
+        _ = task.ContinueWith(
+            completed =>
+            {
+                lock (_searchGate)
+                {
+                    _searchTasks.Remove(completed);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
 
     private static (ConversationDirectorySection Primary, ConversationDirectorySection? Unknown) Sections(
         MessengerNavigationTab tab) => tab switch
@@ -864,9 +1120,11 @@ public sealed class ConversationListItem : ObservableObject
     };
 }
 
-public sealed class HistoryMessageListItem
+public sealed class HistoryMessageListItem : ObservableObject
 {
-    public HistoryMessageListItem(HistoryMessage message)
+    private bool _isSearchMatch;
+
+    public HistoryMessageListItem(HistoryMessage message, bool isSearchMatch = false)
     {
         ArgumentNullException.ThrowIfNull(message);
         Id = message.Id;
@@ -890,6 +1148,7 @@ public sealed class HistoryMessageListItem
             : message.Text ?? string.Empty;
         CopyText = message.Text ?? Body;
         ReceivedTime = message.ReceivedUtc.ToLocalTime().ToString("g");
+        _isSearchMatch = isSearchMatch;
     }
 
     public Guid Id { get; }
@@ -904,4 +1163,33 @@ public sealed class HistoryMessageListItem
     public string CopyText { get; }
     public string ReceivedTime { get; }
     public bool HasContentLabel => !string.IsNullOrEmpty(ContentLabel) && Kind != StoredMessageKind.Binary;
+    public bool IsSearchMatch
+    {
+        get => _isSearchMatch;
+        set
+        {
+            if (SetProperty(ref _isSearchMatch, value))
+            {
+                OnPropertyChanged(nameof(SearchBorderThickness));
+            }
+        }
+    }
+    public double SearchBorderThickness => IsSearchMatch ? 2 : 0;
+}
+
+public sealed class HistorySearchResultListItem
+{
+    public HistorySearchResultListItem(HistoryMessageSearchResult result)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        Position = result.Position;
+        Preview = result.Text;
+        Direction = result.Direction == MessageDirection.Outgoing ? "Вы" : "Входящее";
+        ReceivedTime = result.ReceivedUtc.ToLocalTime().ToString("g");
+    }
+
+    public HistoryMessagePosition Position { get; }
+    public string Preview { get; }
+    public string Direction { get; }
+    public string ReceivedTime { get; }
 }

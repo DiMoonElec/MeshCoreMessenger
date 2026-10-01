@@ -42,4 +42,12 @@ public interface ILocalHistoryReader
         int beforeLimit,
         int afterLimit,
         CancellationToken cancellationToken = default);
+
+    Task<HistoryMessageSearchPage> SearchMessagesAsync(
+        Guid nodeId,
+        Guid conversationId,
+        string query,
+        HistoryMessagePosition? before,
+        int limit,
+        CancellationToken cancellationToken = default);
 }

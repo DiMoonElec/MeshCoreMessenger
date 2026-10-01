@@ -1,4 +1,5 @@
 using Microsoft.Data.Sqlite;
+using SQLitePCL;
 
 namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
@@ -15,7 +16,24 @@ internal sealed class DatabaseReader(string databasePath)
             using var connection = SqliteDatabase.CreateConnection(_databasePath, SqliteOpenMode.ReadOnly);
             connection.Open();
             SqliteDatabase.ConfigureReader(connection);
-            return action(connection);
+            using var registration = cancellationToken.UnsafeRegister(
+                static state =>
+                {
+                    var activeConnection = (SqliteConnection)state!;
+                    raw.sqlite3_interrupt(activeConnection.Handle);
+                },
+                connection);
+            try
+            {
+                return action(connection);
+            }
+            catch (SqliteException exception) when (cancellationToken.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(
+                    "The SQLite read was cancelled.",
+                    exception,
+                    cancellationToken);
+            }
         }, cancellationToken);
     }
 }

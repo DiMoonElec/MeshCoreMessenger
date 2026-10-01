@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using MeshCoreMessenger.Desktop.Lifecycle;
@@ -102,6 +103,50 @@ public sealed partial class MainWindow : Window
     private void OnHistoryScrollChanged(object? sender, ScrollChangedEventArgs eventArgs)
     {
         ReportHistoryViewport(eventArgs.Source as ScrollViewer);
+    }
+
+    private void OnWindowKeyDown(object? sender, KeyEventArgs eventArgs)
+    {
+        if (eventArgs.Key != Key.F ||
+            (eventArgs.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+        {
+            return;
+        }
+
+        var history = (DataContext as MainWindowViewModel)?.Navigation;
+        var target = history?.HasSelection == true && DetailPane.IsEffectivelyVisible
+            ? HistorySearchBox
+            : DirectorySearchBox;
+        target.Focus();
+        target.SelectAll();
+        eventArgs.Handled = true;
+    }
+
+    private async void OnHistorySearchResultSelectionChanged(
+        object? sender,
+        SelectionChangedEventArgs eventArgs)
+    {
+        if (DataContext is not MainWindowViewModel viewModel ||
+            sender is not ListBox listBox ||
+            listBox.SelectedItem is not HistorySearchResultListItem result)
+        {
+            return;
+        }
+
+        try
+        {
+            if (await viewModel.Navigation.History.JumpToSearchResultAsync(result))
+            {
+                viewModel.Navigation.History.DismissSearchResults();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            listBox.SelectedItem = null;
+        }
     }
 
     private void OnWindowActivationChanged(object? sender, EventArgs eventArgs) =>

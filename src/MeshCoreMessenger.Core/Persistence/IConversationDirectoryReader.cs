@@ -12,6 +12,14 @@ public interface IConversationDirectoryReader
         int limit,
         CancellationToken cancellationToken = default);
 
+    Task<ConversationDirectoryPage> SearchPageAsync(
+        Guid nodeId,
+        ConversationDirectorySection section,
+        string query,
+        ConversationDirectoryCursor? after,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     Task<ContactDetailsProjection?> GetContactDetailsAsync(
         Guid nodeId,
         ReadOnlyMemory<byte> publicKey,

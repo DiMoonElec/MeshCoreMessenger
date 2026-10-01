@@ -56,6 +56,7 @@ public sealed class AppBootstrapTests
             services.GetRequiredService<IDurableMessageIngress>());
         Assert.NotNull(services.GetRequiredService<IDesktopShutdownCoordinator>());
         Assert.NotNull(services.GetRequiredService<IUiDispatcher>());
+        Assert.NotNull(services.GetRequiredService<ISearchDelay>());
         Assert.NotNull(services.GetRequiredService<IMessageCommitNotifications>());
         Assert.Null(services.GetService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());

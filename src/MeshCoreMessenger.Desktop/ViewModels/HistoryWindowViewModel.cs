@@ -20,17 +20,21 @@ public sealed class HistoryWindowViewModel : ObservableObject
 {
     internal const int PageSize = 100;
     internal const int MaximumMessages = 500;
+    internal const int SearchPageSize = 20;
 
     private readonly ILocalHistoryReader _history;
     private readonly IConversationReadStateStore _readStates;
     private readonly IDurableReadStateWrites _readWrites;
     private readonly IUiDispatcher _dispatcher;
+    private readonly ISearchDelay _searchDelay;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly HashSet<Guid> _handledCommitIds = [];
     private readonly object _readTasksGate = new();
     private readonly HashSet<Task> _readTasks = [];
+    private readonly object _searchTasksGate = new();
+    private readonly HashSet<Task> _searchTasks = [];
     private Guid? _nodeId;
     private Guid? _conversationId;
     private HistoryMessagePosition? _firstPosition;
@@ -48,6 +52,13 @@ public sealed class HistoryWindowViewModel : ObservableObject
     private long _unreadCount;
     private HistoryMessagePosition? _firstUnreadPosition;
     private string? _readErrorMessage;
+    private string _searchText = string.Empty;
+    private bool _isSearching;
+    private string? _searchErrorMessage;
+    private HistoryMessagePosition? _searchCursor;
+    private long? _highlightedSearchSequence;
+    private CancellationTokenSource? _searchCancellation;
+    private long _searchRevision;
     private long _contextVersion;
     private int _stopped;
 
@@ -56,12 +67,14 @@ public sealed class HistoryWindowViewModel : ObservableObject
         IConversationReadStateStore readStates,
         IDurableReadStateWrites readWrites,
         IUiDispatcher dispatcher,
+        ISearchDelay searchDelay,
         ILogger logger)
     {
         _history = history;
         _readStates = readStates;
         _readWrites = readWrites;
         _dispatcher = dispatcher;
+        _searchDelay = searchDelay;
         _logger = logger;
         LoadOlderCommand = new AsyncRelayCommand(LoadOlderAsync, () => CanLoadOlder);
         LoadNewerCommand = new AsyncRelayCommand(LoadNewerAsync, () => CanLoadNewer);
@@ -69,16 +82,21 @@ public sealed class HistoryWindowViewModel : ObservableObject
         JumpToFirstUnreadCommand = new AsyncRelayCommand(
             JumpToFirstUnreadAsync,
             () => FirstUnreadPosition is not null);
+        LoadMoreSearchResultsCommand = new AsyncRelayCommand(
+            LoadMoreSearchResultsAsync,
+            () => CanLoadMoreSearchResults);
     }
 
     public event EventHandler<HistoryScrollRequestEventArgs>? ScrollRequested;
     public event Action<ConversationReadState>? ReadStateChanged;
 
     public ObservableCollection<HistoryMessageListItem> Messages { get; } = [];
+    public ObservableCollection<HistorySearchResultListItem> SearchResults { get; } = [];
     public IAsyncRelayCommand LoadOlderCommand { get; }
     public IAsyncRelayCommand LoadNewerCommand { get; }
     public IAsyncRelayCommand JumpToLatestCommand { get; }
     public IAsyncRelayCommand JumpToFirstUnreadCommand { get; }
+    public IAsyncRelayCommand LoadMoreSearchResultsCommand { get; }
     public bool HasConversation => _conversationId is not null;
     public bool HasMessages => Messages.Count > 0;
     public bool HasEmptyHistory => HasConversation && !HasMessages;
@@ -102,8 +120,43 @@ public sealed class HistoryWindowViewModel : ObservableObject
         ? "1 новое сообщение"
         : $"{PendingNewMessageCount} новых сообщений";
 
+    public string SearchText
+    {
+        get => _searchText;
+        set
+        {
+            if (SetProperty(ref _searchText, value ?? string.Empty))
+            {
+                QueueSearch();
+                RaiseSearchProperties();
+            }
+        }
+    }
+    public bool IsSearchActive => SearchText.Length > 0;
+    public bool IsSearching
+    {
+        get => _isSearching;
+        private set
+        {
+            if (SetProperty(ref _isSearching, value))
+            {
+                RaiseSearchProperties();
+            }
+        }
+    }
+    public bool HasSearchResults => SearchResults.Count > 0;
+    public bool CanLoadMoreSearchResults => _searchCursor is not null && !IsSearching;
+    public string SearchStatus => _searchErrorMessage ??
+        (IsSearching
+            ? "Поиск…"
+            : IsSearchActive
+                ? $"Совпадений загружено: {SearchResults.Count}"
+                : string.Empty);
+    public bool HasSearchStatus => !string.IsNullOrEmpty(SearchStatus);
+
     public void Clear()
     {
+        ResetSearch();
         Interlocked.Increment(ref _contextVersion);
         _nodeId = null;
         _conversationId = null;
@@ -117,6 +170,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         CancellationToken cancellationToken = default,
         bool dispatchResult = true)
     {
+        ResetSearch();
         var version = Interlocked.Increment(ref _contextVersion);
         _nodeId = nodeId;
         _conversationId = conversationId;
@@ -174,6 +228,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         await _loadGate.WaitAsync(linked.Token);
         try
         {
+            ClearSearchHighlight();
             var page = await _history.GetMessagesBeforeAsync(
                 nodeId.Value,
                 conversationId.Value,
@@ -209,6 +264,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         await _loadGate.WaitAsync(linked.Token);
         try
         {
+            ClearSearchHighlight();
             var page = await _history.GetMessagesAroundAsync(
                 position,
                 beforeLimit: 20,
@@ -327,16 +383,19 @@ public sealed class HistoryWindowViewModel : ObservableObject
         }
 
         _lifetimeCancellation.Cancel();
+        CancelSearch();
         LoadOlderCommand.Cancel();
         LoadNewerCommand.Cancel();
         JumpToLatestCommand.Cancel();
         JumpToFirstUnreadCommand.Cancel();
+        LoadMoreSearchResultsCommand.Cancel();
         var pending = new[]
         {
             LoadOlderCommand.ExecutionTask,
             LoadNewerCommand.ExecutionTask,
             JumpToLatestCommand.ExecutionTask,
             JumpToFirstUnreadCommand.ExecutionTask,
+            LoadMoreSearchResultsCommand.ExecutionTask,
         }.OfType<Task>();
         try
         {
@@ -352,6 +411,106 @@ public sealed class HistoryWindowViewModel : ObservableObject
             readTasks = [.. _readTasks];
         }
         await Task.WhenAll(readTasks).ConfigureAwait(false);
+
+        Task[] searchTasks;
+        lock (_searchTasksGate)
+        {
+            searchTasks = [.. _searchTasks];
+        }
+        try
+        {
+            await Task.WhenAll(searchTasks).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public async Task<bool> JumpToSearchResultAsync(
+        HistorySearchResultListItem result,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(result);
+        var position = result.Position;
+        var version = Volatile.Read(ref _contextVersion);
+        if (!IsCurrent(position.NodeId, position.ConversationId, version))
+        {
+            return false;
+        }
+
+        var opened = false;
+        using var linked = CreateLinkedCancellation(cancellationToken);
+        await _loadGate.WaitAsync(linked.Token);
+        try
+        {
+            var page = await _history.GetMessagesAroundAsync(
+                position,
+                beforeLimit: 20,
+                afterLimit: PageSize - 21,
+                linked.Token);
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (!IsCurrent(position.NodeId, position.ConversationId, version))
+                    {
+                        return;
+                    }
+
+                    _highlightedSearchSequence = position.LocalSequence;
+                    ApplyReplacement(page, requestScrollToEnd: false);
+                    opened = true;
+                    ScrollRequested?.Invoke(
+                        this,
+                        new HistoryScrollRequestEventArgs(position.LocalSequence, scrollToEnd: false));
+                },
+                linked.Token);
+        }
+        catch (KeyNotFoundException)
+        {
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (IsCurrent(position.NodeId, position.ConversationId, version))
+                    {
+                        _searchErrorMessage = "Сообщение больше не существует.";
+                        RaiseSearchProperties();
+                    }
+                },
+                linked.Token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "Could not open a local history search result.");
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (IsCurrent(position.NodeId, position.ConversationId, version))
+                    {
+                        _searchErrorMessage = "Не удалось открыть найденное сообщение.";
+                        RaiseSearchProperties();
+                    }
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
+
+        return opened;
+    }
+
+    public void DismissSearchResults()
+    {
+        CancelSearch();
+        Interlocked.Increment(ref _searchRevision);
+        _searchText = string.Empty;
+        _searchErrorMessage = null;
+        _searchCursor = null;
+        SearchResults.Clear();
+        IsSearching = false;
+        OnPropertyChanged(nameof(SearchText));
+        RaiseSearchProperties();
     }
 
     private async Task LoadRelativeAsync(
@@ -413,7 +572,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         Messages.Clear();
         foreach (var message in page.Items)
         {
-            Messages.Add(new HistoryMessageListItem(message));
+            Messages.Add(CreateListItem(message));
         }
 
         _firstPosition = page.FirstPosition;
@@ -436,7 +595,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         var additions = page.Items.Where(item => existing.Add(item.Id)).ToArray();
         for (var index = additions.Length - 1; index >= 0; index--)
         {
-            Messages.Insert(0, new HistoryMessageListItem(additions[index]));
+            Messages.Insert(0, CreateListItem(additions[index]));
         }
 
         _hasEarlier = page.HasEarlier;
@@ -469,7 +628,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         {
             if (existing.Add(message.Id))
             {
-                Messages.Add(new HistoryMessageListItem(message));
+                Messages.Add(CreateListItem(message));
             }
         }
 
@@ -580,6 +739,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         LoadNewerCommand.NotifyCanExecuteChanged();
         JumpToLatestCommand.NotifyCanExecuteChanged();
         JumpToFirstUnreadCommand.NotifyCanExecuteChanged();
+        LoadMoreSearchResultsCommand.NotifyCanExecuteChanged();
     }
 
     private void ApplyReadState(ConversationReadState? state, bool clearError = true)
@@ -729,6 +889,241 @@ public sealed class HistoryWindowViewModel : ObservableObject
 
     private HistoryMessagePosition Position(HistoryMessageListItem message) =>
         new(_nodeId!.Value, _conversationId!.Value, message.Id, message.LocalSequence);
+
+    private HistoryMessageListItem CreateListItem(HistoryMessage message) =>
+        new(message, message.LocalSequence == _highlightedSearchSequence);
+
+    private void QueueSearch()
+    {
+        var revision = Interlocked.Increment(ref _searchRevision);
+        CancelSearch();
+        SearchResults.Clear();
+        _searchCursor = null;
+        _searchErrorMessage = null;
+        ClearSearchHighlight();
+        if (!IsSearchActive || _nodeId is null || _conversationId is null)
+        {
+            IsSearching = false;
+            RaiseSearchProperties();
+            return;
+        }
+
+        IsSearching = true;
+        var cancellation = CancellationTokenSource.CreateLinkedTokenSource(_lifetimeCancellation.Token);
+        _searchCancellation = cancellation;
+        TrackSearch(SearchAfterDelayAsync(
+            _nodeId.Value,
+            _conversationId.Value,
+            SearchText,
+            revision,
+            cancellation));
+    }
+
+    private async Task SearchAfterDelayAsync(
+        Guid nodeId,
+        Guid conversationId,
+        string query,
+        long revision,
+        CancellationTokenSource cancellation)
+    {
+        try
+        {
+            await _searchDelay.DelayAsync(TimeSpan.FromMilliseconds(250), cancellation.Token);
+            var page = await _history.SearchMessagesAsync(
+                nodeId,
+                conversationId,
+                query,
+                before: null,
+                SearchPageSize,
+                cancellation.Token);
+            await _dispatcher.InvokeAsync(
+                () => ApplySearchPage(page, replace: true, nodeId, conversationId, query, revision),
+                cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(exception, "Could not search the local conversation history.");
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    if (IsCurrentSearch(nodeId, conversationId, query, revision))
+                    {
+                        _searchErrorMessage = "Не удалось выполнить локальный поиск.";
+                        IsSearching = false;
+                        RaiseSearchProperties();
+                    }
+                },
+                CancellationToken.None);
+        }
+        finally
+        {
+            lock (_searchTasksGate)
+            {
+                if (ReferenceEquals(_searchCancellation, cancellation))
+                {
+                    _searchCancellation = null;
+                }
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    private async Task LoadMoreSearchResultsAsync(CancellationToken cancellationToken)
+    {
+        var nodeId = _nodeId;
+        var conversationId = _conversationId;
+        var cursor = _searchCursor;
+        var query = SearchText;
+        var revision = Volatile.Read(ref _searchRevision);
+        if (nodeId is null || conversationId is null || cursor is null || query.Length == 0)
+        {
+            return;
+        }
+
+        using var linked = CreateLinkedCancellation(cancellationToken);
+        IsSearching = true;
+        try
+        {
+            var page = await _history.SearchMessagesAsync(
+                nodeId.Value,
+                conversationId.Value,
+                query,
+                cursor,
+                SearchPageSize,
+                linked.Token);
+            await _dispatcher.InvokeAsync(
+                () => ApplySearchPage(
+                    page,
+                    replace: false,
+                    nodeId.Value,
+                    conversationId.Value,
+                    query,
+                    revision),
+                linked.Token);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            _logger.LogError(exception, "Could not load more local history search results.");
+            if (IsCurrentSearch(nodeId.Value, conversationId.Value, query, revision))
+            {
+                _searchErrorMessage = "Не удалось продолжить локальный поиск.";
+                RaiseSearchProperties();
+            }
+        }
+        finally
+        {
+            if (IsCurrentSearch(nodeId.Value, conversationId.Value, query, revision))
+            {
+                IsSearching = false;
+            }
+        }
+    }
+
+    private void ApplySearchPage(
+        HistoryMessageSearchPage page,
+        bool replace,
+        Guid nodeId,
+        Guid conversationId,
+        string query,
+        long revision)
+    {
+        if (!IsCurrentSearch(nodeId, conversationId, query, revision))
+        {
+            return;
+        }
+
+        if (replace)
+        {
+            SearchResults.Clear();
+        }
+        var existing = SearchResults.Select(item => item.Position.MessageId).ToHashSet();
+        foreach (var item in page.Items)
+        {
+            if (existing.Add(item.Position.MessageId))
+            {
+                SearchResults.Add(new HistorySearchResultListItem(item));
+            }
+        }
+        _searchCursor = page.NextCursor;
+        _searchErrorMessage = null;
+        IsSearching = false;
+        RaiseSearchProperties();
+    }
+
+    private bool IsCurrentSearch(
+        Guid nodeId,
+        Guid conversationId,
+        string query,
+        long revision) =>
+        IsCurrent(nodeId, conversationId, Volatile.Read(ref _contextVersion)) &&
+        _conversationId == conversationId &&
+        SearchText == query &&
+        Volatile.Read(ref _searchRevision) == revision;
+
+    private void ResetSearch()
+    {
+        CancelSearch();
+        Interlocked.Increment(ref _searchRevision);
+        _searchText = string.Empty;
+        _searchErrorMessage = null;
+        _searchCursor = null;
+        _highlightedSearchSequence = null;
+        SearchResults.Clear();
+        IsSearching = false;
+        OnPropertyChanged(nameof(SearchText));
+        RaiseSearchProperties();
+    }
+
+    private void CancelSearch()
+    {
+        lock (_searchTasksGate)
+        {
+            _searchCancellation?.Cancel();
+            _searchCancellation = null;
+        }
+    }
+
+    private void TrackSearch(Task task)
+    {
+        lock (_searchTasksGate)
+        {
+            _searchTasks.Add(task);
+        }
+        _ = task.ContinueWith(
+            completed =>
+            {
+                lock (_searchTasksGate)
+                {
+                    _searchTasks.Remove(completed);
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private void ClearSearchHighlight()
+    {
+        _highlightedSearchSequence = null;
+        foreach (var message in Messages)
+        {
+            message.IsSearchMatch = false;
+        }
+    }
+
+    private void RaiseSearchProperties()
+    {
+        OnPropertyChanged(nameof(IsSearchActive));
+        OnPropertyChanged(nameof(IsSearching));
+        OnPropertyChanged(nameof(HasSearchResults));
+        OnPropertyChanged(nameof(CanLoadMoreSearchResults));
+        OnPropertyChanged(nameof(SearchStatus));
+        OnPropertyChanged(nameof(HasSearchStatus));
+        LoadMoreSearchResultsCommand.NotifyCanExecuteChanged();
+    }
 
     private Task ApplyAsync(Action action, bool dispatch, CancellationToken cancellationToken)
     {

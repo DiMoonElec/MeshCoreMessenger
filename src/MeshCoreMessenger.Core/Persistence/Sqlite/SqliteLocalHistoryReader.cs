@@ -7,6 +7,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHistoryReader
 {
     internal const int MaximumPageSize = 500;
+    internal const int MaximumSearchPageSize = 100;
     private const string MessageColumns =
         "Id, LocalSequence, ConversationId, Direction, MessageKind, Text, ReceivedUtc, " +
         "TextType, BinaryDataType, WireTimestamp, ResolutionState";
@@ -306,6 +307,80 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
                 messages,
                 hasEarlier,
                 hasLater);
+        }, cancellationToken);
+    }
+
+    public Task<HistoryMessageSearchPage> SearchMessagesAsync(
+        Guid nodeId,
+        Guid conversationId,
+        string query,
+        HistoryMessagePosition? before,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateScope(nodeId, conversationId);
+        ArgumentNullException.ThrowIfNull(query);
+        ValidatePositionScope(before, nodeId, conversationId, nameof(before));
+        if (limit is < 1 or > MaximumSearchPageSize)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(limit),
+                $"Search page size must be between 1 and {MaximumSearchPageSize}.");
+        }
+
+        if (query.Length == 0)
+        {
+            return Task.FromResult(new HistoryMessageSearchPage([], null));
+        }
+
+        return reader.ExecuteAsync(connection =>
+        {
+            EnsureConversationOwnership(connection, nodeId, conversationId);
+            if (before is not null)
+            {
+                EnsureExactPosition(connection, before);
+            }
+
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT Id, LocalSequence, Direction, Text, ReceivedUtc
+                FROM Messages
+                WHERE ConversationId = $conversationId
+                  AND MessageKind = $textKind
+                  AND Text IS NOT NULL
+                  AND instr(Text, $query) > 0
+                  AND ($beforeSequence IS NULL OR LocalSequence < $beforeSequence)
+                ORDER BY LocalSequence DESC
+                LIMIT $limit;
+                """;
+            command.Parameters.AddWithValue("$conversationId", conversationId.ToString("D"));
+            command.Parameters.AddWithValue("$textKind", (int)StoredMessageKind.Text);
+            command.Parameters.AddWithValue("$query", query);
+            command.Parameters.Add("$beforeSequence", SqliteType.Integer).Value =
+                before is null ? DBNull.Value : before.LocalSequence;
+            command.Parameters.AddWithValue("$limit", limit + 1);
+
+            var results = new List<HistoryMessageSearchResult>(limit + 1);
+            using var rows = command.ExecuteReader();
+            while (rows.Read())
+            {
+                var messageId = Guid.Parse(rows.GetString(0));
+                var sequence = rows.GetInt64(1);
+                results.Add(new HistoryMessageSearchResult(
+                    new HistoryMessagePosition(nodeId, conversationId, messageId, sequence),
+                    (MessageDirection)rows.GetInt32(2),
+                    rows.GetString(3),
+                    ParseTimestamp(rows.GetString(4))));
+            }
+
+            HistoryMessagePosition? nextCursor = null;
+            if (results.Count > limit)
+            {
+                results.RemoveAt(results.Count - 1);
+                nextCursor = results[^1].Position;
+            }
+
+            return new HistoryMessageSearchPage(results, nextCursor);
         }, cancellationToken);
     }
 

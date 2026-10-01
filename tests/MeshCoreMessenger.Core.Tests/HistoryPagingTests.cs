@@ -174,6 +174,71 @@ public sealed class HistoryPagingTests
         Assert.True(around.HasEarlier);
         Assert.True(around.HasLater);
         Assert.Contains("IX_Messages_Conversation_Sequence", context.QueryPlan, StringComparison.Ordinal);
+
+        var search = await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, "message 100000", null, 20, CancellationToken);
+        Assert.Single(search.Items);
+        Assert.Equal(100_000, search.Items[0].Position.LocalSequence);
+        Assert.Null(search.NextCursor);
+    }
+
+    [Fact]
+    public async Task SearchIsLiteralUnicodeCaseSensitivePagedAndConversationScoped()
+    {
+        await using var context = await HistoryContext.CreateAsync(25, interleaveOtherConversation: true);
+        await context.SetTextAsync(2, "Привет 🐈 100%_literal 'quote'");
+        await context.SetTextAsync(4, "привет 🐈 100x literal");
+        await context.SetTextAsync(6, "Привет again");
+
+        var unicode = await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, "Привет", null, 1, CancellationToken);
+        Assert.Single(unicode.Items);
+        Assert.Equal("Привет again", unicode.Items[0].Text);
+        Assert.NotNull(unicode.NextCursor);
+
+        var second = await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, "Привет", unicode.NextCursor, 1, CancellationToken);
+        Assert.Single(second.Items);
+        Assert.Equal("Привет 🐈 100%_literal 'quote'", second.Items[0].Text);
+        Assert.Null(second.NextCursor);
+
+        var literal = await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, "%_literal 'quote'", null, 10, CancellationToken);
+        Assert.Equal("Привет 🐈 100%_literal 'quote'", Assert.Single(literal.Items).Text);
+        Assert.Empty((await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, "привет 🐈 100%", null, 10, CancellationToken)).Items);
+        Assert.Empty((await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.EmptyConversationId, "Привет", null, 10, CancellationToken)).Items);
+        Assert.Empty((await context.Storage.History.SearchMessagesAsync(
+            context.NodeId, context.ConversationId, string.Empty, null, 10, CancellationToken)).Items);
+    }
+
+    [Fact]
+    public async Task CancellationInterruptsAnActiveSqliteSearch()
+    {
+        await using var context = await HistoryContext.CreateAsync(1);
+        var reader = new DatabaseReader(context.DatabasePath);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var cancellation = new CancellationTokenSource();
+        var query = reader.ExecuteAsync(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH RECURSIVE values_to_scan(value) AS (
+                    VALUES(0)
+                    UNION ALL
+                    SELECT value + 1 FROM values_to_scan WHERE value < 100000000
+                )
+                SELECT sum(value) FROM values_to_scan;
+                """;
+            started.TrySetResult();
+            return command.ExecuteScalar();
+        }, cancellation.Token);
+
+        await started.Task.WaitAsync(CancellationToken);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query);
     }
 
     private static int[] Numbers(HistoryMessagePage page) =>
@@ -212,6 +277,7 @@ public sealed class HistoryPagingTests
         public Guid EmptyConversationId { get; }
         public IReadOnlyList<Guid> MessageIds { get; }
         public string QueryPlan { get; }
+        public string DatabasePath => _temporary.Paths.DatabasePath;
 
         public static async Task<HistoryContext> CreateAsync(
             int messageCount,
@@ -305,6 +371,21 @@ public sealed class HistoryPagingTests
                     number,
                     richMetadata: false);
                 transaction.Commit();
+                return true;
+            }, CancellationToken);
+        }
+
+        public async Task SetTextAsync(int number, string text)
+        {
+            await using var writer = await DatabaseWorker.OpenAsync(
+                _temporary.Paths.DatabasePath, CancellationToken);
+            await writer.ExecuteAsync(connection =>
+            {
+                using var command = connection.CreateCommand();
+                command.CommandText = "UPDATE Messages SET Text = $text WHERE Id = $id;";
+                command.Parameters.AddWithValue("$text", text);
+                command.Parameters.AddWithValue("$id", GuidFromNumber(number).ToString("D"));
+                Assert.Equal(1, command.ExecuteNonQuery());
                 return true;
             }, CancellationToken);
         }

@@ -505,6 +505,7 @@ public sealed class MainWindowViewModelTests
             supervisor,
             notifications ?? new FakeMessageCommitNotifications(),
             dispatcher ?? new ImmediateUiDispatcher(),
+            new ImmediateSearchDelay(),
             NullLogger<MainWindowViewModel>.Instance);
     }
 
@@ -696,6 +697,11 @@ public sealed class MainWindowViewModelTests
             HistoryMessagePosition position, int beforeLimit, int afterLimit,
             CancellationToken cancellationToken = default) => throw new NotSupportedException();
 
+        public Task<HistoryMessageSearchPage> SearchMessagesAsync(
+            Guid nodeId, Guid conversationId, string query, HistoryMessagePosition? before, int limit,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(new HistoryMessageSearchPage([], null));
+
         private HistoryMessagePage Page(
             Guid nodeId,
             Guid conversationId,
@@ -750,6 +756,20 @@ public sealed class MainWindowViewModelTests
                     summary.LastMessageUtc))
                 .ToArray();
             return new ConversationDirectoryPage(items, null);
+        }
+
+        public async Task<ConversationDirectoryPage> SearchPageAsync(
+            Guid nodeId,
+            ConversationDirectorySection section,
+            string query,
+            ConversationDirectoryCursor? after,
+            int limit,
+            CancellationToken cancellationToken = default)
+        {
+            var page = await GetPageAsync(nodeId, section, after, limit, cancellationToken);
+            return new ConversationDirectoryPage(
+                page.Items.Where(item => item.DisplayName?.Contains(query, StringComparison.Ordinal) == true).ToArray(),
+                null);
         }
 
         public Task<ContactDetailsProjection?> GetContactDetailsAsync(
