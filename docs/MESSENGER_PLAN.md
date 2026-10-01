@@ -3,8 +3,8 @@
 Актуализация: 01.10.2026. **Этапы A и B выполнены, включая B7.5: локальное
 хранилище, offline startup, приём, reconnect и восстанавливаемое закрытие готовы.
 Профиль описывает транспорт; identity определяется по полному ключу в каждой
-session. Stage C начат: C1–C7 завершены автоматически; ручная UI-проверка C7
-ожидается. C8 и последующие подэтапы не начинались.**
+session. Stage C начат: C1–C8 завершены автоматически; ручная UI-проверка C7–C8
+ожидается. C9 и последующие подэтапы не начинались.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация, статистика и барьер callbacks;
 базовая проверка — 92 теста.
@@ -1289,6 +1289,31 @@ late save не затирает новый текст; empty/delete; реста�
 **Готово:** последний принятый редактором текст сохраняется при обычном закрытии
 либо остаётся доступным для retry после явной ошибки. **Ручная UI-проверка:** да,
 Unicode/IME, смена вкладок/нод во время ввода, закрытие сразу после последнего символа.
+
+Фактически реализовано 01.10.2026 без изменения SQLite schema. `IDraftStore`
+читает/пишет существующую таблицу `Drafts` по устойчивому owner из NodeId, kind и
+полной contact/channel identity. Directory-only Chat или известный канал получает
+Conversation только при первом непустом draft; операция идемпотентна в общем
+`DatabaseWorker` и согласована с конкурентным ingest. Пустая строка удаляет draft,
+пробелы и Unicode сохраняются без нормализации. Unknown и служебные записи в UI
+остаются read-only; send/ACK и любые mutations ноды не добавлялись.
+
+`DraftEditorViewModel` принимает каждое изменение в общий `DraftWriteTracker` до
+debounce 500 ms, принудительно flush-ит прежнего owner при смене диалога/ноды и
+защищён context revision от late load. Tracker хранит newest revision при ошибке и
+не позволяет late save пометить более новый текст сохранённым. UI stop отменяет
+только таймер; отдельный `IDurableDraftWrites` barrier добавлен после ingress,
+session completion и read-state. Повтор shutdown выполняет draft retry, не повторяя
+quiesce UI и connection shutdown; параллельные close разделяют одну attempt.
+
+Детерминированные тесты покрывают A-chat -> B-chat -> A-chat, A-node -> B-node,
+late load/save, empty/delete, restart, Unicode, directory-only creation одновременно
+с ingest, shutdown до debounce, failure/retry без потери newest text, совместный
+concurrent shutdown и ожидание draft barrier. Release build прошёл без предупреждений;
+Core tests — 127/127, Desktop — 98/98, MeshCoreSharp — 92/92; `git diff --check`
+чист. Ручная UI-проверка C8 пока не выполнена: проверить Unicode/IME, Enter и
+Shift+Enter без отправки, быстрые смены диалогов/нод и закрытие сразу после ввода.
+C9 не начат.
 
 #### C9 — тема, геометрия окна и завершение keyboard UX
 

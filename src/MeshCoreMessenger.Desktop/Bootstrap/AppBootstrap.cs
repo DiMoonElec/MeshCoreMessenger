@@ -36,9 +36,11 @@ public static class AppBootstrap
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.History);
         services.AddSingleton(storage.ReadStates);
+        services.AddSingleton(storage.Drafts);
         services.AddSingleton(storage.ConversationDirectory);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISearchDelay, SystemSearchDelay>();
+        services.AddSingleton<IDraftDelay, SystemDraftDelay>();
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<SessionCompletionTracker>();
         services.AddSingleton<IDurableSessionCompletion>(provider =>
@@ -46,6 +48,11 @@ public static class AppBootstrap
         services.AddSingleton<ConversationReadStateTracker>();
         services.AddSingleton<IDurableReadStateWrites>(provider =>
             provider.GetRequiredService<ConversationReadStateTracker>());
+        services.AddSingleton<DraftWriteTracker>();
+        services.AddSingleton<IDraftBuffer>(provider =>
+            provider.GetRequiredService<DraftWriteTracker>());
+        services.AddSingleton<IDurableDraftWrites>(provider =>
+            provider.GetRequiredService<DraftWriteTracker>());
         services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
         services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<DirectoryService>();

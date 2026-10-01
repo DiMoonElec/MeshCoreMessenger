@@ -89,6 +89,92 @@ internal sealed class ImmediateSearchDelay : ISearchDelay
     }
 }
 
+internal sealed class ImmediateDraftDelay : IDraftDelay
+{
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.CompletedTask;
+    }
+}
+
+internal sealed class ControlledDraftDelay : IDraftDelay
+{
+    private readonly object _gate = new();
+    private readonly List<DelayRequest> _requests = [];
+
+    public IReadOnlyList<DelayRequest> Requests
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return [.. _requests];
+            }
+        }
+    }
+
+    public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            var request = new DelayRequest(delay, cancellationToken);
+            _requests.Add(request);
+            return request.Completion.Task.WaitAsync(cancellationToken);
+        }
+    }
+
+    internal sealed record DelayRequest(TimeSpan Delay, CancellationToken CancellationToken)
+    {
+        public TaskCompletionSource Completion { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+}
+
+internal sealed class FakeDraftBuffer : IDraftBuffer
+{
+    private readonly Dictionary<string, string> _texts = [];
+
+    public List<(DraftTarget Target, string Text, long Revision)> Updates { get; } = [];
+    public List<DraftTarget> Flushes { get; } = [];
+    public Exception? FlushFailure { get; set; }
+    public TaskCompletionSource? FlushGate { get; set; }
+
+    public Task<string> LoadTextAsync(
+        DraftTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(_texts.GetValueOrDefault(Key(target)) ?? string.Empty);
+    }
+
+    public void Update(DraftTarget target, string text, long revision)
+    {
+        Updates.Add((target, text, revision));
+        _texts[Key(target)] = text;
+    }
+
+    public async Task FlushAsync(
+        DraftTarget target,
+        CancellationToken cancellationToken = default)
+    {
+        Flushes.Add(target);
+        if (FlushGate is not null)
+        {
+            await FlushGate.Task.WaitAsync(cancellationToken);
+        }
+        if (FlushFailure is { } failure)
+        {
+            throw failure;
+        }
+    }
+
+    public void Seed(DraftTarget target, string text) => _texts[Key(target)] = text;
+
+    private static string Key(DraftTarget target) =>
+        $"{target.NodeId:D}:{(int)target.Kind}:{Convert.ToHexString(target.Identity)}";
+}
+
 internal sealed class ControlledSearchDelay : ISearchDelay
 {
     private readonly object _gate = new();

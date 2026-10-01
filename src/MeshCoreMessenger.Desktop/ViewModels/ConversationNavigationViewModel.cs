@@ -47,6 +47,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     private Guid? _nodeId;
     private MessengerNavigationTabItem _selectedTab;
     private ConversationListItem? _selectedConversation;
+    private string? _requestedConversationKey;
     private ConversationDirectoryCursor? _primaryCursor;
     private ConversationDirectoryCursor? _unknownCursor;
     private ConversationDirectoryCursor? _searchPrimaryCursor;
@@ -71,9 +72,11 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ILocalHistoryReader history,
         IConversationReadStateStore readStates,
         IDurableReadStateWrites readWrites,
+        IDraftBuffer drafts,
         ISettingsStore settings,
         IUiDispatcher dispatcher,
         ISearchDelay searchDelay,
+        IDraftDelay draftDelay,
         ILogger logger)
     {
         _directory = directory;
@@ -87,6 +90,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             dispatcher,
             searchDelay,
             logger);
+        Draft = new DraftEditorViewModel(drafts, draftDelay, dispatcher, logger);
         History.ReadStateChanged += OnReadStateChanged;
         Tabs =
         [
@@ -113,6 +117,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public ObservableCollection<ConversationListItem> UnknownConversations { get; } = [];
     public ObservableCollection<ConversationListItem> Conversations { get; } = [];
     public HistoryWindowViewModel History { get; }
+    public DraftEditorViewModel Draft { get; }
     public ObservableCollection<HistoryMessageListItem> Messages => History.Messages;
     public IAsyncRelayCommand LoadMoreCommand { get; }
     public IRelayCommand BackCommand { get; }
@@ -330,6 +335,13 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 projection.SelectedConversationId,
                 linked.Token,
                 dispatchResult);
+            if (IsCurrent(nodeId, version))
+            {
+                await Draft.OpenAsync(
+                    SelectedConversation,
+                    linked.Token,
+                    dispatchResult);
+            }
         }
     }
 
@@ -371,6 +383,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 nodeId.Value,
                 projection.SelectedConversationId,
                 linked.Token);
+            if (IsCurrent(nodeId.Value, version))
+            {
+                await Draft.OpenAsync(SelectedConversation, linked.Token);
+            }
         }
         await PersistSelectionAsync(nodeId.Value, linked.Token);
     }
@@ -385,12 +401,15 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             throw new ArgumentException("The conversation does not belong to the viewed node.", nameof(conversation));
         }
 
-        if (conversation?.StableKey == SelectedConversation?.StableKey)
+        var requestedKey = conversation?.StableKey;
+        if (requestedKey == _requestedConversationKey &&
+            requestedKey == SelectedConversation?.StableKey)
         {
             ShowDetail();
             return;
         }
 
+        _requestedConversationKey = requestedKey;
         var version = Interlocked.Increment(ref _contextVersion);
         using var linked = CreateLinkedCancellation(cancellationToken);
         var detail = nodeId is not null && conversation is not null
@@ -411,6 +430,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         if (nodeId is { } currentNodeId && IsCurrent(currentNodeId, version))
         {
             await History.OpenAsync(currentNodeId, conversation?.Id, linked.Token);
+            if (IsCurrent(currentNodeId, version))
+            {
+                await Draft.OpenAsync(SelectedConversation, linked.Token);
+            }
         }
         if (nodeId is not null)
         {
@@ -429,6 +452,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         var version = Interlocked.Increment(ref _contextVersion);
         var selectedKey = SelectedConversation?.StableKey;
         var selectedConversationId = SelectedConversation?.Id;
+        var previousSelectedKey = SelectedConversation?.StableKey;
         var tab = SelectedTab.Tab;
         using var linked = CreateLinkedCancellation(cancellationToken);
         var projection = await ReadProjectionAsync(nodeId.Value, tab, selectedKey, linked.Token);
@@ -440,7 +464,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 if (IsCurrent(nodeId.Value, version))
                 {
                     ApplyProjection(projection);
-                    conversationChanged = projection.SelectedConversationId != selectedConversationId;
+                    conversationChanged =
+                        projection.SelectedStableKey != previousSelectedKey ||
+                        projection.SelectedConversationId != selectedConversationId;
                     applied = true;
                 }
             },
@@ -451,6 +477,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 nodeId.Value,
                 projection.SelectedConversationId,
                 linked.Token);
+            if (IsCurrent(nodeId.Value, version))
+            {
+                await Draft.OpenAsync(SelectedConversation, linked.Token);
+            }
         }
     }
 
@@ -471,6 +501,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         LoadMoreCommand.Cancel();
         History.ReadStateChanged -= OnReadStateChanged;
         await History.StopAsync().ConfigureAwait(false);
+        await Draft.StopAsync().ConfigureAwait(false);
         if (LoadMoreCommand.ExecutionTask is { } execution)
         {
             try
@@ -613,6 +644,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         var selected = projection.SelectedStableKey is { } key
             ? Conversations.FirstOrDefault(item => item.StableKey == key)
             : null;
+        _requestedConversationKey = selected?.StableKey;
         ApplySelection(selected, projection.Selection);
         ErrorMessage = null;
         Status = Conversations.Count == 0
@@ -654,7 +686,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         _searchPrimary.Clear();
         _searchUnknown.Clear();
         History.Clear();
+        Draft.Clear();
         SelectedConversation = null;
+        _requestedConversationKey = null;
         ContactDetails = null;
         ChannelDetails = null;
         _primaryCursor = null;

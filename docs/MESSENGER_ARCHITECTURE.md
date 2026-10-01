@@ -1,8 +1,9 @@
 # Архитектура настольного мессенджера MeshCore
 
-Актуализация: 01.10.2026. Статус: **этапы A/B и C1–C7 реализованы, включая
+Актуализация: 01.10.2026. Статус: **этапы A/B и C1–C8 реализованы, включая
 разделение transport profile и node identity, node-scoped чтение, bounded history,
-durable unread и локальный поиск; C8 и последующие подэтапы ещё не реализованы**.
+durable unread, локальный поиск и локальные черновики; C9 и последующие подэтапы
+ещё не реализованы**.
 Рабочее имя: `MeshCoreMessenger`. Документ задаёт решения для ИИ-агентов;
 порядок работ и критерии готовности — [MESSENGER_PLAN.md](MESSENGER_PLAN.md).
 Фактические возможности библиотеки — [PLAN.md](../PLAN.md).
@@ -527,6 +528,19 @@ revision и фиксированный node/conversation owner; позднее �
 ошибка оставляет DTO/текст и SQLite живыми для повторного сохранения. Нынешний
 идемпотентный StopAsync нельзя использовать как одноразовое место сохранения,
 если следующая попытка shutdown уже не повторит неуспешную запись.
+
+C8 реализует эту модель без миграции: существующая таблица `Drafts` доступна через
+`IDraftStore`, а target задаётся `(NodeId, ConversationKind, full identity)` и
+необязательным ConversationId. Для directory-only Chat/канала первый непустой draft
+идемпотентно создаёт Conversation в той же последовательной write queue, что и
+ingest; unique identity indexes не дают гонке создать две истории. Пустой текст
+удаляет Draft и не создаёт пустую Conversation. Desktop показывает multiline
+редактор только у Chat и известных каналов; служебные и unknown записи остаются
+read-only. Каждый edit сначала принимается `DraftWriteTracker` в память с revision,
+затем сохраняется после 500 ms debounce или принудительно при смене owner.
+`IDurableDraftWrites` завершает dirty revisions отдельным retryable shutdown barrier
+после ingress/session/read-state; quiesce UI отменяет только таймер, но не принятую
+revision. Enter/Shift+Enter и IME остаются обычным редактированием, send не вызывается.
 
 C6 использует существующий `Conversations.LastReadSequence` без миграции схемы.
 `IConversationReadStateStore` возвращает node-scoped watermark, число только

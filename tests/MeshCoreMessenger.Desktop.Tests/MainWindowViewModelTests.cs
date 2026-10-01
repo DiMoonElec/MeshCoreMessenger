@@ -499,6 +499,7 @@ public sealed class MainWindowViewModelTests
             history,
             readStates,
             readStates,
+            new FakeDraftBuffer(),
             nodes,
             settings,
             profiles,
@@ -506,6 +507,7 @@ public sealed class MainWindowViewModelTests
             notifications ?? new FakeMessageCommitNotifications(),
             dispatcher ?? new ImmediateUiDispatcher(),
             new ImmediateSearchDelay(),
+            new ImmediateDraftDelay(),
             NullLogger<MainWindowViewModel>.Instance);
     }
 

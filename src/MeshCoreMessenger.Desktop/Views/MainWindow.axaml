@@ -156,7 +156,7 @@
         </Border>
 
         <Grid x:Name="DetailPane" Grid.Column="1"
-              IsVisible="{Binding Navigation.IsDetailVisible}" RowDefinitions="Auto,*">
+              IsVisible="{Binding Navigation.IsDetailVisible}" RowDefinitions="Auto,*,Auto">
           <Border Padding="18,12" BorderBrush="{DynamicResource ThemeBorderLowBrush}" BorderThickness="0,0,0,1">
             <Grid ColumnDefinitions="Auto,*">
               <Button Content="Назад" Command="{Binding Navigation.BackCommand}"
@@ -258,6 +258,22 @@
             </Grid>
             </Grid>
           </Grid>
+          <Border Grid.Row="2" IsVisible="{Binding Navigation.Draft.CanEdit}"
+                  Padding="18,10" BorderBrush="{DynamicResource ThemeBorderLowBrush}"
+                  BorderThickness="0,1,0,0">
+            <StackPanel Spacing="4">
+              <TextBox Text="{Binding Navigation.Draft.Text, Mode=TwoWay}"
+                       AcceptsReturn="True" TextWrapping="Wrap" MinHeight="70"
+                       MaxHeight="180" PlaceholderText="Локальный черновик" />
+              <TextBlock Text="{Binding Navigation.Draft.Status}"
+                         IsVisible="{Binding Navigation.Draft.IsDirty}"
+                         FontSize="10" Opacity="0.62" />
+              <TextBlock Text="{Binding Navigation.Draft.ErrorMessage}"
+                         IsVisible="{Binding Navigation.Draft.HasError}"
+                         Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}"
+                         TextWrapping="Wrap" />
+            </StackPanel>
+          </Border>
         </Grid>
       </Grid>
 

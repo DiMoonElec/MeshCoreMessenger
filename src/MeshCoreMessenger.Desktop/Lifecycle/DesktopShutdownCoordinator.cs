@@ -25,6 +25,7 @@ internal sealed class DesktopShutdownCoordinator(
     IDurableMessageIngress ingress,
     IDurableSessionCompletion sessionCompletions,
     IDurableReadStateWrites readStates,
+    IDurableDraftWrites drafts,
     ILogger<DesktopShutdownCoordinator> logger) : IDesktopShutdownCoordinator
 {
     private readonly object _gate = new();
@@ -129,11 +130,17 @@ internal sealed class DesktopShutdownCoordinator(
                 {
                     await readStates.RetryAsync(CancellationToken.None).ConfigureAwait(false);
                 }
+
+                if (drafts.IsPaused)
+                {
+                    await drafts.RetryAsync(CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             await ingress.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await sessionCompletions.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await readStates.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            await drafts.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             lock (_gate)
             {
                 _completed = true;

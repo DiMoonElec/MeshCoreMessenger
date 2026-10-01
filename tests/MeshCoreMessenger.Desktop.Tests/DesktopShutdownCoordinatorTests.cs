@@ -24,7 +24,7 @@ public sealed class DesktopShutdownCoordinatorTests
         await coordinator.ShutdownAsync(CancellationToken);
 
         Assert.True(coordinator.IsCompleted);
-        Assert.Equal(["ui", "connections", "flush", "session-flush", "read-flush"], order);
+        Assert.Equal(["ui", "connections", "flush", "session-flush", "read-flush", "draft-flush"], order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
         Assert.Equal(1, ingress.FlushCount);
@@ -77,7 +77,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.False(ingress.IsPaused);
         Assert.Equal(0, ingress.PendingMessageCount);
         Assert.Equal(
-            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush", "read-flush"],
+            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush", "read-flush", "draft-flush"],
             order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
@@ -114,7 +114,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "report",
-                "session-retry", "flush", "session-flush", "read-flush",
+                "session-retry", "flush", "session-flush", "read-flush", "draft-flush",
             ],
             order);
     }
@@ -147,7 +147,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "read-flush", "report",
-                "read-retry", "flush", "session-flush", "read-flush",
+                "read-retry", "flush", "session-flush", "read-flush", "draft-flush",
             ],
             order);
     }
@@ -176,6 +176,70 @@ public sealed class DesktopShutdownCoordinatorTests
         gate.SetResult();
         await shutdown;
         Assert.True(coordinator.IsCompleted);
+    }
+
+    [Fact]
+    public async Task FailedDraftWriteIsRetriedWithoutRepeatingUiOrConnectionShutdown()
+    {
+        var order = new List<string>();
+        var drafts = new FakeDraftWrites(order) { PendingCount = 1 };
+        drafts.Failures.Enqueue(new IOException("draft write failed"));
+        var ui = new FakeUi(order);
+        var connections = new FakeConnections(order);
+        var coordinator = CreateCoordinator(
+            ui,
+            connections,
+            new FakeIngress(order),
+            new FakeSessionCompletions(order),
+            drafts: drafts);
+
+        await Assert.ThrowsAsync<DesktopShutdownException>(
+            () => coordinator.ShutdownAsync(CancellationToken));
+
+        Assert.False(coordinator.IsCompleted);
+        Assert.True(drafts.IsPaused);
+        Assert.Equal(1, drafts.PendingCount);
+
+        await coordinator.ShutdownAsync(CancellationToken);
+
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(1, ui.StopCount);
+        Assert.Equal(1, connections.ShutdownCount);
+        Assert.Equal(
+            [
+                "ui", "connections", "flush", "session-flush", "read-flush", "draft-flush", "report",
+                "draft-retry", "flush", "session-flush", "read-flush", "draft-flush",
+            ],
+            order);
+    }
+
+    [Fact]
+    public async Task ConcurrentShutdownWaitsForAcceptedDraftBarrier()
+    {
+        var order = new List<string>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var drafts = new FakeDraftWrites(order)
+        {
+            PendingCount = 1,
+            FlushGate = gate,
+        };
+        var coordinator = CreateCoordinator(
+            new FakeUi(order),
+            new FakeConnections(order),
+            new FakeIngress(order),
+            new FakeSessionCompletions(order),
+            drafts: drafts);
+
+        var first = coordinator.ShutdownAsync(CancellationToken);
+        var second = coordinator.ShutdownAsync(CancellationToken);
+        await drafts.FlushStarted.Task.WaitAsync(CancellationToken);
+        Assert.False(first.IsCompleted);
+        Assert.False(second.IsCompleted);
+
+        gate.SetResult();
+        await Task.WhenAll(first, second);
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(1, order.Count(item => item == "draft-flush"));
     }
 
     [Fact]
@@ -275,13 +339,15 @@ public sealed class DesktopShutdownCoordinatorTests
         IDesktopConnectionLifecycle connections,
         IDurableMessageIngress ingress,
         IDurableSessionCompletion sessionCompletions,
-        IDurableReadStateWrites? readStates = null) =>
+        IDurableReadStateWrites? readStates = null,
+        IDurableDraftWrites? drafts = null) =>
         new(
             ui,
             connections,
             ingress,
             sessionCompletions,
             readStates ?? new FakeReadStateWrites(order: ingress is FakeIngress fake ? fake.Order : []),
+            drafts ?? new FakeDraftWrites(order: ingress is FakeIngress draftFake ? draftFake.Order : []),
             NullLogger<DesktopShutdownCoordinator>.Instance);
 
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
@@ -433,6 +499,43 @@ public sealed class DesktopShutdownCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             order.Add("read-retry");
+            IsPaused = false;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeDraftWrites(List<string> order) : IDurableDraftWrites
+    {
+        public Queue<Exception> Failures { get; } = [];
+        public TaskCompletionSource FlushStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public TaskCompletionSource? FlushGate { get; init; }
+        public bool IsPaused { get; private set; }
+        public int PendingCount { get; set; }
+
+        public async Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("draft-flush");
+            FlushStarted.TrySetResult();
+            if (FlushGate is not null)
+            {
+                await FlushGate.Task.WaitAsync(cancellationToken);
+            }
+
+            if (Failures.TryDequeue(out var failure))
+            {
+                IsPaused = true;
+                throw failure;
+            }
+
+            PendingCount = 0;
+        }
+
+        public Task RetryAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("draft-retry");
             IsPaused = false;
             return Task.CompletedTask;
         }

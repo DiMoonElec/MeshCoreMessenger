@@ -49,6 +49,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ILocalHistoryReader history,
         IConversationReadStateStore readStates,
         IDurableReadStateWrites readWrites,
+        IDraftBuffer drafts,
         INodeStore nodes,
         ISettingsStore settings,
         ConnectionProfilesViewModel profiles,
@@ -56,6 +57,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IMessageCommitNotifications commitNotifications,
         IUiDispatcher dispatcher,
         ISearchDelay searchDelay,
+        IDraftDelay draftDelay,
         ILogger<MainWindowViewModel> logger)
     {
         _nodes = nodes;
@@ -71,9 +73,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             history,
             readStates,
             readWrites,
+            drafts,
             settings,
             dispatcher,
             searchDelay,
+            draftDelay,
             logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
@@ -325,7 +329,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         await _dispatcher.InvokeAsync(
             () =>
             {
-                ErrorMessage = "Не удалось сохранить все входящие сообщения. " +
+                ErrorMessage = "Не удалось сохранить все локальные данные, включая черновики. " +
                     "Исправьте проблему с локальным хранилищем и повторите закрытие окна.";
                 Status = "Закрытие отменено: данные ещё не сохранены";
             },

@@ -184,7 +184,17 @@ public sealed class ConversationNavigationViewModelTests
         var refresh = model.RefreshAsync(CancellationToken);
         await WaitUntilAsync(() => dispatcher.PendingCount == 1);
         Assert.Equal("first", Assert.Single(model.Conversations).StableKey);
-        dispatcher.RunNext();
+        while (true)
+        {
+            await WaitUntilAsync(() => dispatcher.PendingCount > 0 || refresh.IsCompleted);
+            if (dispatcher.PendingCount > 0)
+            {
+                dispatcher.RunNext();
+                continue;
+            }
+
+            break;
+        }
         await refresh;
 
         Assert.Equal("second", Assert.Single(model.Conversations).StableKey);
@@ -273,9 +283,11 @@ public sealed class ConversationNavigationViewModelTests
             history ?? new FakeHistoryReader(),
             readStates,
             readStates,
+            new FakeDraftBuffer(),
             settings ?? new FakeSettingsStore(),
             dispatcher ?? new ImmediateUiDispatcher(),
             new ImmediateSearchDelay(),
+            new ImmediateDraftDelay(),
             NullLogger.Instance);
     }
 

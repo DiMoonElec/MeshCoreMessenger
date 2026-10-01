@@ -29,6 +29,7 @@ public sealed class AppBootstrapTests
         Assert.Same(storage, services.GetRequiredService<LocalStorage>());
         Assert.Same(storage.History, services.GetRequiredService<ILocalHistoryReader>());
         Assert.Same(storage.ReadStates, services.GetRequiredService<IConversationReadStateStore>());
+        Assert.Same(storage.Drafts, services.GetRequiredService<IDraftStore>());
         Assert.NotNull(services.GetRequiredService<IConnectionProfileManager>());
         Assert.NotNull(services.GetRequiredService<IMeshCoreClientFactory>());
         Assert.NotNull(services.GetRequiredService<ICompanionSessionFactory>());
@@ -40,6 +41,12 @@ public sealed class AppBootstrapTests
         Assert.Same(
             services.GetRequiredService<ConversationReadStateTracker>(),
             services.GetRequiredService<IDurableReadStateWrites>());
+        Assert.Same(
+            services.GetRequiredService<DraftWriteTracker>(),
+            services.GetRequiredService<IDraftBuffer>());
+        Assert.Same(
+            services.GetRequiredService<DraftWriteTracker>(),
+            services.GetRequiredService<IDurableDraftWrites>());
         Assert.NotNull(services.GetRequiredService<IConnectionAttemptFactory>());
         Assert.NotNull(services.GetRequiredService<IConnectionFailureClassifier>());
         Assert.NotNull(services.GetRequiredService<IReconnectDelay>());
@@ -57,6 +64,7 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<IDesktopShutdownCoordinator>());
         Assert.NotNull(services.GetRequiredService<IUiDispatcher>());
         Assert.NotNull(services.GetRequiredService<ISearchDelay>());
+        Assert.NotNull(services.GetRequiredService<IDraftDelay>());
         Assert.NotNull(services.GetRequiredService<IMessageCommitNotifications>());
         Assert.Null(services.GetService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());
