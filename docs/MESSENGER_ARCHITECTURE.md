@@ -542,6 +542,22 @@ read-only. Каждый edit сначала принимается `DraftWriteTr
 после ingress/session/read-state; quiesce UI отменяет только таймер, но не принятую
 revision. Enter/Shift+Enter и IME остаются обычным редактированием, send не вызывается.
 
+C9 хранит desktop preferences в той же таблице `Settings`, но владеет ими отдельный
+`DesktopPreferences`: theme и window placement принимаются сначала в память, имеют
+независимые revisions и входят последним retryable barrier после drafts. Поэтому
+ошибка Settings writer отменяет закрытие и не теряет последнее принятое значение.
+Повреждённые theme/placement не блокируют offline startup: используются system theme
+и штатная геометрия окна. Схема SQLite не меняется.
+
+Сохранённая геометрия содержит физические normal bounds и признак maximized; minimized
+не восстанавливается. Чистый `WindowPlacementCalculator` валидирует bounds, выбирает
+доступный экран, ограничивает размер working area и центрирует окно на primary, если
+прежний монитор исчез. Avalonia view отвечает только за перевод screen scaling и
+применение результата. System/light/dark применяется динамически через theme variant.
+Keyboard router обрабатывает Cmd/Ctrl+F, Escape и Alt+Left для уже существующих
+сценариев; обычный TextBox/IME сохраняет владение Escape/navigation keys, а send action
+в C9 отсутствует.
+
 C6 использует существующий `Conversations.LastReadSequence` без миграции схемы.
 `IConversationReadStateStore` возвращает node-scoped watermark, число только
 incoming-сообщений после него и точную позицию первого непрочитанного. Продвижение

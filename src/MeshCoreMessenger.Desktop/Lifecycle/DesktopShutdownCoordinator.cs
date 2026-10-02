@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Logging;
 using MeshCoreMessenger.Core.Application;
+using MeshCoreMessenger.Desktop.Preferences;
 
 namespace MeshCoreMessenger.Desktop.Lifecycle;
 
@@ -26,6 +27,7 @@ internal sealed class DesktopShutdownCoordinator(
     IDurableSessionCompletion sessionCompletions,
     IDurableReadStateWrites readStates,
     IDurableDraftWrites drafts,
+    IDurableDesktopPreferences preferences,
     ILogger<DesktopShutdownCoordinator> logger) : IDesktopShutdownCoordinator
 {
     private readonly object _gate = new();
@@ -135,12 +137,18 @@ internal sealed class DesktopShutdownCoordinator(
                 {
                     await drafts.RetryAsync(CancellationToken.None).ConfigureAwait(false);
                 }
+
+                if (preferences.IsPaused)
+                {
+                    await preferences.RetryAsync(CancellationToken.None).ConfigureAwait(false);
+                }
             }
 
             await ingress.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await sessionCompletions.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await readStates.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await drafts.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            await preferences.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             lock (_gate)
             {
                 _completed = true;

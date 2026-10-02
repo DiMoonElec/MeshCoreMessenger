@@ -5,6 +5,7 @@ using MeshCoreMessenger.Core;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
 
@@ -65,6 +66,9 @@ public sealed class AppBootstrapTests
         Assert.NotNull(services.GetRequiredService<IUiDispatcher>());
         Assert.NotNull(services.GetRequiredService<ISearchDelay>());
         Assert.NotNull(services.GetRequiredService<IDraftDelay>());
+        Assert.Same(
+            services.GetRequiredService<DesktopPreferences>(),
+            services.GetRequiredService<IDurableDesktopPreferences>());
         Assert.NotNull(services.GetRequiredService<IMessageCommitNotifications>());
         Assert.Null(services.GetService<ReceiveCoordinator>());
         Assert.Same(storage.Directories, services.GetRequiredService<IDirectoryStore>());

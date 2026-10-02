@@ -288,6 +288,15 @@
           </Grid>
           <ScrollViewer Grid.Row="1" Margin="0,14,0,0">
             <StackPanel Spacing="8">
+              <TextBlock Text="Оформление" FontSize="14" FontWeight="SemiBold" />
+              <ComboBox ItemsSource="{Binding ThemeOptions}"
+                        SelectedItem="{Binding SelectedTheme, Mode=TwoWay}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:DesktopThemeOption"><TextBlock Text="{Binding Title}" /></DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Separator Margin="0,4" />
+              <TextBlock Text="Профиль подключения" FontSize="14" FontWeight="SemiBold" />
               <ComboBox ItemsSource="{Binding Profiles.AvailableProfiles}"
                         SelectedItem="{Binding Profiles.SelectedProfile, Mode=TwoWay}"
                         PlaceholderText="Сохранённые профили">

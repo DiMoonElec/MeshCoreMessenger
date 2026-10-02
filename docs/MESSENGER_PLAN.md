@@ -3,8 +3,8 @@
 Актуализация: 01.10.2026. **Этапы A и B выполнены, включая B7.5: локальное
 хранилище, offline startup, приём, reconnect и восстанавливаемое закрытие готовы.
 Профиль описывает транспорт; identity определяется по полному ключу в каждой
-session. Stage C начат: C1–C8 завершены автоматически; ручная UI-проверка C7–C8
-ожидается. C9 и последующие подэтапы не начинались.**
+session. Stage C начат: C1–C9 завершены автоматически; ручная UI-проверка C7–C9
+ожидается. C10 не начат.**
 Библиотечный фундамент уже реализован: USB/Serial, TCP, сообщения/ACK,
 контакты, каналы, адверты, информация, статистика и барьер callbacks;
 базовая проверка — 92 теста.
@@ -1338,6 +1338,27 @@ shutdown. Платформенные вычисления отделить от 
 выполняются клавиатурой. **Ручная UI-проверка:** обязательна на macOS и, при наличии,
 Windows — темы, DPI/мониторы, Cmd/Ctrl, IME. Недоступную платформу отметить как
 непроверенную и перенести именно её платформенную приёмку в E.
+
+**Фактически выполнено 01.10.2026.** Добавлен desktop-only `DesktopPreferences`
+поверх существующей `Settings` без изменения схемы: system/light/dark и normal window
+bounds/maximized сохраняются revisions и последним retryable barrier штатного
+shutdown. Повреждённые значения безопасно дают system theme/штатную геометрию.
+Чистый `WindowPlacementCalculator` отделяет validation/clamp/primary fallback от
+Avalonia window и учитывает screen scaling при применении физических bounds. В окне
+добавлены динамическое переключение темы, сохранение normal bounds при maximized,
+Cmd/Ctrl+F, Escape и Alt+Left; text editor/IME не перехватываются, send отсутствует.
+Статус profile/node/retry и немодальные ошибки остаются в постоянном header во всех
+layouts. Settings читаются локально до показа окна; сетевой lifecycle по-прежнему
+стартует только после `Opened`.
+
+Детерминированно покрыты SQLite restart темы/геометрии, повреждённые Settings,
+недоступный монитор, invalid/oversized bounds, normal bounds при maximized, routing
+Cmd/Ctrl/focus/Escape/Back и защита text input/IME, failure/retry Settings writer и
+точный shutdown order. Release build прошёл без предупреждений; Core — 127/127,
+Desktop — 111/111, MeshCoreSharp — 92/92. Ручная проверка C9 на macOS ожидается:
+system/light/dark, maximized и перенос/смена масштаба монитора, Cmd/Ctrl+F,
+Escape/Alt+Left, Tab/focus и IME. Windows недоступна и её платформенная приёмка
+переносится в E. C10 не начат.
 
 #### C10 — совместная приёмка Stage C
 

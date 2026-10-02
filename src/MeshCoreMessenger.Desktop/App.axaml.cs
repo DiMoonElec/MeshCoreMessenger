@@ -4,6 +4,7 @@ using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
 
@@ -23,6 +24,7 @@ public sealed partial class App : Application
             var window = Services.GetRequiredService<MainWindow>();
             desktop.MainWindow = window;
             var viewModel = Services.GetRequiredService<MainWindowViewModel>();
+            RequestedThemeVariant = ToThemeVariant(viewModel.SelectedTheme.Value);
             var connectionLifecycle = Services.GetRequiredService<DesktopConnectionLifecycle>();
             EventHandler? opened = null;
             opened = async (_, _) =>
@@ -45,4 +47,12 @@ public sealed partial class App : Application
 
         base.OnFrameworkInitializationCompleted();
     }
+
+    internal static Avalonia.Styling.ThemeVariant ToThemeVariant(DesktopThemePreference theme) =>
+        theme switch
+        {
+            DesktopThemePreference.Light => Avalonia.Styling.ThemeVariant.Light,
+            DesktopThemePreference.Dark => Avalonia.Styling.ThemeVariant.Dark,
+            _ => Avalonia.Styling.ThemeVariant.Default,
+        };
 }

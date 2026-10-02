@@ -4,6 +4,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
 
@@ -41,6 +42,9 @@ public static class AppBootstrap
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISearchDelay, SystemSearchDelay>();
         services.AddSingleton<IDraftDelay, SystemDraftDelay>();
+        services.AddSingleton<DesktopPreferences>();
+        services.AddSingleton<IDurableDesktopPreferences>(provider =>
+            provider.GetRequiredService<DesktopPreferences>());
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();
         services.AddSingleton<SessionCompletionTracker>();
         services.AddSingleton<IDurableSessionCompletion>(provider =>

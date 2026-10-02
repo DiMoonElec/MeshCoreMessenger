@@ -8,6 +8,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Preferences;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
@@ -18,6 +19,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private const int KnownNodePageSize = 500;
     private readonly INodeStore _nodes;
     private readonly ISettingsStore _settings;
+    private readonly DesktopPreferences _preferences;
     private readonly IConnectionSupervisor _supervisor;
     private readonly IMessageCommitNotifications _commitNotifications;
     private readonly IUiDispatcher _dispatcher;
@@ -52,6 +54,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IDraftBuffer drafts,
         INodeStore nodes,
         ISettingsStore settings,
+        DesktopPreferences preferences,
         ConnectionProfilesViewModel profiles,
         IConnectionSupervisor supervisor,
         IMessageCommitNotifications commitNotifications,
@@ -62,6 +65,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     {
         _nodes = nodes;
         _settings = settings;
+        _preferences = preferences;
         Profiles = profiles;
         _supervisor = supervisor;
         _commitNotifications = commitNotifications;
@@ -91,6 +95,34 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     }
 
     public string Title => AppInformation.ProductName;
+
+    public IReadOnlyList<DesktopThemeOption> ThemeOptions { get; } =
+    [
+        new(DesktopThemePreference.System, "Как в системе"),
+        new(DesktopThemePreference.Light, "Светлая"),
+        new(DesktopThemePreference.Dark, "Тёмная"),
+    ];
+
+    public DesktopThemeOption SelectedTheme
+    {
+        get => ThemeOptions.Single(option => option.Value == _preferences.Snapshot.Theme);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (value.Value == _preferences.Snapshot.Theme)
+            {
+                return;
+            }
+
+            _preferences.SetTheme(value.Value);
+            OnPropertyChanged();
+        }
+    }
+
+    public WindowPlacement? SavedWindowPlacement => _preferences.Snapshot.WindowPlacement;
+
+    public void UpdateWindowPlacement(WindowPlacement placement) =>
+        _preferences.SetWindowPlacement(placement);
 
     public string ConnectionStatus
     {
@@ -208,6 +240,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
+            await _preferences.LoadAsync(linkedCancellation.Token);
+            OnPropertyChanged(nameof(SelectedTheme));
+            OnPropertyChanged(nameof(SavedWindowPlacement));
             await Profiles.LoadAsync(linkedCancellation.Token);
             var nodes = await _nodes.GetAllAsync(KnownNodePageSize, linkedCancellation.Token);
             var viewedNodeSetting = await _settings.GetAsync(ViewedNodeSettingKey, linkedCancellation.Token);
@@ -761,6 +796,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
     }
 }
+
+public sealed record DesktopThemeOption(DesktopThemePreference Value, string Title);
 
 public sealed class KnownNodeListItem
 {

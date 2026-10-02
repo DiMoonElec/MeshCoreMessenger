@@ -3,6 +3,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
 
@@ -502,6 +503,7 @@ public sealed class MainWindowViewModelTests
             new FakeDraftBuffer(),
             nodes,
             settings,
+            new DesktopPreferences(settings),
             profiles,
             supervisor,
             notifications ?? new FakeMessageCommitNotifications(),

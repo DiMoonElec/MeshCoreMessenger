@@ -4,6 +4,7 @@ using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 
 namespace MeshCoreMessenger.Desktop.Views;
@@ -13,7 +14,10 @@ public sealed partial class MainWindow : Window
     private readonly IDesktopShutdownCoordinator? _shutdown;
     private bool _shutdownAccepted;
     private bool _shutdownRequestActive;
+    private bool _placementInitialized;
+    private WindowPlacement? _normalPlacement;
     private HistoryWindowViewModel? _subscribedHistory;
+    private MainWindowViewModel? _subscribedViewModel;
 
     public MainWindow()
     {
@@ -22,7 +26,19 @@ public sealed partial class MainWindow : Window
         DataContextChanged += OnWindowDataContextChanged;
         Activated += OnWindowActivationChanged;
         Deactivated += OnWindowActivationChanged;
-        Opened += (_, _) => Dispatcher.UIThread.Post(ScrollHistoryToEnd);
+        PositionChanged += (_, _) => CaptureWindowPlacement();
+        PropertyChanged += (_, eventArgs) =>
+        {
+            if (eventArgs.Property == WindowStateProperty)
+            {
+                CaptureWindowPlacement();
+            }
+        };
+        Opened += (_, _) =>
+        {
+            ApplySavedWindowPlacement();
+            Dispatcher.UIThread.Post(ScrollHistoryToEnd);
+        };
     }
 
     public MainWindow(IDesktopShutdownCoordinator shutdown)
@@ -33,6 +49,7 @@ public sealed partial class MainWindow : Window
 
     protected override void OnClosing(WindowClosingEventArgs eventArgs)
     {
+        CaptureWindowPlacement();
         base.OnClosing(eventArgs);
         if (_shutdown is null ||
             _shutdownAccepted ||
@@ -59,6 +76,12 @@ public sealed partial class MainWindow : Window
             _subscribedHistory = null;
         }
 
+        if (_subscribedViewModel is not null)
+        {
+            _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+            _subscribedViewModel = null;
+        }
+
         base.OnClosed(eventArgs);
     }
 
@@ -69,7 +92,19 @@ public sealed partial class MainWindow : Window
             _subscribedHistory.ScrollRequested -= OnHistoryScrollRequested;
         }
 
-        _subscribedHistory = (DataContext as MainWindowViewModel)?.Navigation.History;
+        if (_subscribedViewModel is not null)
+        {
+            _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        _subscribedViewModel = DataContext as MainWindowViewModel;
+        if (_subscribedViewModel is not null)
+        {
+            _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
+            ApplyTheme(_subscribedViewModel.SelectedTheme.Value);
+        }
+
+        _subscribedHistory = _subscribedViewModel?.Navigation.History;
         if (_subscribedHistory is not null)
         {
             _subscribedHistory.ScrollRequested += OnHistoryScrollRequested;
@@ -107,18 +142,48 @@ public sealed partial class MainWindow : Window
 
     private void OnWindowKeyDown(object? sender, KeyEventArgs eventArgs)
     {
-        if (eventArgs.Key != Key.F ||
-            (eventArgs.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta)) == 0)
+        if (DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
 
-        var history = (DataContext as MainWindowViewModel)?.Navigation;
-        var target = history?.HasSelection == true && DetailPane.IsEffectivelyVisible
-            ? HistorySearchBox
-            : DirectorySearchBox;
-        target.Focus();
-        target.SelectAll();
+        var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
+        var action = DesktopShortcutRouter.Route(new DesktopShortcutContext(
+            eventArgs.Key,
+            eventArgs.KeyModifiers,
+            focused is TextBox && focused != DirectorySearchBox && focused != HistorySearchBox,
+            viewModel.Navigation.HasSelection,
+            DetailPane.IsEffectivelyVisible,
+            viewModel.IsConnectionSettingsOpen,
+            !string.IsNullOrEmpty(viewModel.Navigation.DirectorySearchText),
+            !string.IsNullOrEmpty(viewModel.Navigation.History.SearchText),
+            viewModel.Navigation.CanNavigateBack));
+        switch (action)
+        {
+            case DesktopShortcutAction.FocusDirectorySearch:
+                DirectorySearchBox.Focus();
+                DirectorySearchBox.SelectAll();
+                break;
+            case DesktopShortcutAction.FocusHistorySearch:
+                HistorySearchBox.Focus();
+                HistorySearchBox.SelectAll();
+                break;
+            case DesktopShortcutAction.CloseSettings:
+                viewModel.CloseConnectionSettingsCommand.Execute(null);
+                break;
+            case DesktopShortcutAction.ClearDirectorySearch:
+                viewModel.Navigation.DirectorySearchText = string.Empty;
+                break;
+            case DesktopShortcutAction.ClearHistorySearch:
+                viewModel.Navigation.History.SearchText = string.Empty;
+                break;
+            case DesktopShortcutAction.NavigateBack:
+                viewModel.Navigation.BackCommand.Execute(null);
+                break;
+            case DesktopShortcutAction.None:
+                return;
+        }
+
         eventArgs.Handled = true;
     }
 
@@ -269,6 +334,90 @@ public sealed partial class MainWindow : Window
             : new GridLength(1, GridUnitType.Star);
         Grid.SetColumn(DetailPane, narrow ? 0 : 1);
         Grid.SetColumnSpan(DetailPane, narrow ? 2 : 1);
+        CaptureWindowPlacement();
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs eventArgs)
+    {
+        if (eventArgs.PropertyName == nameof(MainWindowViewModel.SelectedTheme) &&
+            sender is MainWindowViewModel viewModel)
+        {
+            ApplyTheme(viewModel.SelectedTheme.Value);
+        }
+    }
+
+    private static void ApplyTheme(DesktopThemePreference theme)
+    {
+        if (Application.Current is { } application)
+        {
+            application.RequestedThemeVariant = App.ToThemeVariant(theme);
+        }
+    }
+
+    private void ApplySavedWindowPlacement()
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        var screenAreas = Screens.All
+            .Select(screen => new ScreenArea(
+                screen.WorkingArea.X,
+                screen.WorkingArea.Y,
+                screen.WorkingArea.Width,
+                screen.WorkingArea.Height,
+                ReferenceEquals(screen, Screens.Primary)))
+            .ToArray();
+        var restored = WindowPlacementCalculator.Restore(viewModel.SavedWindowPlacement, screenAreas);
+        if (restored is not null)
+        {
+            Position = new PixelPoint((int)Math.Round(restored.X), (int)Math.Round(restored.Y));
+            var targetScreen = Screens.ScreenFromPoint(new PixelPoint(
+                (int)Math.Round(restored.X + (restored.Width / 2)),
+                (int)Math.Round(restored.Y + (restored.Height / 2)))) ?? Screens.Primary;
+            var scale = targetScreen?.Scaling is > 0 ? targetScreen.Scaling : 1;
+            Width = restored.Width / scale;
+            Height = restored.Height / scale;
+            _normalPlacement = restored with { IsMaximized = false };
+            if (restored.IsMaximized)
+            {
+                WindowState = WindowState.Maximized;
+            }
+        }
+
+        _placementInitialized = true;
+        CaptureWindowPlacement();
+    }
+
+    private void CaptureWindowPlacement()
+    {
+        if (!_placementInitialized || DataContext is not MainWindowViewModel viewModel)
+        {
+            return;
+        }
+
+        WindowPlacement? currentNormal = null;
+        if (WindowState == WindowState.Normal)
+        {
+            var scale = RenderScaling is > 0 ? RenderScaling : 1;
+            currentNormal = new WindowPlacement(
+                Position.X,
+                Position.Y,
+                Bounds.Width * scale,
+                Bounds.Height * scale,
+                IsMaximized: false);
+        }
+
+        var captured = WindowPlacementCalculator.Capture(
+            _normalPlacement,
+            currentNormal,
+            WindowState == WindowState.Maximized);
+        if (captured is not null)
+        {
+            _normalPlacement = captured with { IsMaximized = false };
+            viewModel.UpdateWindowPlacement(captured);
+        }
     }
 
     private async void OnNodeSelectionChanged(object? sender, SelectionChangedEventArgs eventArgs)

@@ -4,6 +4,7 @@ using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
+using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreSharp.Models;
 using Xunit;
 
@@ -24,7 +25,7 @@ public sealed class DesktopShutdownCoordinatorTests
         await coordinator.ShutdownAsync(CancellationToken);
 
         Assert.True(coordinator.IsCompleted);
-        Assert.Equal(["ui", "connections", "flush", "session-flush", "read-flush", "draft-flush"], order);
+        Assert.Equal(["ui", "connections", "flush", "session-flush", "read-flush", "draft-flush", "preferences-flush"], order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
         Assert.Equal(1, ingress.FlushCount);
@@ -77,7 +78,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.False(ingress.IsPaused);
         Assert.Equal(0, ingress.PendingMessageCount);
         Assert.Equal(
-            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush", "read-flush", "draft-flush"],
+            ["ui", "connections", "flush", "report", "retry", "flush", "session-flush", "read-flush", "draft-flush", "preferences-flush"],
             order);
         Assert.Equal(1, ui.StopCount);
         Assert.Equal(1, connections.ShutdownCount);
@@ -114,7 +115,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "report",
-                "session-retry", "flush", "session-flush", "read-flush", "draft-flush",
+                "session-retry", "flush", "session-flush", "read-flush", "draft-flush", "preferences-flush",
             ],
             order);
     }
@@ -147,7 +148,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "read-flush", "report",
-                "read-retry", "flush", "session-flush", "read-flush", "draft-flush",
+                "read-retry", "flush", "session-flush", "read-flush", "draft-flush", "preferences-flush",
             ],
             order);
     }
@@ -208,7 +209,7 @@ public sealed class DesktopShutdownCoordinatorTests
         Assert.Equal(
             [
                 "ui", "connections", "flush", "session-flush", "read-flush", "draft-flush", "report",
-                "draft-retry", "flush", "session-flush", "read-flush", "draft-flush",
+                "draft-retry", "flush", "session-flush", "read-flush", "draft-flush", "preferences-flush",
             ],
             order);
     }
@@ -240,6 +241,43 @@ public sealed class DesktopShutdownCoordinatorTests
         await Task.WhenAll(first, second);
         Assert.True(coordinator.IsCompleted);
         Assert.Equal(1, order.Count(item => item == "draft-flush"));
+    }
+
+    [Fact]
+    public async Task FailedPreferenceWriteIsRetriedAfterAllEarlierBarriers()
+    {
+        var order = new List<string>();
+        var preferences = new FakeDesktopPreferences(order);
+        preferences.Failures.Enqueue(new IOException("settings write failed"));
+        var coordinator = CreateCoordinator(
+            new FakeUi(order),
+            new FakeConnections(order),
+            new FakeIngress(order),
+            new FakeSessionCompletions(order),
+            preferences: preferences);
+
+        var failure = await Assert.ThrowsAsync<DesktopShutdownException>(
+            () => coordinator.ShutdownAsync(CancellationToken));
+
+        Assert.IsType<DesktopPreferencesPersistenceException>(failure.InnerException);
+        Assert.True(preferences.IsPaused);
+        Assert.Equal(
+            [
+                "ui", "connections", "flush", "session-flush", "read-flush", "draft-flush",
+                "preferences-flush", "report",
+            ],
+            order);
+
+        await coordinator.ShutdownAsync(CancellationToken);
+
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(
+            [
+                "ui", "connections", "flush", "session-flush", "read-flush", "draft-flush",
+                "preferences-flush", "report", "preferences-retry", "flush", "session-flush",
+                "read-flush", "draft-flush", "preferences-flush",
+            ],
+            order);
     }
 
     [Fact]
@@ -340,7 +378,8 @@ public sealed class DesktopShutdownCoordinatorTests
         IDurableMessageIngress ingress,
         IDurableSessionCompletion sessionCompletions,
         IDurableReadStateWrites? readStates = null,
-        IDurableDraftWrites? drafts = null) =>
+        IDurableDraftWrites? drafts = null,
+        IDurableDesktopPreferences? preferences = null) =>
         new(
             ui,
             connections,
@@ -348,6 +387,7 @@ public sealed class DesktopShutdownCoordinatorTests
             sessionCompletions,
             readStates ?? new FakeReadStateWrites(order: ingress is FakeIngress fake ? fake.Order : []),
             drafts ?? new FakeDraftWrites(order: ingress is FakeIngress draftFake ? draftFake.Order : []),
+            preferences ?? new FakeDesktopPreferences(order: ingress is FakeIngress preferenceFake ? preferenceFake.Order : []),
             NullLogger<DesktopShutdownCoordinator>.Instance);
 
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
@@ -536,6 +576,34 @@ public sealed class DesktopShutdownCoordinatorTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             order.Add("draft-retry");
+            IsPaused = false;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeDesktopPreferences(List<string> order) : IDurableDesktopPreferences
+    {
+        public Queue<Exception> Failures { get; } = [];
+        public bool IsPaused { get; private set; }
+
+        public Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("preferences-flush");
+            if (Failures.TryDequeue(out var failure))
+            {
+                IsPaused = true;
+                throw new DesktopPreferencesPersistenceException(failure);
+            }
+
+            IsPaused = false;
+            return Task.CompletedTask;
+        }
+
+        public Task RetryAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("preferences-retry");
             IsPaused = false;
             return Task.CompletedTask;
         }
