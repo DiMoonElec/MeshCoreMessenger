@@ -905,6 +905,7 @@ public sealed class KnownNodeListItem
     {
         ArgumentNullException.ThrowIfNull(node);
         Id = node.Id;
+        MentionName = string.IsNullOrWhiteSpace(node.LastName) ? null : node.LastName;
         Name = string.IsNullOrWhiteSpace(node.LastName) ? "Нода без имени" : node.LastName;
         PublicKeyHex = Convert.ToHexString(node.PublicKey).ToLowerInvariant();
         ShortPublicKey = PublicKeyHex.Length <= 12 ? PublicKeyHex : $"{PublicKeyHex[..12]}…";
@@ -913,6 +914,7 @@ public sealed class KnownNodeListItem
     }
 
     public Guid Id { get; }
+    public string? MentionName { get; }
     public string Name { get; }
     public string PublicKeyHex { get; }
     public string ShortPublicKey { get; }

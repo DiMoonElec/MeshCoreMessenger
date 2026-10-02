@@ -28,6 +28,8 @@
   <SolidColorBrush x:Key="ChatTransparentBrush" Color="Transparent" />
   <x:Double x:Key="ChatBubbleMinWidth">160</x:Double>
   <CornerRadius x:Key="ChatCornerRadius">12</CornerRadius>
+  <Thickness x:Key="ChatMentionPadding">4,1</Thickness>
+  <CornerRadius x:Key="ChatMentionRadius">6</CornerRadius>
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
@@ -35,6 +37,10 @@
       <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#FFFFFF" />
       <SolidColorBrush x:Key="ChatTextBrush" Color="#192B3B" />
       <SolidColorBrush x:Key="ChatMutedBrush" Color="#63778A" />
+      <SolidColorBrush x:Key="ChatMentionForegroundBrush" Color="#48657D" />
+      <SolidColorBrush x:Key="ChatMentionBackgroundBrush" Color="#EAF1F8" />
+      <SolidColorBrush x:Key="ChatOwnMentionForegroundBrush" Color="#125A9E" />
+      <SolidColorBrush x:Key="ChatOwnMentionBackgroundBrush" Color="#D7EAFB" />
       <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#DCE5ED" />
       <SolidColorBrush x:Key="ChatBubbleBrush" Color="#FFFFFF" />
       <SolidColorBrush x:Key="ChatHoverBrush" Color="#EAF1F8" />
@@ -48,6 +54,10 @@
       <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#182635" />
       <SolidColorBrush x:Key="ChatTextBrush" Color="#E5EEF7" />
       <SolidColorBrush x:Key="ChatMutedBrush" Color="#A1B2C3" />
+      <SolidColorBrush x:Key="ChatMentionForegroundBrush" Color="#B6C8D8" />
+      <SolidColorBrush x:Key="ChatMentionBackgroundBrush" Color="#2B3D50" />
+      <SolidColorBrush x:Key="ChatOwnMentionForegroundBrush" Color="#86C8FF" />
+      <SolidColorBrush x:Key="ChatOwnMentionBackgroundBrush" Color="#244A69" />
       <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#2B3D50" />
       <SolidColorBrush x:Key="ChatBubbleBrush" Color="#213448" />
       <SolidColorBrush x:Key="ChatHoverBrush" Color="#23374C" />

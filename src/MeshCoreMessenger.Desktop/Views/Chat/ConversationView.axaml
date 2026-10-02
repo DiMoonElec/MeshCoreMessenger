@@ -4,6 +4,7 @@
              x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationView" x:DataType="vm:MainWindowViewModel">
   <UserControl.Styles>
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConversationStyles.axaml" />
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/MentionStyles.axaml" />
   </UserControl.Styles>
   <Grid Classes="conversation" RowDefinitions="Auto,*,Auto">
     <Border Classes="conversation-header">
@@ -36,10 +37,16 @@
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:HistoryMessageListItem">
               <Border Classes="message-bubble" BorderThickness="{Binding SearchBorderThickness}">
+                <Border.ContextMenu>
+                  <ContextMenu>
+                    <MenuItem Header="Копировать" CommandParameter="{Binding}" Click="OnCopyMessage" />
+                  </ContextMenu>
+                </Border.ContextMenu>
                 <StackPanel>
                   <TextBlock Classes="message-date" Text="{Binding ReceivedTime}" />
                   <TextBlock Classes="chat-meta" Text="{Binding ContentLabel}" IsVisible="{Binding HasContentLabel}" />
-                  <SelectableTextBlock Classes="message-body" Text="{Binding Body}" TextWrapping="Wrap" />
+                  <controls:MentionTextBlock Classes="message-body" MessageText="{Binding Body}" TextWrapping="Wrap"
+                    OwnNodeName="{Binding $parent[chat:ConversationView].((vm:MainWindowViewModel)DataContext).ViewedNode.MentionName}" />
                 </StackPanel>
               </Border>
             </DataTemplate>

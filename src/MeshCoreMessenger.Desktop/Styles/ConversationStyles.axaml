@@ -1,4 +1,5 @@
-<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:MeshCoreMessenger.Desktop.Controls">
   <Style Selector="Grid.conversation">
     <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
   </Style>
@@ -52,7 +53,7 @@
     <Setter Property="MinWidth" Value="{StaticResource ChatBubbleMinWidth}" />
     <Setter Property="HorizontalAlignment" Value="Left" />
   </Style>
-  <Style Selector="SelectableTextBlock.message-body">
+  <Style Selector="controls|MentionTextBlock.message-body">
     <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
     <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
   </Style>

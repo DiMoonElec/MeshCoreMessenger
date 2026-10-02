@@ -4,7 +4,10 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using Avalonia.Input;
+using Avalonia.Input.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
+using MeshCoreMessenger.Desktop.Presentation;
 
 namespace MeshCoreMessenger.Desktop.Views.Chat;
 
@@ -31,6 +34,14 @@ public sealed partial class ConversationView : UserControl
 
     public void FocusSearch() { HistorySearch.Focus(); HistorySearch.SelectAll(); }
     public bool IsSearchFocused => HistorySearch.IsFocused;
+
+    private async void OnCopyMessage(object? sender, Avalonia.Interactivity.RoutedEventArgs args)
+    {
+        if (sender is not MenuItem { CommandParameter: HistoryMessageListItem message } ||
+            TopLevel.GetTopLevel(this)?.Clipboard is not { } clipboard) return;
+        try { await MessageCopy.CopyAsync(message, text => clipboard.SetValueAsync(DataFormat.Text, text)); }
+        catch (Exception error) { System.Diagnostics.Trace.TraceError("Could not copy message: {0}", error); }
+    }
 
     protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs args)
     {

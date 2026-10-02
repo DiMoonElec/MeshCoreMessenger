@@ -1,0 +1,16 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Border.mention-chip">
+    <Setter Property="Background" Value="{DynamicResource ChatMentionBackgroundBrush}" />
+    <Setter Property="Padding" Value="{StaticResource ChatMentionPadding}" />
+    <Setter Property="CornerRadius" Value="{StaticResource ChatMentionRadius}" />
+  </Style>
+  <Style Selector="TextBlock.mention-label">
+    <Setter Property="Foreground" Value="{DynamicResource ChatMentionForegroundBrush}" />
+  </Style>
+  <Style Selector="Border.mention-chip.own">
+    <Setter Property="Background" Value="{DynamicResource ChatOwnMentionBackgroundBrush}" />
+  </Style>
+  <Style Selector="Border.mention-chip.own > TextBlock.mention-label">
+    <Setter Property="Foreground" Value="{DynamicResource ChatOwnMentionForegroundBrush}" />
+  </Style>
+</Styles>
