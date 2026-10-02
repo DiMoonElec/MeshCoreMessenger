@@ -17,6 +17,20 @@ public sealed class DesktopAppPaths : IAppPaths
     public string DatabasePath { get; }
     public string BackupsDirectory { get; }
 
+    /// <summary>Creates paths without creating or opening any files.</summary>
+    public static DesktopAppPaths CreateForDirectory(string dataDirectory)
+    {
+        try
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
+            return new DesktopAppPaths(dataDirectory);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            throw new ApplicationDataDirectoryUnavailableException(dataDirectory, exception);
+        }
+    }
+
     public static DesktopAppPaths CreateDefault()
     {
         string root;
@@ -40,6 +54,6 @@ public sealed class DesktopAppPaths : IAppPaths
         if (string.IsNullOrWhiteSpace(root))
             throw new InvalidOperationException("The operating system did not provide an application data directory.");
 
-        return new DesktopAppPaths(Path.Combine(root, ApplicationDirectoryName));
+        return CreateForDirectory(Path.Combine(root, ApplicationDirectoryName));
     }
 }

@@ -19,7 +19,18 @@ internal static class Program
     {
         try
         {
-            var paths = DesktopAppPaths.CreateDefault();
+            DesktopAppPaths paths;
+            try
+            {
+                paths = DesktopAppPaths.CreateForDirectory(DataDirectorySelection.Resolve(
+                    args, Environment.GetEnvironmentVariable("MESHCORE_DATA_DIR"),
+                    DesktopAppPaths.CreateDefault().DataDirectory, Environment.CurrentDirectory));
+            }
+            catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+            {
+                Console.Error.WriteLine($"MeshCoreMessenger cannot select data directory: {exception.Message}");
+                return DataDirectoryUnavailableExitCode;
+            }
             using var instanceLock = ApplicationInstanceLock.Acquire(paths);
             LocalStorage storage;
             try

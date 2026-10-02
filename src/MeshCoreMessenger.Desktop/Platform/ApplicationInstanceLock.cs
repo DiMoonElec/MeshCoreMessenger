@@ -32,6 +32,11 @@ public sealed class ApplicationInstanceLock : IDisposable
             ArgumentException.ThrowIfNullOrWhiteSpace(dataDirectory);
             fullDataDirectory = Path.GetFullPath(dataDirectory);
             Directory.CreateDirectory(fullDataDirectory);
+            // Even an existing writable lock file must not hide a read-only data directory.
+            using var probe = new FileStream(
+                Path.Combine(fullDataDirectory, $".write-probe-{Guid.NewGuid():N}"),
+                FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.DeleteOnClose);
+            probe.WriteByte(0);
         }
         catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException)
         {
@@ -56,6 +61,8 @@ public sealed class ApplicationInstanceLock : IDisposable
         }
         catch (IOException exception)
         {
+            if (Directory.Exists(lockFilePath))
+                throw new ApplicationDataDirectoryUnavailableException(fullDataDirectory, exception);
             throw new ApplicationInstanceAlreadyRunningException(fullDataDirectory, exception);
         }
     }

@@ -6,6 +6,7 @@
 - [ownership](messenger/architecture/ownership.md) — Сервисы и единственные владельцы состояния.
 - [connections](messenger/architecture/connections.md) — Transport profiles, supervisor, reconnect и открытие session.
 - [storage](messenger/architecture/storage.md) — SQLite-модель, commit-before-UI и ошибки сохранения.
+- [data-directories](messenger/architecture/data-directories.md) — выбор папки данных и несколько независимых экземпляров.
 - [identity](messenger/architecture/identity.md) — Identity ноды/контакта/канала и версии slot bindings.
 - [sending](messenger/architecture/sending.md) — Исходящие сообщения и честные статусы доставки.
 - [node-scoped-ui](messenger/architecture/node-scoped-ui.md) — Active/viewed node, directory projections и bounded history.

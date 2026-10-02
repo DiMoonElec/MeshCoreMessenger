@@ -3,7 +3,9 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
@@ -22,6 +24,9 @@ public sealed partial class App : Application
         {
             var logger = Services.GetRequiredService<ILogger<App>>();
             var window = Services.GetRequiredService<MainWindow>();
+            window.Title = DataDirectorySelection.WindowTitle(
+                Services.GetRequiredService<IAppPaths>().DataDirectory,
+                DesktopAppPaths.CreateDefault().DataDirectory);
             desktop.MainWindow = window;
             var viewModel = Services.GetRequiredService<MainWindowViewModel>();
             RequestedThemeVariant = ToThemeVariant(viewModel.SelectedTheme.Value);
