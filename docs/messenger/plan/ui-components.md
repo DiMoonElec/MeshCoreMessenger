@@ -1,0 +1,75 @@
+# Компонентная переработка UI перед C10 (согласована 02.10.2026)
+
+[Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
+
+#### Компонентная переработка UI перед C10 (согласована 02.10.2026)
+
+Это уточнение первоначального оформления Stage C после C9, а не изменение истории
+выполненных этапов. Обоснование: [анализ UI](../../UI_COMPONENTS_AND_REDESIGN_ANALYSIS.md).
+Принят последовательный визуальный workflow с ручной проверкой после каждого шага:
+
+1. **UI1 — NavigationShellView.** Две области: rail и content, три верхние вкладки
+   «Публичные чаты», «Приватные чаты», «Устройства»; две нижние — «Подключение»,
+   «Настройки». Иконка-заполнитель и центрированная переносимая подпись; справа
+   название выбранного раздела. Готово после проверки всех пяти кнопок, единственного
+   выбора, wide/narrow размеров и Tab/Space keyboard focus.
+2. **UI2 — ChatWorkspaceView.** Общий контролл списка/истории/редактора и кнопки
+   отправки для публичных и приватных чатов. Fake data для визуальной проверки;
+   демонстрационная отправка не касается эфира/пользовательской БД. Реальная
+   отправка остаётся D. Проверить длинный текст, viewport, wide/narrow и editor/IME.
+3. **UI3 — DevicesWorkspaceView.** Список и read-only карточка на fake fixtures
+   Repeater/Room/Sensor/unknown, nullable metadata, без remote commands. Проверить
+   смену выбора, неполные данные и отсутствие чат-редактора.
+4. **UI4 — ConnectionSettingsView.** Редизайн существующих Serial/TCP/timeout/
+   AutoConnect/Reconnect полей и выбора профиля, отдельный контролл. Визуальная
+   проверка валидации, разных транспортов и двух профилей; network integration — UI6.
+5. **UI5 — ApplicationSettingsView.** Отдельный экран общих настроек, сейчас theme;
+   подключение не содержит оформление. Проверить system/light/dark и доступность.
+6. **UI6 — интеграция.** Подключить те же views к рабочим VM и durable services,
+   проверить node ownership, selection/scroll/read/search/draft при переходах,
+   callbacks/attach/detach, writer errors и shutdown. Обязательны fake A/B/A,
+   invisible chat не погашает unread, restart и все regression suites; ручная
+   проверка обязательна. После этого выполнить исходный C10.
+
+Каждый шаг зависит от предыдущего принятого визуального checkpoint; production
+Core/SQLite/protocol не переписываются ради компоновки. Fake preview следующих
+контролов должен быть изолирован от радио и пользовательской истории.
+
+**UI1 фактически реализован 02.10.2026.** `NavigationShellView` — UserControl на
+обычных Avalonia Grid/ItemsControl/RadioButton/ContentControl, `NavigationShellViewModel`
+владеет только shell selection. Navigation items разбиты на верхнюю и нижнюю группы;
+квадратные placeholders и подписи, взаимно исключающий выбор, theme/focus styles.
+Главное окно показывает shell вместо прежней монолитной workspace; реальные чат,
+карточки и формы ещё не встроены и на всех вкладках ожидаемо стоят текстовые
+заглушки. Постоянный connection/profile/node/error статус, window preferences и
+recoverable shutdown сохранены. Старые history viewport/scroll/focus adapters убраны
+из Window; они будут возвращены в соответствующий компонент, не в shell.
+Существующий startup/AutoConnect policy сохранён; UI1 сам не вызывает connection
+commands или send/advert/mutation и не сообщает просмотр скрытой истории.
+
+Тесты UI1 проверяют порядок/начальный выбор, commands всех пяти разделов и одну
+selection между двумя группами. Release build: 0 warnings/errors; Desktop 113/113,
+Core 127/127, MeshCoreSharp 92/92. Ручная визуальная проверка UI1 ещё ожидается;
+UI2–UI6 и C10 не начаты.
+
+**Доработка панели пользователем и аудит 02.10.2026.** Квадратные placeholders
+заменены отдельными PNG-иконками Channels/Private/Devices/Connection/Settings.
+`ShellIconAssets` задаёт avares URI, `IconUriConverter` кеширует bitmap, а view
+использует альфа-канал как OpacityMask с foreground brush текущей темы. Все шесть
+PNG (включая сохранённый резервный placeholder) имеют RGBA 512×512 с прозрачными
+и непрозрачными пикселями; каталог Assets включён в AvaloniaResource. Цвет пикселей
+PNG не задаёт цвет иконки. Tooltip появляется справа через 400 ms с отступом 8.
+Margin перенесён внутрь button template: прозрачная внешняя область остаётся частью
+контрола, уменьшая разрыв между областями взаимодействия соседних вкладок.
+
+Порядок вкладок, единый выбор между группами, подписи, независимость shell от node
+context и текстовые заглушки справа сохранены. Production-код при аудите не менялся.
+Release build: 0 warnings/errors; Desktop 113/113, Core 127/127, MeshCoreSharp 92/92;
+`git diff --check` чист. Автотесты доказывают shell selection и прежние regressions,
+а не фактический рендеринг PNG/tooltip: ручная проверка всех иконок в light/dark,
+hover, Tab/Space и размеров окна остаётся отдельной приёмкой.
+
+**Исправлено 02.10.2026:** поток AssetLoader.Open теперь освобождается через using
+после синхронного декодирования Bitmap, в том числе при исключении. Bitmap cache сейчас
+содержит только фиксированный набор иконок и используется view на UI thread;
+динамическую загрузку/удаление произвольных ресурсов этот контракт не покрывает.

@@ -60,6 +60,8 @@ These rules are architectural invariants:
 10. Current firmware has a separate single-flight limitation for several remote Mesh requests because starting another request can clear firmware pending-request state.
 
 See `docs/ARCHITECTURE.md` and `docs/COMPANION_PROTOCOL.md` before changing routing, transactions, concurrency, framing, or timeouts.
+These files are indexes. Use `docs/README.md` to select the relevant runtime and
+protocol sections; do not load every linked document into context.
 
 ## Current implementation status
 
@@ -84,6 +86,10 @@ followed by a private message confirmed by both ACK and the recipient.
 The desktop application architecture is designed and stage A1 scaffolding is implemented.
 Read
 `docs/MESSENGER_ARCHITECTURE.md` and `docs/MESSENGER_PLAN.md` before application work.
+These are section indexes: read the current-state and mandatory invariant sections
+listed in `docs/README.md`, then only the requested stage and its dependencies.
+The current milestone is recorded in `docs/messenger/plan/current-state.md`;
+do not restart completed work based on older checkpoint descriptions below.
 Do not recreate the Core/Desktop/test projects, package pins, lock files, or basic
 DI/logging bootstrap. Continue only with the specific remaining stage requested by the user.
 The rest of stage A starts with application data paths/single-instance behavior,
