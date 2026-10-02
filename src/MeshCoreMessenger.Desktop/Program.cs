@@ -2,6 +2,7 @@ using Avalonia;
 using Microsoft.Extensions.DependencyInjection;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
+using MeshCoreMessenger.Desktop.DevFixtures;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
@@ -13,28 +14,43 @@ internal static class Program
     private const int AlreadyRunningExitCode = 2;
     private const int DataDirectoryUnavailableExitCode = 3;
     private const int LocalStorageUnavailableExitCode = 4;
+    private const int FakeDataSeedUnavailableExitCode = 5;
 
     [STAThread]
     public static int Main(string[] args)
     {
         try
         {
+#if !DEBUG
+            if (args.Contains("--seed-fake-data"))
+                Console.Error.WriteLine("--seed-fake-data is ignored in Release builds; starting normally without seeding.");
+#endif
             DesktopAppPaths paths;
+            var defaultPaths = DesktopAppPaths.CreateDefault();
             try
             {
                 paths = DesktopAppPaths.CreateForDirectory(DataDirectorySelection.Resolve(
                     args, Environment.GetEnvironmentVariable("MESHCORE_DATA_DIR"),
-                    DesktopAppPaths.CreateDefault().DataDirectory, Environment.CurrentDirectory));
+                    defaultPaths.DataDirectory, Environment.CurrentDirectory));
             }
             catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
             {
                 Console.Error.WriteLine($"MeshCoreMessenger cannot select data directory: {exception.Message}");
                 return DataDirectoryUnavailableExitCode;
             }
+#if DEBUG
+            var seed = FakeDataSeedOptions.Parse(args, paths.DataDirectory, defaultPaths.DataDirectory);
+            if (seed is not null)
+                FakeDataSeeder.ValidateDirectoryTarget(paths.DataDirectory, defaultPaths.DataDirectory);
+#endif
             using var instanceLock = ApplicationInstanceLock.Acquire(paths);
             LocalStorage storage;
             try
             {
+#if DEBUG
+                if (seed is not null)
+                    FakeDataSeeder.EnsureEmptyDatabaseAsync(paths).GetAwaiter().GetResult();
+#endif
                 storage = LocalStorage.OpenAsync(paths).GetAwaiter().GetResult();
             }
             catch (Exception exception) when (IsLocalStorageOpenError(exception))
@@ -45,6 +61,21 @@ internal static class Program
 
             try
             {
+#if DEBUG
+                if (seed is not null)
+                {
+                    try
+                    {
+                        var result = new FakeDataSeeder().SeedAsync(storage, paths, seed.Large, DateTimeOffset.UtcNow).GetAwaiter().GetResult();
+                        Console.WriteLine($"Fake data ready: {result.ChannelCount} channels, {result.ContactCount} contacts, {result.MessageCount} messages. No connection will be started.");
+                    }
+                    catch (Exception exception) when (IsLocalStorageOpenError(exception))
+                    {
+                        Console.Error.WriteLine($"Fake-data seed failed: {exception.Message}. No UI/connection started; the partial fixture is not retried automatically. Use a new test folder.");
+                        return FakeDataSeedUnavailableExitCode;
+                    }
+                }
+#endif
                 var services = AppBootstrap.CreateServiceProvider(paths, storage);
                 try
                 {
@@ -88,6 +119,11 @@ internal static class Program
         {
             Console.Error.WriteLine(exception.Message);
             return DataDirectoryUnavailableExitCode;
+        }
+        catch (FakeDataSeedException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return FakeDataSeedUnavailableExitCode;
         }
     }
 

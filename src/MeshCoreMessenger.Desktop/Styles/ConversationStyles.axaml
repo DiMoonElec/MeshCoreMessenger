@@ -1,0 +1,72 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Grid.conversation">
+    <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
+  </Style>
+  <Style Selector="TextBlock">
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+  </Style>
+  <Style Selector="Border.conversation-header">
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="Padding" Value="{StaticResource ChatPanePadding}" />
+  </Style>
+  <Style Selector="StackPanel.header-text">
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="TextBlock.chat-title">
+    <Setter Property="FontSize" Value="{StaticResource ChatTitleFontSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+  </Style>
+  <Style Selector="TextBlock.chat-meta, TextBlock.message-date">
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="StackPanel.history-tools">
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="ListBox.history">
+    <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style Selector="ListBox.history ListBoxItem">
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Focusable" Value="False" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                          HorizontalContentAlignment="Stretch" />
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="Border.message-bubble">
+    <Setter Property="Background" Value="{DynamicResource ChatBubbleBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ShellAccentBrush}" />
+    <Setter Property="CornerRadius" Value="{StaticResource ChatCornerRadius}" />
+    <Setter Property="Padding" Value="{StaticResource ChatBubblePadding}" />
+    <Setter Property="Margin" Value="{StaticResource ChatMessageMargin}" />
+    <Setter Property="MaxWidth" Value="{StaticResource ChatMessageMaxWidth}" />
+    <Setter Property="MinWidth" Value="{StaticResource ChatBubbleMinWidth}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style Selector="SelectableTextBlock.message-body">
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+  </Style>
+  <Style Selector="ListBox.history-search-results">
+    <Setter Property="MaxHeight" Value="{StaticResource ChatComposerMaxHeight}" />
+  </Style>
+  <Style Selector="TextBlock.history-empty">
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.chat-error">
+    <Setter Property="Foreground" Value="{DynamicResource ChatErrorBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+</Styles>

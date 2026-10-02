@@ -1,0 +1,27 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="Border.composer">
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="Padding" Value="{StaticResource ChatPanePadding}" />
+  </Style>
+  <Style Selector="TextBox.message-input">
+    <Setter Property="MinHeight" Value="{StaticResource ChatComposerMinHeight}" />
+    <Setter Property="MaxHeight" Value="{StaticResource ChatComposerMaxHeight}" />
+    <Setter Property="CornerRadius" Value="{StaticResource ChatCornerRadius}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
+    <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto" />
+  </Style>
+  <Style Selector="Button.send-button">
+    <Setter Property="Margin" Value="{StaticResource ChatPanePadding}" />
+    <Setter Property="CornerRadius" Value="{StaticResource ChatCornerRadius}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatBadgeTextBrush}" />
+    <Setter Property="Background" Value="{DynamicResource ShellAccentBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.composer-status">
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+</Styles>

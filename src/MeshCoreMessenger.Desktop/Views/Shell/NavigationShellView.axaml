@@ -3,6 +3,7 @@
   xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
   xmlns:shell="using:MeshCoreMessenger.Desktop.Views.Shell"
   x:Class="MeshCoreMessenger.Desktop.Views.Shell.NavigationShellView"
+  x:Name="ShellRoot"
   x:DataType="vm:NavigationShellViewModel">
   <UserControl.Resources>
     <DataTemplate x:Key="NavigationItemTemplate" x:DataType="vm:NavigationShellItem">
@@ -50,7 +51,12 @@
       </Grid>
     </Border>
     <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
+      <Grid>
+      <ContentControl Content="{Binding WorkspaceContent, ElementName=ShellRoot}"
+                      IsVisible="{Binding IsWorkspaceVisible, ElementName=ShellRoot}"
+                      HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
       <ContentControl Content="{Binding SelectedItem}"
+        IsVisible="{Binding !IsWorkspaceVisible, ElementName=ShellRoot}"
         HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
         <ContentControl.ContentTemplate>
           <DataTemplate x:DataType="vm:NavigationShellItem">
@@ -64,6 +70,7 @@
           </DataTemplate>
         </ContentControl.ContentTemplate>
       </ContentControl>
+      </Grid>
     </Border>
   </Grid>
 </UserControl>

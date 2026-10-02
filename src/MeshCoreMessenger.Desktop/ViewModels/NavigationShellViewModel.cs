@@ -40,8 +40,16 @@ public sealed class NavigationShellViewModel : ObservableObject
     public NavigationShellItem SelectedItem
     {
         get => _selectedItem;
-        private set => SetProperty(ref _selectedItem, value);
+        private set
+        {
+            if (SetProperty(ref _selectedItem, value))
+                OnPropertyChanged(nameof(IsChatSelected));
+        }
     }
+
+    public bool IsChatSelected => SelectedItem.Section is ShellSection.PublicChats or ShellSection.PrivateChats;
+
+    public void SelectSection(ShellSection section) => Select(TopItems.Concat(BottomItems).Single(item => item.Section == section));
 
     private void Select(NavigationShellItem item)
     {

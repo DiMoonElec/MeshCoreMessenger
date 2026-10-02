@@ -27,7 +27,7 @@ public sealed class MainWindowViewModelTests
         Assert.Empty(viewModel.KnownNodes);
         Assert.Null(viewModel.ViewedNode);
         Assert.Empty(viewModel.Conversations);
-        Assert.Equal("Выберите ноду для просмотра истории", viewModel.Status);
+        Assert.Equal("Нет истории подключённой ноды", viewModel.Status);
         Assert.Equal("Не подключено", viewModel.ConnectionStatus);
         await viewModel.StopAsync();
     }
@@ -68,21 +68,23 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SelectionPersistsAcrossViewModelRestart()
+    public async Task LastIdentifiedNodePersistsAcrossViewModelRestart()
     {
         var settings = CreateSettings(NodeAId, follow: false);
         var nodes = CreateTwoNodes();
-        var first = CreateViewModel(new FakeHistoryReader(), nodes: nodes, settings: settings);
+        var supervisor = new FakeConnectionSupervisor();
+        var first = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: nodes, settings: settings);
         await first.LoadAsync(CancellationToken);
 
-        await first.SelectViewedNodeAsync(first.KnownNodes.Single(item => item.Id == NodeBId), CancellationToken);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeBId, Guid.NewGuid()));
+        await WaitUntilAsync(() => settings.Values.GetValueOrDefault(MainWindowViewModel.LastConnectedNodeSettingKey) == NodeBId.ToString("D"));
         await first.StopAsync();
 
         var second = CreateViewModel(new FakeHistoryReader(), nodes: nodes, settings: settings);
         await second.LoadAsync(CancellationToken);
 
         Assert.Equal(NodeBId, second.ViewedNode?.Id);
-        Assert.True(second.CanSelectViewedNode);
+        Assert.False(second.CanSelectViewedNode);
         await second.StopAsync();
     }
 
@@ -113,7 +115,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SlowNodeAResultCannotOverwriteNodeBAfterSelectionChanges()
+    public async Task SlowNodeAResultCannotOverwriteNodeBAfterIdentityChanges()
     {
         var conversationA = Guid.NewGuid();
         var conversationB = Guid.NewGuid();
@@ -122,20 +124,20 @@ public sealed class MainWindowViewModelTests
         history.SetConversations(NodeBId, [CreateSummary(NodeBId, conversationB, "B", 2)]);
         history.Messages[conversationA] = [CreateMessage(conversationA, 1, "A body")];
         history.Messages[conversationB] = [CreateMessage(conversationB, 2, "B body")];
-        var viewModel = CreateViewModel(history, nodes: CreateTwoNodes());
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(history, supervisor, nodes: CreateTwoNodes());
         await viewModel.LoadAsync(CancellationToken);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeBId, Guid.NewGuid()));
+        await WaitUntilAsync(() => viewModel.Messages.FirstOrDefault()?.Body == "B body");
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         history.ConversationGates[NodeAId] = gate;
 
-        var slowA = viewModel.SelectViewedNodeAsync(
-            viewModel.KnownNodes.Single(item => item.Id == NodeAId),
-            CancellationToken);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeAId, Guid.NewGuid(), generation: 2));
         await WaitUntilAsync(() => history.GetConversationReads(NodeAId) >= 2);
-        await viewModel.SelectViewedNodeAsync(
-            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
-            CancellationToken);
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeBId, Guid.NewGuid(), generation: 3));
+        await WaitUntilAsync(() => viewModel.Messages.FirstOrDefault()?.Body == "B body");
         gate.SetResult();
-        await slowA;
+        await Task.Delay(30, CancellationToken);
 
         Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
         Assert.Equal(conversationB, Assert.Single(viewModel.Conversations).Id);
@@ -148,11 +150,8 @@ public sealed class MainWindowViewModelTests
     {
         var history = new FakeHistoryReader();
         var notifications = new FakeMessageCommitNotifications();
-        var viewModel = CreateViewModel(history, notifications: notifications, nodes: CreateTwoNodes());
+        var viewModel = CreateViewModel(history, notifications: notifications, nodes: CreateTwoNodes(), settings: CreateSettings(NodeBId, false));
         await viewModel.LoadAsync(CancellationToken);
-        await viewModel.SelectViewedNodeAsync(
-            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
-            CancellationToken);
         var reads = history.TotalConversationReads;
 
         notifications.Publish(CreateCommit(NodeAId, inserted: true));
@@ -321,11 +320,8 @@ public sealed class MainWindowViewModelTests
     public async Task IdentifiedNodeReplacesOfflineSelectionAndLocksNodeSelector()
     {
         var supervisor = new FakeConnectionSupervisor();
-        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
+        var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes(), settings: CreateSettings(NodeBId, false));
         await viewModel.LoadAsync(CancellationToken);
-        await viewModel.SelectViewedNodeAsync(
-            viewModel.KnownNodes.Single(item => item.Id == NodeBId),
-            CancellationToken);
 
         supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeAId, Guid.NewGuid()));
         await WaitUntilAsync(() => viewModel.ViewedNode?.Id == NodeAId);
@@ -342,7 +338,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task DisconnectRestoresOfflineNodeSelectionWithoutChangingActiveHistoryEarly()
+    public async Task DisconnectKeepsLastNodeHistoryAndDoesNotAllowManualSwitch()
     {
         var supervisor = new FakeConnectionSupervisor();
         var viewModel = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: CreateTwoNodes());
@@ -357,12 +353,13 @@ public sealed class MainWindowViewModelTests
         Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
 
         supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Offline, null, Guid.NewGuid()));
-        await WaitUntilAsync(() => viewModel.CanSelectViewedNode);
+        await WaitUntilAsync(() => viewModel.ConnectionStatus == "Не подключено");
         await viewModel.SelectViewedNodeAsync(
             viewModel.KnownNodes.Single(item => item.Id == NodeBId),
             CancellationToken);
 
-        Assert.Equal(NodeBId, viewModel.ViewedNode?.Id);
+        Assert.Equal(NodeAId, viewModel.ViewedNode?.Id);
+        Assert.False(viewModel.CanSelectViewedNode);
         await viewModel.StopAsync();
     }
 
@@ -413,7 +410,7 @@ public sealed class MainWindowViewModelTests
         await WaitUntilAsync(() => viewModel.ConnectionStatus == expectedStatus);
 
         Assert.Contains("test reason", viewModel.ConnectionStatusDetail, StringComparison.Ordinal);
-        Assert.Equal(state == ConnectionSupervisorState.Offline, viewModel.CanSelectViewedNode);
+        Assert.False(viewModel.CanSelectViewedNode);
         await viewModel.StopAsync();
     }
 
@@ -513,6 +510,68 @@ public sealed class MainWindowViewModelTests
             NullLogger<MainWindowViewModel>.Instance);
     }
 
+    [Fact]
+    public async Task LegacyOfflineSelectorDoesNotOverrideMostRecentlyIdentifiedNode()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var nodes = new FakeNodeStore([CreateNode(NodeAId, "A", 1) with { LastSeenUtc = now.AddDays(-2) },
+            CreateNode(NodeBId, "B", 2) with { LastSeenUtc = now.AddDays(-1) }]);
+        var settings = new FakeSettingsStore();
+        settings.Values[MainWindowViewModel.ViewedNodeSettingKey] = NodeAId.ToString("D");
+        var vm = CreateViewModel(new FakeHistoryReader(), nodes: nodes, settings: settings);
+        await vm.LoadAsync(CancellationToken);
+        Assert.Equal(NodeBId, vm.ViewedNode?.Id);
+        await vm.SelectViewedNodeAsync(vm.KnownNodes.Single(node => node.Id == NodeAId), CancellationToken);
+        Assert.Equal(NodeBId, vm.ViewedNode?.Id);
+        Assert.False(vm.CanSelectViewedNode);
+        await vm.StopAsync();
+    }
+
+    [Fact]
+    public async Task ShellHidesSharedWorkspaceWithoutStoppingOrRecreatingOwners()
+    {
+        var history = new FakeHistoryReader();
+        var id = Guid.NewGuid();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, id, "Selected", 1)]);
+        history.Messages[id] = [CreateMessage(id, 1, "Body")];
+        var vm = CreateViewModel(history);
+        await vm.LoadAsync(CancellationToken);
+        var navigation = vm.Navigation;
+        var window = navigation.History;
+        var draft = navigation.Draft;
+        window.ReportVisibleRange(null, null, true, true);
+        vm.Shell.SelectSection(ShellSection.Settings);
+        Assert.False(vm.IsChatWorkspaceVisible);
+        Assert.False(window.IsWindowActive);
+        vm.Shell.SelectSection(ShellSection.PrivateChats);
+        await WaitUntilAsync(() => vm.IsChatWorkspaceVisible);
+        Assert.Same(navigation, vm.Navigation);
+        Assert.Same(window, vm.Navigation.History);
+        Assert.Same(draft, vm.Navigation.Draft);
+        Assert.Equal(id, vm.SelectedConversation?.Id);
+        Assert.Equal("Body", Assert.Single(vm.Messages).Body);
+        await vm.StopAsync();
+    }
+
+    [Fact]
+    public async Task RapidPublicPrivateSwitchCannotExposeLatePublicProjectionUnderPrivateTab()
+    {
+        var history = new FakeHistoryReader();
+        var vm = CreateViewModel(history);
+        await vm.LoadAsync(CancellationToken);
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        history.ConversationGates[NodeAId] = gate;
+        vm.Shell.SelectSection(ShellSection.PublicChats);
+        await WaitUntilAsync(() => history.GetConversationReads(NodeAId) >= 2);
+        vm.Shell.SelectSection(ShellSection.PrivateChats);
+        gate.SetResult();
+        await WaitUntilAsync(() => vm.Navigation.SelectedTab.Tab == MessengerNavigationTab.Personal && vm.IsChatWorkspaceVisible);
+        await Task.Delay(30, CancellationToken);
+        Assert.Equal(MessengerNavigationTab.Personal, vm.Navigation.SelectedTab.Tab);
+        Assert.Equal(ShellSection.PrivateChats, vm.Shell.SelectedItem.Section);
+        await vm.StopAsync();
+    }
+
     private static FakeNodeStore CreateTwoNodes() => new(
         [CreateNode(NodeAId, "Node A", 0x11), CreateNode(NodeBId, "Node B", 0x22)]);
 
@@ -520,6 +579,7 @@ public sealed class MainWindowViewModelTests
     {
         var settings = new FakeSettingsStore();
         settings.Values["desktop.viewed-node-id"] = nodeId.ToString("D");
+        settings.Values[MainWindowViewModel.LastConnectedNodeSettingKey] = nodeId.ToString("D");
         settings.Values["desktop.follow-active-node"] = follow.ToString();
         return settings;
     }

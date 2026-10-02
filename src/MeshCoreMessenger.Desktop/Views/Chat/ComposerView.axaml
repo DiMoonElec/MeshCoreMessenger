@@ -1,0 +1,16 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ComposerView" x:DataType="vm:DraftEditorViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ComposerStyles.axaml" />
+  </UserControl.Styles>
+  <Border Classes="composer">
+    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+      <TextBox x:Name="MessageInput" Classes="message-input" Text="{Binding Text, Mode=TwoWay}"
+               IsEnabled="{Binding CanEdit}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="Сообщение…" />
+      <Button Classes="send-button" Grid.Column="1" Content="➤" IsEnabled="False"
+              AutomationProperties.Name="Отправить" ToolTip.Tip="Отправка появится на этапе D. Сейчас сохраняется только черновик." />
+      <TextBlock Classes="composer-status" Grid.Row="1" Grid.ColumnSpan="2" Text="{Binding Status}" />
+    </Grid>
+  </Border>
+</UserControl>

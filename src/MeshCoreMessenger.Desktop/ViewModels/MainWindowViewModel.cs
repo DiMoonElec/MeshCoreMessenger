@@ -15,6 +15,7 @@ namespace MeshCoreMessenger.Desktop.ViewModels;
 public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 {
     internal const string ViewedNodeSettingKey = "desktop.viewed-node-id";
+    internal const string LastConnectedNodeSettingKey = "desktop.last-connected-node-id";
 
     private const int KnownNodePageSize = 500;
     private readonly INodeStore _nodes;
@@ -45,6 +46,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private long _connectionStateVersion;
     private int _projectionRefreshRequested;
     private int _stopped;
+    private bool _syncingShell;
+    private readonly SemaphoreSlim _shellNavigationGate = new(1, 1);
+    private long _shellRequestVersion;
 
     public MainWindowViewModel(
         IConversationDirectoryReader directory,
@@ -91,12 +95,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         CloseConnectionSettingsCommand = new RelayCommand(() => IsConnectionSettingsOpen = false);
         _supervisor.StateChanged += OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted += OnMessageCommitted;
+        Shell.PropertyChanged += OnShellPropertyChanged;
+        Navigation.PropertyChanged += OnNavigationPropertyChanged;
         _projectionRefreshWorker = Track(ProcessProjectionRefreshesAsync());
     }
 
     public string Title => AppInformation.ProductName;
 
     public NavigationShellViewModel Shell { get; } = new();
+    public bool IsChatWorkspaceVisible => Shell.IsChatSelected && Navigation.SelectedTab.Tab ==
+        (Shell.SelectedItem.Section == ShellSection.PublicChats ? MessengerNavigationTab.Channels : MessengerNavigationTab.Personal);
 
     public IReadOnlyList<DesktopThemeOption> ThemeOptions { get; } =
     [
@@ -186,7 +194,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public bool HasViewedNode => ViewedNode is not null;
     public string? ViewedNodePublicKeyHex => ViewedNode?.PublicKeyHex;
 
-    public bool CanSelectViewedNode => _connectionState == ConnectionSupervisorState.Offline;
+    public bool CanSelectViewedNode => false;
 
     public IAsyncRelayCommand ConnectCommand { get; }
     public IAsyncRelayCommand DisconnectCommand { get; }
@@ -247,7 +255,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             OnPropertyChanged(nameof(SavedWindowPlacement));
             await Profiles.LoadAsync(linkedCancellation.Token);
             var nodes = await _nodes.GetAllAsync(KnownNodePageSize, linkedCancellation.Token);
-            var viewedNodeSetting = await _settings.GetAsync(ViewedNodeSettingKey, linkedCancellation.Token);
+            var viewedNodeSetting = await _settings.GetAsync(LastConnectedNodeSettingKey, linkedCancellation.Token);
 
             ReplaceKnownNodes(nodes);
 
@@ -264,6 +272,16 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             {
                 viewedNode = KnownNodes.FirstOrDefault(item => item.Id == restoredNodeId);
             }
+            else
+            {
+                // Upgrade older installations using the node last seen by Identify, not a manual
+                // offline selection or a profile/endpoint. No arbitrary cross-node browsing.
+                var latest = nodes.OrderByDescending(node => node.LastSeenUtc).FirstOrDefault();
+                viewedNode = KnownNodes.FirstOrDefault(item => item.Id == latest?.Id);
+            }
+
+            if (activeNode is not null)
+                await _settings.SetAsync(LastConnectedNodeSettingKey, activeNode.Id.ToString("D"), linkedCancellation.Token);
 
             var version = ApplyViewedNode(viewedNode);
             if (viewedNode is not null)
@@ -330,6 +348,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted -= OnMessageCommitted;
+        Shell.PropertyChanged -= OnShellPropertyChanged;
+        Navigation.PropertyChanged -= OnNavigationPropertyChanged;
         _lifetimeCancellation.Cancel();
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
@@ -534,6 +554,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                 await LoadViewedHistoryAsync(nodeId, contextVersion, _lifetimeCancellation.Token);
             }
 
+            if (node is not null && version == Volatile.Read(ref _connectionStateVersion) && ActiveNode?.Id == node.Id)
+                await _settings.SetAsync(LastConnectedNodeSettingKey, node.Id.ToString("D"), _lifetimeCancellation.Token);
+
             if (snapshot.State == ConnectionSupervisorState.Online &&
                 followedNodeId is null &&
                 snapshot.NodeId == ViewedNode?.Id)
@@ -665,7 +688,72 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             return;
         }
 
+        var shellVersion = Volatile.Read(ref _shellRequestVersion);
         await Navigation.LoadNodeAsync(nodeId, cancellationToken, dispatchResult);
+        if (contextVersion == Volatile.Read(ref _viewContextVersion) && ViewedNode?.Id == nodeId && Shell.IsChatSelected &&
+            shellVersion == Volatile.Read(ref _shellRequestVersion))
+        {
+            void SyncShell()
+            {
+                _syncingShell = true;
+                try
+                {
+                    Shell.SelectSection(Navigation.SelectedTab.Tab switch
+                    {
+                        MessengerNavigationTab.Channels => ShellSection.PublicChats,
+                        MessengerNavigationTab.Devices => ShellSection.Devices,
+                        _ => ShellSection.PrivateChats,
+                    });
+                }
+                finally { _syncingShell = false; }
+            }
+            if (dispatchResult)
+                await _dispatcher.InvokeAsync(SyncShell, cancellationToken);
+            else
+                SyncShell();
+        }
+    }
+
+    private void OnShellPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName != nameof(NavigationShellViewModel.SelectedItem) || _syncingShell || Volatile.Read(ref _stopped) != 0)
+        {
+            if (args.PropertyName == nameof(NavigationShellViewModel.IsChatSelected))
+                OnPropertyChanged(nameof(IsChatWorkspaceVisible));
+            return;
+        }
+        OnPropertyChanged(nameof(IsChatWorkspaceVisible));
+        Navigation.History.ReportVisibleRange(null, null, false, false);
+        var revision = Interlocked.Increment(ref _shellRequestVersion);
+        var tab = Shell.SelectedItem.Section switch
+        {
+            ShellSection.PublicChats => MessengerNavigationTab.Channels,
+            ShellSection.PrivateChats => MessengerNavigationTab.Personal,
+            _ => (MessengerNavigationTab?)null,
+        };
+        if (tab is { } selected)
+            Track(ApplyShellTabAsync(selected, revision));
+    }
+
+    private void OnNavigationPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedTab))
+            OnPropertyChanged(nameof(IsChatWorkspaceVisible));
+    }
+
+    private async Task ApplyShellTabAsync(MessengerNavigationTab tab, long revision)
+    {
+        try
+        {
+            await _shellNavigationGate.WaitAsync(_lifetimeCancellation.Token);
+            try
+            {
+                if (revision == Volatile.Read(ref _shellRequestVersion))
+                    await SelectNavigationTabCoreAsync(Navigation.Tabs.Single(item => item.Tab == tab), _lifetimeCancellation.Token);
+            }
+            finally { _shellNavigationGate.Release(); }
+        }
+        catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
     }
 
     private async Task PersistViewedNodeAsync(
@@ -697,7 +785,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ViewedNode = node;
         Navigation.ClearNode();
         ErrorMessage = null;
-        Status = node is null ? "Выберите ноду для просмотра истории" : "Загрузка истории ноды…";
+        Status = node is null ? "Нет истории подключённой ноды" : "Загрузка истории ноды…";
         return version;
     }
 

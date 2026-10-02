@@ -1,0 +1,41 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationListView" x:DataType="vm:MainWindowViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConversationListStyles.axaml" />
+  </UserControl.Styles>
+  <Border Classes="conversation-list-pane">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <StackPanel Classes="directory-header">
+        <TextBlock Classes="directory-title" Text="{Binding Navigation.PrimaryGroupTitle}" />
+        <TextBlock Classes="directory-node" Text="{Binding ViewedNode.HeaderLabel}" TextTrimming="CharacterEllipsis"
+                   ToolTip.Tip="{Binding ViewedNodePublicKeyHex}" />
+        <TextBox x:Name="DirectorySearch" Classes="directory-search" PlaceholderText="Поиск чатов"
+                 Text="{Binding Navigation.DirectorySearchText, Mode=TwoWay}" />
+        <TextBlock Classes="directory-meta" Text="{Binding Navigation.DirectorySearchStatus}" IsVisible="{Binding Navigation.HasDirectorySearchStatus}" />
+      </StackPanel>
+      <Grid Grid.Row="1">
+        <ListBox x:Name="ConversationList" Classes="conversations" ItemsSource="{Binding Navigation.Conversations}"
+                 SelectedItem="{Binding Navigation.SelectedConversation, Mode=OneWay}" SelectionChanged="OnSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:ConversationListItem">
+              <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+                <TextBlock Classes="conversation-title" Text="{Binding Title}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Title}" />
+                <TextBlock Classes="directory-meta" Grid.Column="1" Text="{Binding ActivityTime}" />
+                <TextBlock Classes="conversation-preview" Grid.Row="1" Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+                <Border Classes="unread-badge" Grid.Row="1" Grid.Column="1" IsVisible="{Binding HasUnreadMessages}">
+                  <TextBlock Classes="unread-text" Text="{Binding UnreadLabel}" />
+                </Border>
+              </Grid>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Classes="directory-empty" Text="{Binding Navigation.EmptyText}" IsVisible="{Binding Navigation.IsEmpty}" />
+      </Grid>
+      <StackPanel Grid.Row="2" Classes="directory-footer">
+        <Button Content="Ещё чаты" Command="{Binding Navigation.LoadMoreCommand}" IsVisible="{Binding Navigation.CanLoadMore}" />
+        <TextBlock Classes="directory-error" Text="{Binding Navigation.ErrorMessage}" IsVisible="{Binding Navigation.HasError}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

@@ -12,16 +12,15 @@ Identify. Данные для подписи берутся из Nodes по эт
 быть известна, но это ещё не Online. Профиль активной attempt берётся из
 Snapshot.ProfileId, а выбор в редакторе профиля отображается отдельно.
 
-`ViewedNodeId` — выбранная собственная нода, чья история открыта в UI. При offline
-startup восстановить её из локальных Settings с проверкой существования; при
-отсутствии выбора показать selector/пустое состояние. Selector доступен только в
-состоянии `Offline`. После Identify, начиная с `Synchronizing`, UI автоматически
-выбирает фактическую active node; ручной просмотр истории другой ноды запрещён до
-полного Disconnect -> Offline. Connecting/Identifying/RetryWaiting/Disconnecting
-также блокируют смену node context. Reconnect заново определяет identity и выбирает
-её историю. Disconnect очищает active identity, сохраняет последний ViewedNodeId и
-снова разрешает выбирать сохранённые истории. Таким образом connected UI никогда
-не показывает историю B как текущую при session с нодой A.
+`ViewedNodeId` — собственная нода, чья история открыта в UI. Уточнение UI2
+(02.10.2026) заменяет прежний offline selector: теперь в любом состоянии ручного
+выбора другой ноды нет. Offline startup восстанавливает
+`desktop.last-connected-node-id` с проверкой существования; при отсутствии ключа
+выбирает наиболее недавно LastSeenUtc ноду (legacy/fixture), при отсутствии нод —
+пустое состояние. Прежний ручной `desktop.viewed-node-id` игнорируется.
+После Identify, начиная с `Synchronizing`, UI выбирает и сохраняет фактическую
+active node. Reconnect заново определяет identity. Disconnect очищает active identity,
+но сохраняет последнюю историю. Connected UI не показывает историю B при session A.
 
 Навигация, запросы страниц/поиска и записи read position/draft несут NodeId. Core
 проверяет принадлежность ConversationId ноде. Контекст UI имеет собственную revision

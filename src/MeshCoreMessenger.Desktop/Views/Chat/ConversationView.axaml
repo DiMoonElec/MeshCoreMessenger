@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
+             xmlns:controls="using:MeshCoreMessenger.Desktop.Controls"
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationView" x:DataType="vm:MainWindowViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConversationStyles.axaml" />
+  </UserControl.Styles>
+  <Grid Classes="conversation" RowDefinitions="Auto,*,Auto">
+    <Border Classes="conversation-header">
+      <Grid ColumnDefinitions="Auto,*,Auto">
+        <Button Content="‹" Command="{Binding Navigation.BackCommand}" IsVisible="{Binding Navigation.CanNavigateBack}" ToolTip.Tip="Назад к чатам" />
+        <StackPanel Grid.Column="1" Classes="header-text">
+          <TextBlock Classes="chat-title" Text="{Binding Navigation.SelectedTitle}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Navigation.SelectedTitle}" />
+          <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+        <Button Grid.Column="2" Content="↓" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.HasSelection}" ToolTip.Tip="К последнему сообщению" />
+      </Grid>
+    </Border>
+    <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto">
+      <StackPanel Classes="history-tools" IsVisible="{Binding Navigation.HasSelection}">
+        <TextBox x:Name="HistorySearch" PlaceholderText="Поиск в переписке" Text="{Binding Navigation.History.SearchText, Mode=TwoWay}" />
+        <TextBlock Classes="chat-meta" Text="{Binding Navigation.History.SearchStatus}" IsVisible="{Binding Navigation.History.HasSearchStatus}" />
+        <ListBox Classes="history-search-results" ItemsSource="{Binding Navigation.History.SearchResults}"
+                 IsVisible="{Binding Navigation.History.HasSearchResults}" SelectionChanged="OnSearchSelectionChanged">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:HistorySearchResultListItem">
+              <TextBlock Text="{Binding Preview}" TextTrimming="CharacterEllipsis" />
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <Button Content="Ещё результаты" Command="{Binding Navigation.History.LoadMoreSearchResultsCommand}" IsVisible="{Binding Navigation.History.CanLoadMoreSearchResults}" />
+        <Button Content="{Binding Navigation.History.UnreadLabel}" Command="{Binding Navigation.History.JumpToFirstUnreadCommand}" IsVisible="{Binding Navigation.History.HasUnreadMessages}" />
+      </StackPanel>
+      <Grid Grid.Row="1">
+        <controls:VirtualizedHistoryListBox x:Name="HistoryList" Classes="history" ItemsSource="{Binding Navigation.Messages}">
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:HistoryMessageListItem">
+              <Border Classes="message-bubble" BorderThickness="{Binding SearchBorderThickness}">
+                <StackPanel>
+                  <TextBlock Classes="message-date" Text="{Binding ReceivedTime}" />
+                  <TextBlock Classes="chat-meta" Text="{Binding ContentLabel}" IsVisible="{Binding HasContentLabel}" />
+                  <SelectableTextBlock Classes="message-body" Text="{Binding Body}" TextWrapping="Wrap" />
+                </StackPanel>
+              </Border>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </controls:VirtualizedHistoryListBox>
+        <TextBlock Classes="history-empty" Text="В этом чате пока нет сообщений" IsVisible="{Binding !Navigation.History.HasMessages}" />
+      </Grid>
+      <StackPanel Grid.Row="2" Classes="history-tools">
+        <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
+        <TextBlock Classes="chat-error" Text="{Binding Navigation.History.ReadErrorMessage}" IsVisible="{Binding Navigation.History.HasReadError}" />
+      </StackPanel>
+    </Grid>
+    <Border Grid.Row="2" IsVisible="{Binding Navigation.HasSelection}">
+      <chat:ComposerView DataContext="{Binding Navigation.Draft}" />
+    </Border>
+  </Grid>
+</UserControl>

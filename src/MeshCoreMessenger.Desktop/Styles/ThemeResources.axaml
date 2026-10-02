@@ -1,12 +1,52 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <GridLength x:Key="ShellRailWidth">104</GridLength>
+  <GridLength x:Key="ChatListWidth">300</GridLength>
+  <x:Double x:Key="ChatNarrowWidth">680</x:Double>
+  <x:Double x:Key="ChatFontSize">14</x:Double>
+  <x:Double x:Key="ChatTitleFontSize">18</x:Double>
+  <x:Double x:Key="ChatMetaFontSize">11</x:Double>
+  <x:Double x:Key="ChatMessageMaxWidth">640</x:Double>
+  <x:Double x:Key="ChatComposerMinHeight">48</x:Double>
+  <x:Double x:Key="ChatComposerMaxHeight">144</x:Double>
+  <Thickness x:Key="ChatWorkspaceMargin">0,104,0,0</Thickness>
+  <Thickness x:Key="ChatPanePadding">16</Thickness>
+  <Thickness x:Key="ChatRowPadding">16,12</Thickness>
+  <Thickness x:Key="ChatBubblePadding">14,10</Thickness>
+  <Thickness x:Key="ChatMessageMargin">16,4</Thickness>
+  <Thickness x:Key="ChatControlMargin">0,4</Thickness>
+  <Thickness x:Key="ChatBadgePadding">7,2</Thickness>
+  <Thickness x:Key="ChatSeparatorThickness">0,0,1,0</Thickness>
+  <Thickness x:Key="ChatFocusThickness">1</Thickness>
+  <SolidColorBrush x:Key="ChatTransparentBrush" Color="Transparent" />
+  <x:Double x:Key="ChatBubbleMinWidth">160</x:Double>
+  <CornerRadius x:Key="ChatCornerRadius">12</CornerRadius>
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
+      <SolidColorBrush x:Key="ChatCanvasBrush" Color="#EEF3F8" />
+      <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ChatTextBrush" Color="#192B3B" />
+      <SolidColorBrush x:Key="ChatMutedBrush" Color="#63778A" />
+      <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#DCE5ED" />
+      <SolidColorBrush x:Key="ChatBubbleBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ChatHoverBrush" Color="#EAF1F8" />
+      <SolidColorBrush x:Key="ChatSelectedBrush" Color="#D7EAFB" />
+      <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ChatErrorBrush" Color="#B3261E" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
+      <SolidColorBrush x:Key="ChatCanvasBrush" Color="#101B27" />
+      <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#182635" />
+      <SolidColorBrush x:Key="ChatTextBrush" Color="#E5EEF7" />
+      <SolidColorBrush x:Key="ChatMutedBrush" Color="#A1B2C3" />
+      <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#2B3D50" />
+      <SolidColorBrush x:Key="ChatBubbleBrush" Color="#213448" />
+      <SolidColorBrush x:Key="ChatHoverBrush" Color="#23374C" />
+      <SolidColorBrush x:Key="ChatSelectedBrush" Color="#244A69" />
+      <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ChatErrorBrush" Color="#FFB4AB" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>
