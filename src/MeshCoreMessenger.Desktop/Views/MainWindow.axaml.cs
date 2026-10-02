@@ -5,6 +5,7 @@ using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views.Chat;
 using MeshCoreMessenger.Desktop.Views.Connection;
+using MeshCoreMessenger.Desktop.Views.Settings;
 
 namespace MeshCoreMessenger.Desktop.Views;
 
@@ -27,6 +28,7 @@ public sealed partial class MainWindow : Window
     private MainWindowViewModel? _subscribedViewModel;
     private readonly ChatsView _chats = new();
     private readonly ConnectionSettingsView _connection = new();
+    private readonly ApplicationSettingsView _settings = new();
 
     public MainWindow()
     {
@@ -34,6 +36,7 @@ public sealed partial class MainWindow : Window
         ShellHost.RegisterContent(ShellSection.PublicChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
         ShellHost.RegisterContent(ShellSection.PrivateChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
         ShellHost.RegisterContent(ShellSection.Connection, _connection);
+        ShellHost.RegisterContent(ShellSection.Settings, _settings);
         DataContextChanged += OnWindowDataContextChanged;
         SizeChanged += (_, _) => CaptureWindowPlacement();
         PositionChanged += (_, _) => CaptureWindowPlacement();
@@ -95,6 +98,7 @@ public sealed partial class MainWindow : Window
         _subscribedViewModel = DataContext as MainWindowViewModel;
         _chats.DataContext = _subscribedViewModel;
         _connection.DataContext = _subscribedViewModel?.Profiles;
+        _settings.DataContext = _subscribedViewModel;
         ShellHost.RefreshContent();
         if (_subscribedViewModel is not null)
         {

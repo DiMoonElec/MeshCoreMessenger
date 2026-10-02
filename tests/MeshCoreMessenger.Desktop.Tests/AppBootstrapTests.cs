@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MeshCoreMessenger.Core.Application;
+using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
@@ -13,6 +14,37 @@ namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class AppBootstrapTests
 {
+    [Theory]
+    [InlineData(DesktopThemePreference.System)]
+    [InlineData(DesktopThemePreference.Dark)]
+    [InlineData(DesktopThemePreference.Light)]
+    public async Task SettingsThemeUsesExistingPreferencesAndSurvivesReload(DesktopThemePreference theme)
+    {
+        using var temporary = new TemporaryDirectory();
+        var paths = temporary.CreatePaths();
+        await using var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
+        await using var services = AppBootstrap.CreateServiceProvider(paths, storage);
+        var vm = services.GetRequiredService<MainWindowViewModel>();
+        await vm.LoadAsync(CancellationToken);
+        Assert.Equal(new[] { "Авто", "Тёмная", "Светлая" }, vm.ThemeOptions.Select(option => option.Title));
+
+        vm.SelectedTheme = vm.ThemeOptions.Single(option => option.Value == theme);
+        Assert.Equal(theme, vm.SelectedTheme.Value);
+        var expectedVariant = theme switch
+        {
+            DesktopThemePreference.Dark => Avalonia.Styling.ThemeVariant.Dark,
+            DesktopThemePreference.Light => Avalonia.Styling.ThemeVariant.Light,
+            _ => Avalonia.Styling.ThemeVariant.Default,
+        };
+        Assert.Equal(expectedVariant, App.ToThemeVariant(vm.SelectedTheme.Value));
+        await services.GetRequiredService<DesktopPreferences>().FlushAsync(CancellationToken);
+        var restored = new DesktopPreferences(storage.Settings);
+        await restored.LoadAsync(CancellationToken);
+        Assert.Equal(theme, restored.Snapshot.Theme);
+        Assert.Equal(ConnectionSupervisorState.Offline, services.GetRequiredService<IConnectionSupervisor>().Snapshot.State);
+        await vm.StopAsync();
+    }
+
     [Fact]
     public async Task BootstrapProvidesStorageViewModelAndLogging()
     {

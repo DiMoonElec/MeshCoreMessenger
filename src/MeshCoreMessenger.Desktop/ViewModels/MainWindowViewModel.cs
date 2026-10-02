@@ -108,9 +108,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     public IReadOnlyList<DesktopThemeOption> ThemeOptions { get; } =
     [
-        new(DesktopThemePreference.System, "Как в системе"),
-        new(DesktopThemePreference.Light, "Светлая"),
+        new(DesktopThemePreference.System, "Авто"),
         new(DesktopThemePreference.Dark, "Тёмная"),
+        new(DesktopThemePreference.Light, "Светлая"),
     ];
 
     public DesktopThemeOption SelectedTheme

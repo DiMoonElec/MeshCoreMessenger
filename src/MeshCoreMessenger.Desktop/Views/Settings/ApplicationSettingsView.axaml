@@ -1,0 +1,31 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Settings.ApplicationSettingsView"
+             x:DataType="vm:MainWindowViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ApplicationSettingsStyles.axaml" />
+  </UserControl.Styles>
+  <ScrollViewer Classes="application-settings">
+    <StackPanel Classes="settings-column">
+      <TextBlock Classes="settings-heading" Text="Настройки" />
+      <Border Classes="settings-card">
+        <StackPanel Classes="settings-fields">
+          <TextBlock Classes="settings-heading" Text="Оформление" />
+          <TextBlock Classes="settings-label" Text="Тема" />
+          <ComboBox ItemsSource="{Binding ThemeOptions}"
+                    SelectedItem="{Binding SelectedTheme, Mode=TwoWay}"
+                    AutomationProperties.Name="Тема оформления">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DesktopThemeOption">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Classes="settings-hint"
+                     Text="Авто — оформление как в системе. Выбранная тема применяется сразу." />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>
