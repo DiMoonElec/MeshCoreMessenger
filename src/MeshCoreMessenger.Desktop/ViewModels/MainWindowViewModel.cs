@@ -75,6 +75,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _dispatcher = dispatcher;
         _logger = logger;
         _connectionState = supervisor.Snapshot.State;
+        Devices = new DevicesWorkspaceViewModel(directory, dispatcher, searchDelay, logger);
         Navigation = new ConversationNavigationViewModel(
             directory,
             history,
@@ -103,6 +104,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         (_connectionState == ConnectionSupervisorState.Online && ActiveNode is { } node ? $" [{node.HeaderLabel}]" : string.Empty);
 
     public NavigationShellViewModel Shell { get; } = new();
+    public DevicesWorkspaceViewModel Devices { get; }
     public bool IsChatWorkspaceVisible => Shell.IsChatSelected && Navigation.SelectedTab.Tab ==
         (Shell.SelectedItem.Section == ShellSection.PublicChats ? MessengerNavigationTab.Channels : MessengerNavigationTab.Personal);
 
@@ -356,6 +358,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _projectionRefreshSignal.Release();
         await Navigation.StopAsync().ConfigureAwait(false);
         await Profiles.StopAsync().ConfigureAwait(false);
+        await Devices.StopAsync().ConfigureAwait(false);
 
         Task[] pending;
         lock (_pendingLoadsGate)
@@ -671,6 +674,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)
     {
         await Navigation.RefreshAsync(cancellationToken);
+        await Devices.RefreshAsync(cancellationToken);
         while (_pendingCommittedMessages.TryDequeue(out var message))
         {
             await Navigation.HandleCommittedMessageAsync(message, cancellationToken);
@@ -692,6 +696,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
         var shellVersion = Volatile.Read(ref _shellRequestVersion);
         await Navigation.LoadNodeAsync(nodeId, cancellationToken, dispatchResult);
+        if (contextVersion == Volatile.Read(ref _viewContextVersion))
+            await Devices.RefreshAsync(cancellationToken, dispatchResult);
         if (contextVersion == Volatile.Read(ref _viewContextVersion) && ViewedNode?.Id == nodeId && Shell.IsChatSelected &&
             shellVersion == Volatile.Read(ref _shellRequestVersion))
         {
@@ -785,6 +791,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     {
         var version = Interlocked.Increment(ref _viewContextVersion);
         ViewedNode = node;
+        Devices.SetNode(node?.Id, node?.HeaderLabel);
         Navigation.ClearNode();
         ErrorMessage = null;
         Status = node is null ? "Нет истории подключённой ноды" : "Загрузка истории ноды…";
@@ -816,6 +823,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         if (ViewedNode?.Id == item.Id)
         {
             ViewedNode = item;
+            Devices.SetNode(item.Id, item.HeaderLabel);
         }
 
         return item;

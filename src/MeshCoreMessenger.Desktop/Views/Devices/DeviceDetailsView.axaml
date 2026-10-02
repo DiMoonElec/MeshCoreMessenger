@@ -1,0 +1,60 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Devices.DeviceDetailsView" x:DataType="vm:DevicesWorkspaceViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/DeviceDetailsStyles.axaml" />
+  </UserControl.Styles>
+  <Grid RowDefinitions="Auto,*" Classes="device-details">
+    <Button Classes="device-back" Content="Назад" Command="{Binding BackCommand}" IsVisible="{Binding CanNavigateBack}" />
+    <Grid Grid.Row="1">
+      <TextBlock Classes="device-placeholder" Text="{Binding PlaceholderText}" IsVisible="{Binding ShowPlaceholder}" />
+      <TextBlock Classes="device-placeholder" Text="Загрузка карточки…" IsVisible="{Binding IsDetailLoading}" />
+      <StackPanel Classes="device-failure" IsVisible="{Binding HasDetailError}">
+        <TextBlock Classes="settings-error" Text="{Binding DetailError}" />
+        <Button Content="Повторить" Command="{Binding RetryDetailsCommand}" />
+      </StackPanel>
+      <ScrollViewer Classes="device-scroll" IsVisible="{Binding HasDetails}">
+        <StackPanel Classes="device-cards" DataContext="{Binding Details}" x:DataType="vm:DeviceDetailsViewModel">
+          <TextBlock Classes="device-title" Text="{Binding Name}" />
+          <TextBlock Classes="settings-hint" Text="{Binding Type}" />
+          <Border Classes="device-card">
+            <StackPanel Classes="device-fields">
+              <TextBlock Classes="settings-heading" Text="Идентификация" />
+              <TextBlock Classes="settings-label" Text="Полный public key" />
+              <SelectableTextBlock Classes="device-value" Text="{Binding PublicKey}" />
+              <TextBlock Classes="settings-label" Text="Справочник" />
+              <SelectableTextBlock Classes="device-value" Text="{Binding Presence}" />
+              <TextBlock Classes="settings-hint" Text="Наличие в справочнике не подтверждает текущую доступность устройства." />
+            </StackPanel>
+          </Border>
+          <Border Classes="device-card">
+            <StackPanel Classes="device-fields">
+              <TextBlock Classes="settings-heading" Text="Сохранённые сведения" />
+              <TextBlock Classes="settings-label" Text="Последний advert" />
+              <SelectableTextBlock Classes="device-value" Text="{Binding LastAdvert}" />
+              <TextBlock Classes="settings-label" Text="Координаты · широта, долгота" />
+              <SelectableTextBlock Classes="device-value" Text="{Binding Coordinates}" />
+              <TextBlock Classes="settings-hint" Text="{Binding CoordinatesNote}" />
+              <TextBlock Classes="settings-label" Text="Обновление локальной записи" />
+              <SelectableTextBlock Classes="device-value" Text="{Binding Updated}" />
+              <TextBlock Classes="settings-hint" Text="Это локально сохранённые данные. Просмотр карточки не запрашивает сведения по радио." />
+            </StackPanel>
+          </Border>
+          <Border Classes="device-card">
+            <Expander Header="Технические данные" IsExpanded="False">
+              <StackPanel Classes="device-fields">
+                <TextBlock Classes="settings-label" Text="Flags" />
+                <SelectableTextBlock Classes="device-value" Text="{Binding Flags}" />
+                <TextBlock Classes="settings-label" Text="Маршрут · raw hex" />
+                <SelectableTextBlock Classes="device-value" Text="{Binding RawRoute}" />
+                <TextBlock Classes="settings-hint" Text="Сохранено сырое поле маршрута без длины. Число хопов по нему определить нельзя." />
+                <TextBlock Classes="settings-label" Text="Advert payload · raw hex" />
+                <SelectableTextBlock Classes="device-value" Text="{Binding RawAdvert}" />
+              </StackPanel>
+            </Expander>
+          </Border>
+        </StackPanel>
+      </ScrollViewer>
+    </Grid>
+  </Grid>
+</UserControl>

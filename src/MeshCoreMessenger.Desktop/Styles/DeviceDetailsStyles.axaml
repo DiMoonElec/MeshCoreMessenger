@@ -1,0 +1,48 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/Typography.axaml" />
+  <Style Selector="Grid.device-details">
+    <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
+  </Style>
+  <Style Selector="Button.device-back">
+    <Setter Property="Margin" Value="{StaticResource ChatPanePadding}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style Selector="ScrollViewer.device-scroll">
+    <Setter Property="Padding" Value="{StaticResource SettingsPagePadding}" />
+    <Setter Property="HorizontalScrollBarVisibility" Value="Disabled" />
+  </Style>
+  <Style Selector="StackPanel.device-cards">
+    <Setter Property="MaxWidth" Value="{StaticResource SettingsColumnWidth}" />
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+    <Setter Property="Spacing" Value="{StaticResource SettingsSpacing}" />
+  </Style>
+  <Style Selector="Border.device-card">
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="Padding" Value="{StaticResource SettingsCardPadding}" />
+    <Setter Property="CornerRadius" Value="{StaticResource SettingsCardRadius}" />
+  </Style>
+  <Style Selector="StackPanel.device-fields">
+    <Setter Property="Spacing" Value="{StaticResource SettingsFieldSpacing}" />
+  </Style>
+  <Style Selector="TextBlock.device-title">
+    <Setter Property="FontSize" Value="{StaticResource ChatTitleFontSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="SelectableTextBlock.device-value">
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="TextBlock.device-placeholder, StackPanel.device-failure">
+    <Setter Property="Margin" Value="{StaticResource ChatPanePadding}" />
+    <Setter Property="HorizontalAlignment" Value="Center" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+  <Style Selector="TextBlock.device-placeholder">
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+</Styles>

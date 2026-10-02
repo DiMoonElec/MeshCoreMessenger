@@ -164,6 +164,14 @@ public sealed class FakeDataSeederTests
             Assert.Null(viewModel.ErrorMessage);
             Assert.Equal(seeded.NodeId, viewModel.ViewedNode!.Id);
             Assert.NotEmpty(viewModel.Navigation.Conversations);
+            Assert.Equal(6, viewModel.Devices.Items.Count);
+            Assert.Equal(new[] { "Датчик", "Комната", "Ретранслятор" },
+                viewModel.Devices.Items.Select(item => item.Type).Distinct().Order().ToArray());
+            var chatSelection = viewModel.Navigation.SelectedConversation;
+            var draftOwner = viewModel.Navigation.Draft;
+            viewModel.Shell.SelectSection(ShellSection.Devices);
+            Assert.Same(chatSelection, viewModel.Navigation.SelectedConversation);
+            Assert.Same(draftOwner, viewModel.Navigation.Draft);
             var supervisor = services.GetRequiredService<IConnectionSupervisor>();
             await services.GetRequiredService<DesktopConnectionLifecycle>().StartAsync(CancellationToken);
             Assert.Equal(ConnectionSupervisorState.Offline, supervisor.Snapshot.State);

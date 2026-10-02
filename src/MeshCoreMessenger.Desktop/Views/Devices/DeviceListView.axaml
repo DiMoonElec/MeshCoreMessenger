@@ -1,0 +1,40 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Devices.DeviceListView" x:DataType="vm:DevicesWorkspaceViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/DeviceListStyles.axaml" />
+  </UserControl.Styles>
+  <Border Classes="devices-list-pane">
+    <Grid RowDefinitions="Auto,*,Auto">
+      <StackPanel Classes="devices-header">
+        <TextBlock Classes="settings-heading" Text="Устройства" />
+        <TextBlock Classes="settings-hint" Text="{Binding NodeLabel}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding NodeLabel}" />
+        <TextBox Text="{Binding SearchText, Mode=TwoWay}" PlaceholderText="Поиск устройств" AutomationProperties.Name="Поиск устройств" />
+        <TextBlock Classes="settings-hint" Text="Загрузка…" IsVisible="{Binding IsLoading}" />
+      </StackPanel>
+      <Grid Grid.Row="1">
+        <ListBox x:Name="DeviceList" Classes="devices" ItemsSource="{Binding Items}"
+                 SelectedItem="{Binding Selected, Mode=OneWay}" SelectionChanged="OnSelectionChanged">
+          <ListBox.ItemsPanel>
+            <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+          </ListBox.ItemsPanel>
+          <ListBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:DeviceListItem">
+              <StackPanel>
+                <TextBlock Classes="device-name" Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Name}" />
+                <TextBlock Classes="device-type" Text="{Binding Type}" />
+                <TextBlock Classes="device-type" Text="Сохранено локально" IsVisible="{Binding IsSavedOnly}" />
+              </StackPanel>
+            </DataTemplate>
+          </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBlock Classes="device-empty" Text="{Binding EmptyText}" IsVisible="{Binding IsEmpty}" />
+      </Grid>
+      <StackPanel Grid.Row="2" Classes="devices-footer">
+        <TextBlock Classes="settings-error" Text="{Binding ListError}" />
+        <Button Content="Ещё устройства" Command="{Binding LoadMoreCommand}" IsVisible="{Binding CanLoadMore}" />
+        <Button Content="Обновить" Command="{Binding RefreshCommand}" />
+      </StackPanel>
+    </Grid>
+  </Border>
+</UserControl>

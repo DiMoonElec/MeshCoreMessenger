@@ -14,8 +14,8 @@
 | `ConversationListView` | Список, search, selection events | `ConversationNavigationViewModel` |
 | `ConversationView` / `ComposerView` | Header, history search, viewport/scroll adapter / draft | `HistoryWindowViewModel` / `DraftEditorViewModel` |
 | `ConnectionSettingsView` | Редактор профилей, port refresh, дополнительные параметры | `ConnectionProfilesViewModel` / `ConnectionProfileEditorViewModel`; theme остаётся отдельной вкладкой |
-| `DevicesWorkspaceView` | Node-scoped service directory, выбор устройства | Существующий directory API; отдельный devices VM при необходимости |
-| `DeviceDetailsView` | Read-only metadata и связанные служебные записи | `ContactDetailsProjection`, immutable context полного ключа/NodeId |
+| `DevicesWorkspaceView` / `DeviceListView` | Node-scoped service directory, поиск/paging, независимый выбор устройства | `DevicesWorkspaceViewModel`; viewed node задаёт существующий root owner |
+| `DeviceDetailsView` | Read-only metadata, без Mesh-запросов | `DeviceDetailsViewModel` из `ContactDetailsProjection`, immutable context полного ключа/NodeId |
 
 Для Repeater/Room/Sensor сначала достаточно одного `DeviceDetailsView` с
 условными блоками по типу. Отдельные специализированные карточки имеют смысл,

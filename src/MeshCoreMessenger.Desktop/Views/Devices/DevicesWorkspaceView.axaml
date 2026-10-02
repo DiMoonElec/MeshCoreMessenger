@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:devices="using:MeshCoreMessenger.Desktop.Views.Devices"
+             x:Class="MeshCoreMessenger.Desktop.Views.Devices.DevicesWorkspaceView" x:DataType="vm:DevicesWorkspaceViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/DevicesWorkspaceStyles.axaml" />
+  </UserControl.Styles>
+  <Grid x:Name="Workspace" Classes="devices-workspace">
+    <Grid.ColumnDefinitions>
+      <ColumnDefinition Width="{StaticResource ChatListWidth}" />
+      <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+    <devices:DeviceListView x:Name="Directory" IsVisible="{Binding IsListVisible}" />
+    <devices:DeviceDetailsView x:Name="Detail" Grid.Column="1" IsVisible="{Binding IsDetailVisible}" />
+  </Grid>
+</UserControl>

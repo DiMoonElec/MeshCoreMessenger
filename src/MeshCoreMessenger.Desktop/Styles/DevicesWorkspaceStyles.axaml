@@ -1,0 +1,5 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <Style Selector="Grid.devices-workspace">
+    <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
+  </Style>
+</Styles>

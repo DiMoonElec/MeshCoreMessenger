@@ -1,0 +1,58 @@
+<Styles xmlns="https://github.com/avaloniaui">
+  <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/Typography.axaml" />
+  <Style Selector="Border.devices-list-pane">
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ChatSeparatorBrush}" />
+    <Setter Property="BorderThickness" Value="{StaticResource ChatSeparatorThickness}" />
+  </Style>
+  <Style Selector="StackPanel.devices-header, StackPanel.devices-footer">
+    <Setter Property="Margin" Value="{StaticResource ChatPanePadding}" />
+    <Setter Property="Spacing" Value="{StaticResource SettingsFieldSpacing}" />
+  </Style>
+  <Style Selector="TextBlock.device-name">
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.device-type">
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="ListBox.devices">
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="Padding" Value="0" />
+  </Style>
+  <Style Selector="ListBox.devices ListBoxItem">
+    <Setter Property="Padding" Value="{StaticResource ChatRowPadding}" />
+    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+    <Setter Property="BorderBrush" Value="{StaticResource ChatTransparentBrush}" />
+    <Setter Property="BorderThickness" Value="{StaticResource ChatFocusThickness}" />
+    <Setter Property="Template">
+      <ControlTemplate>
+        <Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"
+                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+          <ContentPresenter Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                            HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}" />
+        </Border>
+      </ControlTemplate>
+    </Setter>
+  </Style>
+  <Style Selector="ListBox.devices ListBoxItem:pointerover">
+    <Setter Property="Background" Value="{DynamicResource ChatHoverBrush}" />
+  </Style>
+  <Style Selector="ListBox.devices ListBoxItem:selected">
+    <Setter Property="Background" Value="{DynamicResource ChatSelectedBrush}" />
+  </Style>
+  <Style Selector="ListBox.devices ListBoxItem:focus-visible">
+    <Setter Property="BorderBrush" Value="{DynamicResource ShellAccentBrush}" />
+  </Style>
+  <Style Selector="TextBlock.device-empty">
+    <Setter Property="Margin" Value="{StaticResource ChatPanePadding}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+  </Style>
+</Styles>

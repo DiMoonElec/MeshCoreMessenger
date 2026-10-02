@@ -123,3 +123,10 @@ Light/Dark connection render, ширины 660/380, больше не имеют
 
 Пользователь подтвердил успешную ручную проверку этой доработки 02.10.2026:
 «все круто, все корректно». Перенос статуса в заголовок принят.
+
+**UI3 реализован 02.10.2026.** Отдельные DevicesWorkspaceView, DeviceListView,
+DeviceDetailsView и локальные стили; независимая read-only selection, поиск,
+paging и adaptive list/detail. Core/schema/protocol не менялись, транспортные
+команды отсутствуют. Debug/Release Desktop 203/203, Release Core 131/131,
+MeshCoreSharp 92/92; пользователь подтвердил успешную ручную проверку.
+Границы, ограничения данных и чек-лист: [UI3 — устройства](ui3-devices.md).
