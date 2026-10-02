@@ -29,14 +29,17 @@ public static class DataDirectorySelection
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(directory, workingDirectory));
     }
 
-    public static string WindowTitle(string dataDirectory, string defaultDirectory)
+    public static string WindowTitle(string dataDirectory, string defaultDirectory) =>
+        $"MeshCoreMessenger{WindowTitleSuffix(dataDirectory, defaultDirectory)}";
+
+    public static string WindowTitleSuffix(string dataDirectory, string defaultDirectory)
     {
         var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
         if (string.Equals(Path.TrimEndingDirectorySeparator(dataDirectory),
             Path.TrimEndingDirectorySeparator(defaultDirectory), comparison))
-            return "MeshCoreMessenger";
+            return string.Empty;
 
         var name = Path.GetFileName(Path.TrimEndingDirectorySeparator(dataDirectory));
-        return $"MeshCoreMessenger — {(name.Length == 0 ? dataDirectory : name)}";
+        return $" — {(name.Length == 0 ? dataDirectory : name)}";
     }
 }

@@ -69,4 +69,16 @@ public sealed class DataDirectorySelectionTests
         Assert.Equal("MeshCoreMessenger — second-account", DataDirectorySelection.WindowTitle(
             Path.Combine(WorkingDirectory, "second-account"), DefaultDirectory));
     }
+
+    [Fact]
+    public void DirectorySuffixCanFollowAnyLiveConnectionTitle()
+    {
+        Assert.Empty(DataDirectorySelection.WindowTitleSuffix(DefaultDirectory, DefaultDirectory));
+        Assert.Empty(DataDirectorySelection.WindowTitleSuffix(DefaultDirectory + Path.DirectorySeparatorChar, DefaultDirectory));
+        var suffix = DataDirectorySelection.WindowTitleSuffix(Path.Combine(WorkingDirectory, "second-account"), DefaultDirectory);
+        Assert.Equal(" — second-account", suffix);
+        Assert.Equal("MeshCore Messenger - Отключено — second-account", $"MeshCore Messenger - Отключено{suffix}");
+        Assert.Equal("MeshCore Messenger - Подключено [A (112233445566…)] — second-account",
+            $"MeshCore Messenger - Подключено [A (112233445566…)]{suffix}");
+    }
 }

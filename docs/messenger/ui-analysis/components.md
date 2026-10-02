@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `MainWindow` | Window placement, activation, close/shutdown, composition shell | Существующие preferences/shutdown services |
 | `NavigationRailView` | Выбор верхнего раздела, кнопка Settings снизу | Shell section, независимый от выбранного диалога |
-| Глобальный connection status / node context | Верхний overlay; offline — последняя нода без selector | `MainWindowViewModel`; перенос overlay отложен |
+| Глобальный connection status / node context | Заголовок окна: статус, Online — имя и короткий ключ active node; offline — история последней ноды без selector | `MainWindowViewModel`; суффикс папки добавляет Window |
 | `ConnectionStatusView` | Статус и явные connect/disconnect внутри вкладки подключения | `ConnectionControlViewModel`, immutable supervisor snapshot |
 | `ChatsView` | Chat directory, adaptive list/detail, фокус поиска | Один сохраняемый navigation coordinator для Public/Private |
 | `ConversationListView` | Список, search, selection events | `ConversationNavigationViewModel` |

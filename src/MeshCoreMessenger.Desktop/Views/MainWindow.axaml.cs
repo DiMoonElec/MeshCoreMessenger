@@ -10,6 +10,15 @@ namespace MeshCoreMessenger.Desktop.Views;
 
 public sealed partial class MainWindow : Window
 {
+    public static readonly StyledProperty<string> DataDirectoryTitleSuffixProperty =
+        AvaloniaProperty.Register<MainWindow, string>(nameof(DataDirectoryTitleSuffix), string.Empty);
+
+    public string DataDirectoryTitleSuffix
+    {
+        get => GetValue(DataDirectoryTitleSuffixProperty);
+        set => SetValue(DataDirectoryTitleSuffixProperty, value);
+    }
+
     private readonly IDesktopShutdownCoordinator? _shutdown;
     private bool _shutdownAccepted;
     private bool _shutdownRequestActive;

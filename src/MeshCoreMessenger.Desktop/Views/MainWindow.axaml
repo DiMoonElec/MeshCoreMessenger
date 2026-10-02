@@ -2,29 +2,15 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
         xmlns:shell="using:MeshCoreMessenger.Desktop.Views.Shell"
-        xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
         x:Class="MeshCoreMessenger.Desktop.Views.MainWindow"
+        x:Name="RootWindow"
         x:DataType="vm:MainWindowViewModel"
-        Title="{Binding Title}"
         Width="1040" Height="700" MinWidth="560" MinHeight="440">
-  <Grid>
-    <shell:NavigationShellView x:Name="ShellHost" DataContext="{Binding Shell}" />
-    <Border Margin="120,16,16,0" Padding="12"
-            VerticalAlignment="Top" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
-            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
-            BorderThickness="0,0,0,1">
-      <StackPanel Spacing="3">
-        <TextBlock Text="{Binding ConnectionStatus}" FontSize="12" FontWeight="SemiBold" />
-        <TextBlock Text="{Binding ActiveProfileDisplayName, StringFormat='Профиль: {0}'}"
-                   TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
-        <TextBlock Text="{Binding ActiveNodeDisplayName, StringFormat='Нода: {0}'}"
-                   ToolTip.Tip="{Binding ActiveNodePublicKeyHex}"
-                   TextWrapping="Wrap" FontSize="11" Opacity="0.7" />
-        <TextBlock Text="{Binding ConnectionStatusDetail}" IsVisible="{Binding HasConnectionStatusDetail}"
-                   TextWrapping="Wrap" FontSize="11" />
-        <TextBlock Text="{Binding ErrorMessage}" IsVisible="{Binding HasError}" TextWrapping="Wrap"
-                   Foreground="{DynamicResource SystemControlErrorTextForegroundBrush}" />
-      </StackPanel>
-    </Border>
-  </Grid>
+  <Window.Title>
+    <MultiBinding StringFormat="{}{0}{1}">
+      <Binding Path="Title" />
+      <Binding Path="#RootWindow.DataDirectoryTitleSuffix" />
+    </MultiBinding>
+  </Window.Title>
+  <shell:NavigationShellView x:Name="ShellHost" DataContext="{Binding Shell}" />
 </Window>

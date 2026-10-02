@@ -1,6 +1,5 @@
 <Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <Style Selector="Grid.chat-workspace">
-    <Setter Property="Margin" Value="{StaticResource ChatWorkspaceMargin}" />
     <Setter Property="Background" Value="{DynamicResource ChatCanvasBrush}" />
   </Style>
 </Styles>

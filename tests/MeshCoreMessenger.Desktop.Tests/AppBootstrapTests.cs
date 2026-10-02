@@ -24,7 +24,7 @@ public sealed class AppBootstrapTests
         var viewModel = services.GetRequiredService<MainWindowViewModel>();
         var logger = services.GetRequiredService<ILogger<AppBootstrapTests>>();
 
-        Assert.Equal(AppInformation.ProductName, viewModel.Title);
+        Assert.Equal("MeshCore Messenger - Отключено", viewModel.Title);
         Assert.NotNull(logger);
         Assert.Same(paths, services.GetRequiredService<IAppPaths>());
         Assert.Same(storage, services.GetRequiredService<LocalStorage>());

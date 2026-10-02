@@ -3,7 +3,6 @@ using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.Logging;
-using MeshCoreMessenger.Core;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
@@ -100,7 +99,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _projectionRefreshWorker = Track(ProcessProjectionRefreshesAsync());
     }
 
-    public string Title => AppInformation.ProductName;
+    public string Title => $"MeshCore Messenger - {(_connectionState == ConnectionSupervisorState.Offline ? "Отключено" : ConnectionStatus)}" +
+        (_connectionState == ConnectionSupervisorState.Online && ActiveNode is { } node ? $" [{node.HeaderLabel}]" : string.Empty);
 
     public NavigationShellViewModel Shell { get; } = new();
     public bool IsChatWorkspaceVisible => Shell.IsChatSelected && Navigation.SelectedTab.Tab ==
@@ -603,10 +603,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         if (node is null)
         {
             ActiveNode = null;
-            return;
         }
-
-        ActiveNode = UpsertKnownNode(node);
+        else
+        {
+            ActiveNode = UpsertKnownNode(node);
+        }
+        OnPropertyChanged(nameof(Title));
     }
 
     private static bool SnapshotCanExposeNode(ConnectionSupervisorSnapshot snapshot) =>

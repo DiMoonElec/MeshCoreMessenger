@@ -24,7 +24,7 @@ public sealed partial class App : Application
         {
             var logger = Services.GetRequiredService<ILogger<App>>();
             var window = Services.GetRequiredService<MainWindow>();
-            window.Title = DataDirectorySelection.WindowTitle(
+            window.DataDirectoryTitleSuffix = DataDirectorySelection.WindowTitleSuffix(
                 Services.GetRequiredService<IAppPaths>().DataDirectory,
                 DesktopAppPaths.CreateDefault().DataDirectory);
             desktop.MainWindow = window;

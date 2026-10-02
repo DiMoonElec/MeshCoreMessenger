@@ -430,6 +430,58 @@ public sealed class MainWindowViewModelTests
         await viewModel.StopAsync();
     }
 
+    [Theory]
+    [InlineData(ConnectionSupervisorState.Offline, "Отключено")]
+    [InlineData(ConnectionSupervisorState.Connecting, "Подключение…")]
+    [InlineData(ConnectionSupervisorState.Identifying, "Идентификация…")]
+    [InlineData(ConnectionSupervisorState.Synchronizing, "Синхронизация…")]
+    [InlineData(ConnectionSupervisorState.Online, "Подключено")]
+    [InlineData(ConnectionSupervisorState.RetryWaiting, "Ожидание повтора")]
+    [InlineData(ConnectionSupervisorState.Disconnecting, "Отключение…")]
+    [InlineData(ConnectionSupervisorState.NeedsAttention, "Требуется внимание")]
+    public async Task WindowTitleMapsEveryStateWithoutUsingOfflineHistoryNode(
+        ConnectionSupervisorState state, string expected)
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var vm = CreateViewModel(new FakeHistoryReader(), supervisor);
+        await vm.LoadAsync(CancellationToken);
+        Assert.NotNull(vm.ViewedNode);
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        vm.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(MainWindowViewModel.Title)) changed.TrySetResult();
+        };
+
+        supervisor.Publish(CreateSnapshot(state, null, Guid.NewGuid()));
+        await changed.Task.WaitAsync(CancellationToken);
+
+        Assert.Equal($"MeshCore Messenger - {expected}", vm.Title);
+        await vm.StopAsync();
+    }
+
+    [Fact]
+    public async Task WindowTitleFollowsActualNodeAndClearsIdentityOnDisconnect()
+    {
+        var supervisor = new FakeConnectionSupervisor();
+        var nodes = new FakeNodeStore([CreateNode(NodeAId, "RnD CatCore", 0x11), CreateNode(NodeBId, "Node B", 0x22)]);
+        var vm = CreateViewModel(new FakeHistoryReader(), supervisor, nodes: nodes);
+        await vm.LoadAsync(CancellationToken);
+        Assert.Equal("MeshCore Messenger - Отключено", vm.Title);
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Synchronizing, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => vm.Title == "MeshCore Messenger - Синхронизация…");
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeAId, Guid.NewGuid()));
+        await WaitUntilAsync(() => vm.Title == "MeshCore Messenger - Подключено [RnD CatCore (111111111111…)]");
+
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Online, NodeBId, Guid.NewGuid(), generation: 2));
+        await WaitUntilAsync(() => vm.Title == "MeshCore Messenger - Подключено [Node B (222222222222…)]");
+        supervisor.Publish(CreateSnapshot(ConnectionSupervisorState.Offline, null, Guid.NewGuid(), generation: 2));
+        await WaitUntilAsync(() => vm.Title == "MeshCore Messenger - Отключено");
+        Assert.Null(vm.ActiveNode);
+        Assert.NotNull(vm.ViewedNode);
+        await vm.StopAsync();
+    }
+
     [Fact]
     public async Task ConnectAndDisconnectCommandsDelegateToSupervisor()
     {
