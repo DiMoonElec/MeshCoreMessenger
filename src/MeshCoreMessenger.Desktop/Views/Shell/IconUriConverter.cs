@@ -19,7 +19,8 @@ public sealed class IconUriConverter : IValueConverter
 
         if (!Cache.TryGetValue(uri, out var bitmap))
         {
-            bitmap = new Bitmap(AssetLoader.Open(new Uri(uri)));
+            using var stream = AssetLoader.Open(new Uri(uri));
+            bitmap = new Bitmap(stream);
             Cache[uri] = bitmap;
         }
 
