@@ -1,0 +1,50 @@
+using MeshCoreMessenger.Desktop.ViewModels;
+using Xunit;
+
+namespace MeshCoreMessenger.Desktop.Tests;
+
+public sealed class NavigationShellViewModelTests
+{
+    [Fact]
+    public void NavigationGroupsHaveRequiredOrderAndDefaultSelection()
+    {
+        var shell = new NavigationShellViewModel();
+
+        Assert.Equal(
+            [ShellSection.PublicChats, ShellSection.PrivateChats, ShellSection.Devices],
+            shell.TopItems.Select(item => item.Section));
+        Assert.Equal(
+            [ShellSection.Connection, ShellSection.Settings],
+            shell.BottomItems.Select(item => item.Section));
+        Assert.Same(shell.TopItems[0], shell.SelectedItem);
+        Assert.True(shell.SelectedItem.IsSelected);
+    }
+
+    [Fact]
+    public void CommandsSwitchContentAndKeepOneSelectionAcrossBothGroups()
+    {
+        var shell = new NavigationShellViewModel();
+        var items = shell.TopItems.Concat(shell.BottomItems).ToArray();
+        var notifications = 0;
+        shell.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(shell.SelectedItem))
+            {
+                notifications++;
+            }
+        };
+
+        foreach (var item in items.Reverse())
+        {
+            item.SelectCommand.Execute(null);
+            Assert.Same(item, shell.SelectedItem);
+            Assert.Same(item, Assert.Single(items, candidate => candidate.IsSelected));
+            Assert.Equal(item.Title, shell.SelectedItem.Title);
+        }
+
+        Assert.Equal(5, notifications);
+        shell.SelectedItem.SelectCommand.Execute(null);
+        Assert.Equal(5, notifications);
+        Assert.True(shell.SelectedItem.IsSelected);
+    }
+}

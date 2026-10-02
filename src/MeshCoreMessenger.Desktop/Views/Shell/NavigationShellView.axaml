@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+  xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+  xmlns:shell="using:MeshCoreMessenger.Desktop.Views.Shell"
+  x:Class="MeshCoreMessenger.Desktop.Views.Shell.NavigationShellView"
+  x:DataType="vm:NavigationShellViewModel">
+  <UserControl.Resources>
+    <DataTemplate x:Key="NavigationItemTemplate" x:DataType="vm:NavigationShellItem">
+      <RadioButton Classes="navigation-item"
+        GroupName="ShellSections"
+        IsChecked="{Binding IsSelected, Mode=OneWay}"
+        Command="{Binding SelectCommand}"
+        ToolTip.Tip="{Binding Title}"
+        ToolTip.Placement="Right"
+        ToolTip.HorizontalOffset="8"
+        ToolTip.ShowDelay="400"
+        AutomationProperties.Name="{Binding Title}">
+        <StackPanel Spacing="6" HorizontalAlignment="Center" Width="80">
+          <!-- Monochrome PNG used as a mask: the shape comes from the file, the color from the theme. -->
+          <Border Width="28" Height="28" HorizontalAlignment="Center"
+            Background="{DynamicResource SystemControlForegroundBaseHighBrush}">
+            <Border.OpacityMask>
+              <ImageBrush Source="{Binding IconUri, Converter={x:Static shell:IconUriConverter.Instance}}" />
+            </Border.OpacityMask>
+          </Border>
+          <TextBlock Text="{Binding Title}" TextWrapping="Wrap" TextAlignment="Center"
+            HorizontalAlignment="Stretch" FontSize="11" LineHeight="14" />
+        </StackPanel>
+      </RadioButton>
+    </DataTemplate>
+  </UserControl.Resources>
+  <UserControl.Styles>
+    <Style Selector="RadioButton.navigation-item">
+      <Setter Property="Template">
+        <ControlTemplate>
+          <Border Background="Transparent">
+            <Border x:Name="ItemBorder" Margin="6,3"
+              Background="{TemplateBinding Background}"
+              BorderBrush="{TemplateBinding BorderBrush}"
+              BorderThickness="{TemplateBinding BorderThickness}"
+              CornerRadius="8" Padding="{TemplateBinding Padding}">
+              <ContentPresenter Content="{TemplateBinding Content}"
+                ContentTemplate="{TemplateBinding ContentTemplate}" />
+            </Border>
+          </Border>
+        </ControlTemplate>
+      </Setter>
+      <Setter Property="Padding" Value="4,10" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="BorderBrush" Value="Transparent" />
+    </Style>
+    <Style Selector="RadioButton.navigation-item:pointerover">
+      <Setter Property="Background" Value="{DynamicResource ThemeControlLowBrush}" />
+    </Style>
+    <Style Selector="RadioButton.navigation-item:checked">
+      <Setter Property="Background"
+        Value="{DynamicResource SystemControlHighlightListAccentLowBrush}" />
+      <Setter Property="BorderBrush" Value="#1976D2" />
+    </Style>
+    <Style Selector="RadioButton.navigation-item:focus-visible">
+      <Setter Property="BorderBrush" Value="{DynamicResource ThemeForegroundBrush}" />
+    </Style>
+  </UserControl.Styles>
+  <Grid ColumnDefinitions="104,*">
+    <Border Background="{DynamicResource ThemeControlLowBrush}"
+      BorderBrush="{DynamicResource ThemeBorderLowBrush}" BorderThickness="0,0,1,0">
+      <Grid RowDefinitions="*,Auto" Margin="0,8">
+        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Disabled"
+          VerticalScrollBarVisibility="Auto">
+          <ItemsControl ItemsSource="{Binding TopItems}"
+            ItemTemplate="{StaticResource NavigationItemTemplate}" />
+        </ScrollViewer>
+        <ItemsControl Grid.Row="1" ItemsSource="{Binding BottomItems}"
+          ItemTemplate="{StaticResource NavigationItemTemplate}" />
+      </Grid>
+    </Border>
+    <Border Grid.Column="1" Background="{DynamicResource ThemeBackgroundBrush}">
+      <ContentControl Content="{Binding SelectedItem}"
+        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
+        <ContentControl.ContentTemplate>
+          <DataTemplate x:DataType="vm:NavigationShellItem">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+              Margin="24" Spacing="12">
+              <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="SemiBold"
+                TextAlignment="Center" TextWrapping="Wrap" />
+              <TextBlock Text="Раздел выбран" Opacity="0.65"
+                TextAlignment="Center" />
+            </StackPanel>
+          </DataTemplate>
+        </ContentControl.ContentTemplate>
+      </ContentControl>
+    </Border>
+  </Grid>
+</UserControl>

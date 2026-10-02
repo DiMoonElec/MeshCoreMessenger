@@ -96,6 +96,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     public string Title => AppInformation.ProductName;
 
+    public NavigationShellViewModel Shell { get; } = new();
+
     public IReadOnlyList<DesktopThemeOption> ThemeOptions { get; } =
     [
         new(DesktopThemePreference.System, "Как в системе"),
