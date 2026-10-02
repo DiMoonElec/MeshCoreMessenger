@@ -9,8 +9,8 @@
   <Grid>
     <shell:NavigationShellView DataContext="{Binding Shell}" />
     <Border Margin="120,16,16,0" Padding="12"
-            VerticalAlignment="Top" Background="{DynamicResource ThemeBackgroundBrush}"
-            BorderBrush="{DynamicResource ThemeBorderLowBrush}"
+            VerticalAlignment="Top" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
+            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
             BorderThickness="0,0,0,1">
       <StackPanel Spacing="3">
         <TextBlock Text="{Binding ConnectionStatus}" FontSize="12" FontWeight="SemiBold" />
