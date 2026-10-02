@@ -43,6 +43,16 @@ public sealed class ConnectionProfileManager(
         ConnectionProfileDraft draft,
         CancellationToken cancellationToken = default)
     {
+        var profile = await SaveAsync(draft, cancellationToken).ConfigureAwait(false);
+        await settings.SetAsync(SelectedProfileSettingKey, profile.Id.ToString("D"), cancellationToken)
+            .ConfigureAwait(false);
+        return profile;
+    }
+
+    public async Task<ConnectionProfile> SaveAsync(
+        ConnectionProfileDraft draft,
+        CancellationToken cancellationToken = default)
+    {
         ArgumentNullException.ThrowIfNull(draft);
         var existing = draft.Id is { } id && id != Guid.Empty
             ? await profiles.GetAsync(id, cancellationToken).ConfigureAwait(false)
@@ -72,8 +82,6 @@ public sealed class ConnectionProfileManager(
 
         ConnectionProfileValidator.Validate(profile);
         await profiles.SaveAsync(profile, cancellationToken).ConfigureAwait(false);
-        await settings.SetAsync(SelectedProfileSettingKey, profile.Id.ToString("D"), cancellationToken)
-            .ConfigureAwait(false);
         return profile;
     }
 }

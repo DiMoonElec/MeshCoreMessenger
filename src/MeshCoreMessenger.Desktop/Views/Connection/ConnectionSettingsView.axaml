@@ -1,0 +1,15 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:connection="using:MeshCoreMessenger.Desktop.Views.Connection"
+             x:Class="MeshCoreMessenger.Desktop.Views.Connection.ConnectionSettingsView" x:DataType="vm:ConnectionProfilesViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConnectionSettingsStyles.axaml" />
+  </UserControl.Styles>
+  <ScrollViewer Classes="connection-settings">
+    <StackPanel Classes="settings-column">
+      <TextBlock Classes="settings-heading" Text="Подключение" />
+      <Border Classes="settings-card"><connection:ConnectionStatusView DataContext="{Binding Control}" /></Border>
+      <Border Classes="settings-card"><connection:ConnectionProfileEditorView /></Border>
+      <Border Classes="settings-card"><connection:ConnectionAdvancedSettingsView /></Border>
+    </StackPanel>
+  </ScrollViewer>
+</UserControl>

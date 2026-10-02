@@ -9,6 +9,35 @@ namespace MeshCoreMessenger.Core.Tests;
 public sealed class ConnectionProfileTests
 {
     [Fact]
+    public async Task SaveOnlyNormalizesWithoutChangingStartupSelection()
+    {
+        using var temporary = new TemporaryDirectory();
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var manager = new ConnectionProfileManager(storage.ConnectionProfiles, storage.Settings, TimeProvider.System);
+        var first = await manager.SaveAndSelectAsync(new() { Name = "First", Transport = ConnectionTransportKind.Tcp, TcpHost = "localhost", TcpPort = 5000 }, CancellationToken);
+        var second = await manager.SaveAsync(new() { Name = "  Second  ", Transport = ConnectionTransportKind.Tcp, TcpHost = " localhost ", TcpPort = 6000 }, CancellationToken);
+        Assert.Equal("Second", second.Name);
+        Assert.Equal("localhost", second.TcpHost);
+        Assert.Equal(first, await manager.GetSelectedProfileAsync(CancellationToken));
+        Assert.Equal(second, await storage.ConnectionProfiles.GetAsync(second.Id, CancellationToken));
+        var updated = await manager.SaveAsync(new() { Id = second.Id, Name = "Updated", Transport = ConnectionTransportKind.Tcp, TcpHost = "localhost", TcpPort = 6001 }, CancellationToken);
+        Assert.Equal(second.CreatedUtc, updated.CreatedUtc);
+        Assert.Equal(first, await manager.GetSelectedProfileAsync(CancellationToken));
+    }
+
+    [Fact]
+    public async Task SaveOnlyDoesNotSelectFirstProfileAndRejectsInvalidDraft()
+    {
+        using var temporary = new TemporaryDirectory();
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var manager = new ConnectionProfileManager(storage.ConnectionProfiles, storage.Settings, TimeProvider.System);
+        await manager.SaveAsync(new() { Name = "Only", Transport = ConnectionTransportKind.Tcp, TcpHost = "localhost", TcpPort = 5000 }, CancellationToken);
+        Assert.Null(await manager.GetSelectedProfileAsync(CancellationToken));
+        await Assert.ThrowsAsync<ArgumentException>(() => manager.SaveAsync(new() { Name = "Bad", Transport = ConnectionTransportKind.Tcp, TcpHost = "", TcpPort = 0 }, CancellationToken));
+        Assert.Single(await manager.GetProfilesAsync(CancellationToken));
+    }
+
+    [Fact]
     public async Task ListsProfilesByNameThenId()
     {
         using var temporary = new TemporaryDirectory();

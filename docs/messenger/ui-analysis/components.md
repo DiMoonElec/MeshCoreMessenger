@@ -8,11 +8,12 @@
 | --- | --- | --- |
 | `MainWindow` | Window placement, activation, close/shutdown, composition shell | Существующие preferences/shutdown services |
 | `NavigationRailView` | Выбор верхнего раздела, кнопка Settings снизу | Shell section, независимый от выбранного диалога |
-| Connection status / node context | Connection/profile/node/error; offline — последняя нода без selector | `MainWindowViewModel`, snapshot supervisor; выделение status view отложено |
+| Глобальный connection status / node context | Верхний overlay; offline — последняя нода без selector | `MainWindowViewModel`; перенос overlay отложен |
+| `ConnectionStatusView` | Статус и явные connect/disconnect внутри вкладки подключения | `ConnectionControlViewModel`, immutable supervisor snapshot |
 | `ChatsView` | Chat directory, adaptive list/detail, фокус поиска | Один сохраняемый navigation coordinator для Public/Private |
 | `ConversationListView` | Список, search, selection events | `ConversationNavigationViewModel` |
 | `ConversationView` / `ComposerView` | Header, history search, viewport/scroll adapter / draft | `HistoryWindowViewModel` / `DraftEditorViewModel` |
-| `ConnectionSettingsView` | Редактор профилей, port refresh, connect/disconnect, theme | `ConnectionProfilesViewModel` и явные shell commands/preferences |
+| `ConnectionSettingsView` | Редактор профилей, port refresh, дополнительные параметры | `ConnectionProfilesViewModel` / `ConnectionProfileEditorViewModel`; theme остаётся отдельной вкладкой |
 | `DevicesWorkspaceView` | Node-scoped service directory, выбор устройства | Существующий directory API; отдельный devices VM при необходимости |
 | `DeviceDetailsView` | Read-only metadata и связанные служебные записи | `ContactDetailsProjection`, immutable context полного ключа/NodeId |
 

@@ -1,0 +1,27 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Connection.ConnectionStatusView" x:DataType="vm:ConnectionControlViewModel">
+  <UserControl.Styles><StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConnectionStatusStyles.axaml" /></UserControl.Styles>
+  <StackPanel Classes="settings-form">
+    <TextBlock Classes="settings-heading" Text="Состояние" />
+    <TextBlock Classes="settings-label connection-status" Classes.online="{Binding IsOnline}" Classes.attention="{Binding IsAttention}" Text="{Binding Status}" />
+    <TextBlock Classes="settings-hint" Text="{Binding Detail}" />
+    <TextBlock Classes="settings-hint" Text="{Binding RetryText}" />
+    <TextBlock Classes="settings-error" Text="{Binding ErrorMessage}" />
+    <StackPanel Classes="settings-field">
+      <TextBlock Classes="settings-hint" Text="Используемый профиль" />
+      <TextBlock Classes="settings-label" Text="{Binding ActiveProfileName}" />
+    </StackPanel>
+    <StackPanel Classes="settings-field">
+      <TextBlock Classes="settings-hint" Text="Обнаруженная нода" />
+      <TextBlock Classes="settings-label" Text="{Binding NodeName}" />
+      <SelectableTextBlock Classes="connection-key" Text="{Binding PublicKey}" ToolTip.Tip="Public key — можно выделить и скопировать" />
+    </StackPanel>
+    <TextBlock Classes="settings-hint" Text="{Binding UnappliedNotice}" />
+    <WrapPanel Classes="settings-actions">
+      <Button Content="{Binding ConnectLabel}" Command="{Binding ConnectCommand}" />
+      <Button Content="Отключить" Command="{Binding DisconnectCommand}" />
+    </WrapPanel>
+    <TextBlock Classes="settings-hint" Text="{Binding ConnectHint}" />
+  </StackPanel>
+</UserControl>

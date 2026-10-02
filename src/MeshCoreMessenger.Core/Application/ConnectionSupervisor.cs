@@ -798,8 +798,9 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             sessionId,
             nodeId,
             reason,
-            nextAttemptUtc);
-        if (current == previous)
+            nextAttemptUtc) { UsedProfile = _active?.Profile ?? _profile };
+        // Metadata must not introduce additional StateChanged publication points.
+        if (current with { UsedProfile = null } == previous with { UsedProfile = null })
         {
             return;
         }

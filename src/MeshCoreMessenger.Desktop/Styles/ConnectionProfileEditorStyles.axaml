@@ -1,0 +1,19 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/Typography.axaml" />
+  <Style Selector="StackPanel.settings-form">
+    <Setter Property="Spacing" Value="{StaticResource SettingsSpacing}" />
+  </Style>
+  <Style Selector="StackPanel.settings-field">
+    <Setter Property="Spacing" Value="{StaticResource SettingsFieldSpacing}" />
+  </Style>
+  <Style Selector="TextBox.settings-number">
+    <Setter Property="Width" Value="{StaticResource SettingsNumberWidth}" />
+    <Setter Property="HorizontalAlignment" Value="Left" />
+  </Style>
+  <Style Selector="ComboBox">
+    <Setter Property="HorizontalAlignment" Value="Stretch" />
+  </Style>
+  <Style Selector="WrapPanel.settings-actions Button">
+    <Setter Property="Margin" Value="{StaticResource SettingsActionMargin}" />
+  </Style>
+</Styles>

@@ -1,0 +1,24 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <Style Selector="TextBlock.settings-heading">
+    <Setter Property="FontSize" Value="{StaticResource ChatTitleFontSize}" />
+    <Setter Property="FontWeight" Value="SemiBold" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+  </Style>
+  <Style Selector="TextBlock.settings-label">
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.settings-hint">
+    <Setter Property="IsVisible" Value="{ReflectionBinding Text, RelativeSource={RelativeSource Self}, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+  <Style Selector="TextBlock.settings-error">
+    <Setter Property="IsVisible" Value="{ReflectionBinding Text, RelativeSource={RelativeSource Self}, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatErrorBrush}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+</Styles>

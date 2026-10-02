@@ -51,12 +51,8 @@
       </Grid>
     </Border>
     <Border Grid.Column="1" Background="{DynamicResource SystemControlBackgroundAltHighBrush}">
-      <Grid>
-      <ContentControl Content="{Binding WorkspaceContent, ElementName=ShellRoot}"
-                      IsVisible="{Binding IsWorkspaceVisible, ElementName=ShellRoot}"
-                      HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
-      <ContentControl Content="{Binding SelectedItem}"
-        IsVisible="{Binding !IsWorkspaceVisible, ElementName=ShellRoot}"
+      <Grid x:Name="ContentHost">
+      <ContentControl x:Name="Placeholder" Content="{Binding SelectedItem}"
         HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch">
         <ContentControl.ContentTemplate>
           <DataTemplate x:DataType="vm:NavigationShellItem">

@@ -65,7 +65,7 @@ public sealed class ConnectionProfilesViewModelTests
         viewModel.AutoConnect = true;
         viewModel.Reconnect = false;
 
-        await viewModel.SaveAndSelectCommand.ExecuteAsync(null);
+        await viewModel.SaveCommand.ExecuteAsync(null);
 
         var draft = Assert.IsType<ConnectionProfileDraft>(manager.SavedDraft);
         Assert.Equal("USB node", draft.Name);
@@ -79,10 +79,11 @@ public sealed class ConnectionProfilesViewModelTests
         Assert.Equal(45_000, draft.AcknowledgementTimeoutMilliseconds);
         Assert.True(draft.AutoConnect);
         Assert.False(draft.Reconnect);
-        Assert.Equal(2, catalog.Calls);
+        Assert.Equal(1, catalog.Calls);
         Assert.False(viewModel.HasError);
         var selected = Assert.IsType<ConnectionProfileListItem>(viewModel.SelectedProfile);
-        Assert.Equal([selected.Id], supervisor.SwitchedProfiles);
+        Assert.Empty(supervisor.SwitchedProfiles);
+        Assert.Equal(0, supervisor.ConnectCalls);
         await viewModel.StopAsync();
     }
 
@@ -97,11 +98,11 @@ public sealed class ConnectionProfilesViewModelTests
         viewModel.TcpHost = "localhost";
         viewModel.TcpPort = "70000";
 
-        await viewModel.SaveAndSelectCommand.ExecuteAsync(null);
+        await viewModel.SaveCommand.ExecuteAsync(null);
 
         Assert.Null(manager.SavedDraft);
-        Assert.True(viewModel.HasError);
-        Assert.Contains("TCP port", viewModel.ErrorMessage, StringComparison.Ordinal);
+        Assert.False(viewModel.CanSave);
+        Assert.Contains("TCP port", viewModel.TcpPortError, StringComparison.Ordinal);
         await viewModel.StopAsync();
     }
 
@@ -136,10 +137,13 @@ public sealed class ConnectionProfilesViewModelTests
         viewModel.BaudRate = "9600";
 
         viewModel.NewProfileCommand.Execute(null);
+        Assert.True(viewModel.HasPendingSelection);
+        Assert.Equal("Unsaved", viewModel.ProfileName);
+        viewModel.DiscardAndSwitchCommand.Execute(null);
 
         Assert.Equal(string.Empty, viewModel.ProfileName);
         Assert.Equal("115200", viewModel.BaudRate);
-        Assert.Equal("Новый профиль", viewModel.Status);
+        Assert.False(viewModel.HasPendingSelection);
         await viewModel.StopAsync();
     }
 
@@ -184,6 +188,13 @@ public sealed class ConnectionProfilesViewModelTests
 
     private sealed class FakeProfileManager : IConnectionProfileManager
     {
+        public async Task<ConnectionProfile> SaveAsync(ConnectionProfileDraft draft, CancellationToken cancellationToken = default)
+        {
+            var selected = Selected;
+            var saved = await SaveAndSelectAsync(draft, cancellationToken);
+            Selected = selected;
+            return saved;
+        }
         public IReadOnlyList<ConnectionProfile> Profiles { get; set; } = [];
         public ConnectionProfile? Selected { get; set; }
         public ConnectionProfileDraft? SavedDraft { get; private set; }

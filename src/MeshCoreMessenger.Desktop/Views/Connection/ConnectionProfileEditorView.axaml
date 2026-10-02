@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Connection.ConnectionProfileEditorView" x:DataType="vm:ConnectionProfilesViewModel">
+  <UserControl.Styles><StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConnectionProfileEditorStyles.axaml" /></UserControl.Styles>
+  <StackPanel Classes="settings-form">
+    <TextBlock Classes="settings-heading" Text="Профиль" />
+    <TextBlock Classes="settings-hint" Text="Здесь вы редактируете способ подключения. Выбор и сохранение не подключают ноду." />
+    <StackPanel Classes="settings-form" IsEnabled="{Binding CanEdit}">
+      <ComboBox ItemsSource="{Binding AvailableProfiles}" SelectedItem="{Binding SelectedProfile, Mode=OneWay}"
+                SelectionChanged="OnProfileSelectionChanged" PlaceholderText="Выберите профиль">
+        <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:ConnectionProfileListItem"><TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DisplayName}" /></DataTemplate></ComboBox.ItemTemplate>
+      </ComboBox>
+      <Button Content="Новый профиль" Command="{Binding NewProfileCommand}" />
+      <StackPanel Classes="settings-field">
+        <TextBlock Classes="settings-label" Text="Название профиля" />
+        <TextBox Text="{Binding ProfileName, Mode=TwoWay}" />
+        <TextBlock Classes="settings-error" Text="{Binding ProfileNameError}" />
+      </StackPanel>
+      <StackPanel Classes="settings-field">
+        <TextBlock Classes="settings-label" Text="Способ подключения" />
+        <ComboBox ItemsSource="{Binding TransportKinds}" SelectedItem="{Binding SelectedTransport, Mode=TwoWay}" />
+        <TextBlock Classes="settings-hint" Text="Bluetooth LE — пока недоступен" />
+      </StackPanel>
+      <StackPanel Classes="settings-field" IsVisible="{Binding IsSerial}">
+        <TextBlock Classes="settings-label" Text="Serial-порт" />
+        <AutoCompleteBox ItemsSource="{Binding AvailableSerialPorts}" Text="{Binding SerialPortName, Mode=TwoWay}" ToolTip.Tip="{Binding SerialPortName}" />
+        <Button Content="Обновить порты" Command="{Binding RefreshPortsCommand}" />
+        <TextBlock Classes="settings-hint" Text="{Binding SerialPortNotice}" />
+        <TextBlock Classes="settings-error" Text="{Binding SerialPortNameError}" />
+      </StackPanel>
+      <StackPanel Classes="settings-form" IsVisible="{Binding IsTcp}">
+        <StackPanel Classes="settings-field">
+          <TextBlock Classes="settings-label" Text="Host или IP-адрес" /><TextBox Text="{Binding TcpHost, Mode=TwoWay}" />
+          <TextBlock Classes="settings-error" Text="{Binding TcpHostError}" />
+        </StackPanel>
+        <StackPanel Classes="settings-field">
+          <TextBlock Classes="settings-label" Text="TCP-порт" /><TextBox Classes="settings-number" Text="{Binding TcpPort, Mode=TwoWay}" />
+          <TextBlock Classes="settings-error" Text="{Binding TcpPortError}" />
+        </StackPanel>
+      </StackPanel>
+      <CheckBox Content="Подключаться при запуске" IsChecked="{Binding AutoConnect, Mode=TwoWay}" />
+      <TextBlock Classes="settings-hint" Text="При запуске используется последний явно выбранный для подключения профиль." />
+      <CheckBox Content="Переподключаться после обрыва" IsChecked="{Binding Reconnect, Mode=TwoWay}" />
+    </StackPanel>
+    <StackPanel Classes="settings-field" IsVisible="{Binding HasPendingSelection}">
+      <TextBlock Classes="settings-label" Text="Есть несохранённые изменения. Что сделать перед переходом?" />
+      <WrapPanel Classes="settings-actions">
+        <Button Content="Сохранить" Command="{Binding SaveAndSwitchCommand}" /><Button Content="Отбросить" Command="{Binding DiscardAndSwitchCommand}" /><Button Content="Остаться" Command="{Binding StayCommand}" />
+      </WrapPanel>
+    </StackPanel>
+    <TextBlock Classes="settings-error" Text="{Binding ErrorMessage}" />
+    <WrapPanel Classes="settings-actions">
+      <Button Content="Сохранить" Command="{Binding SaveCommand}" /><Button Content="Отменить" Command="{Binding CancelCommand}" />
+    </WrapPanel>
+    <TextBlock Classes="settings-hint" Text="{Binding Status}" />
+  </StackPanel>
+</UserControl>

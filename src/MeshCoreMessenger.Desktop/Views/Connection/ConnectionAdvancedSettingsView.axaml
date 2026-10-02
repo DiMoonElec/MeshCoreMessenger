@@ -1,0 +1,18 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Connection.ConnectionAdvancedSettingsView" x:DataType="vm:ConnectionProfilesViewModel">
+  <UserControl.Styles><StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConnectionAdvancedSettingsStyles.axaml" /></UserControl.Styles>
+  <Expander Classes="connection-advanced" Header="Дополнительные параметры" IsExpanded="False">
+    <StackPanel Classes="settings-form" IsEnabled="{Binding CanEdit}">
+      <StackPanel Classes="settings-form" IsVisible="{Binding IsSerial}">
+        <StackPanel Classes="settings-field"><TextBlock Classes="settings-label" Text="Baud rate" /><TextBox Classes="settings-number" Text="{Binding BaudRate, Mode=TwoWay}" /><TextBlock Classes="settings-error" Text="{Binding BaudRateError}" /></StackPanel>
+        <WrapPanel><CheckBox Content="DTR" IsChecked="{Binding DtrEnable, Mode=TwoWay}" /><CheckBox Content="RTS" IsChecked="{Binding RtsEnable, Mode=TwoWay}" /></WrapPanel>
+        <TextBlock Classes="settings-hint" Text="DTR/RTS зависят от платы. Значения не переключаются повторно после открытия; reset не выполняется." />
+        <StackPanel Classes="settings-field"><TextBlock Classes="settings-label" Text="Задержка после открытия, мс" /><TextBox Classes="settings-number" Text="{Binding OpenDelayMilliseconds, Mode=TwoWay}" /><TextBlock Classes="settings-error" Text="{Binding OpenDelayError}" /></StackPanel>
+      </StackPanel>
+      <StackPanel Classes="settings-field"><TextBlock Classes="settings-label" Text="Тайм-аут команды, мс" /><TextBox Classes="settings-number" Text="{Binding CommandTimeoutMilliseconds, Mode=TwoWay}" /><TextBlock Classes="settings-error" Text="{Binding CommandTimeoutError}" /></StackPanel>
+      <StackPanel Classes="settings-field"><TextBlock Classes="settings-label" Text="Ожидание ACK, мс" /><TextBox Classes="settings-number" Text="{Binding AcknowledgementTimeoutMilliseconds, Mode=TwoWay}" /><TextBlock Classes="settings-error" Text="{Binding AckTimeoutError}" /></StackPanel>
+      <TextBlock Classes="settings-hint" Text="ACK относится к подтверждению личных сообщений. Его тайм-аут сам по себе не вызывает reconnect." />
+    </StackPanel>
+  </Expander>
+</UserControl>

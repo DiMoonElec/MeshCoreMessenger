@@ -8,12 +8,7 @@
         Title="{Binding Title}"
         Width="1040" Height="700" MinWidth="560" MinHeight="440">
   <Grid>
-    <shell:NavigationShellView DataContext="{Binding Shell}"
-                              IsWorkspaceVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).IsChatWorkspaceVisible}">
-      <shell:NavigationShellView.WorkspaceContent>
-        <chat:ChatsView DataContext="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext)}" />
-      </shell:NavigationShellView.WorkspaceContent>
-    </shell:NavigationShellView>
+    <shell:NavigationShellView x:Name="ShellHost" DataContext="{Binding Shell}" />
     <Border Margin="120,16,16,0" Padding="12"
             VerticalAlignment="Top" Background="{DynamicResource SystemControlBackgroundAltHighBrush}"
             BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"

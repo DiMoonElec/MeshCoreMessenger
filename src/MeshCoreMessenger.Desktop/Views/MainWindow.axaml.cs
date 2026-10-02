@@ -3,6 +3,8 @@ using Avalonia.Controls;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
+using MeshCoreMessenger.Desktop.Views.Chat;
+using MeshCoreMessenger.Desktop.Views.Connection;
 
 namespace MeshCoreMessenger.Desktop.Views;
 
@@ -14,10 +16,15 @@ public sealed partial class MainWindow : Window
     private bool _placementInitialized;
     private WindowPlacement? _normalPlacement;
     private MainWindowViewModel? _subscribedViewModel;
+    private readonly ChatsView _chats = new();
+    private readonly ConnectionSettingsView _connection = new();
 
     public MainWindow()
     {
         InitializeComponent();
+        ShellHost.RegisterContent(ShellSection.PublicChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
+        ShellHost.RegisterContent(ShellSection.PrivateChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
+        ShellHost.RegisterContent(ShellSection.Connection, _connection);
         DataContextChanged += OnWindowDataContextChanged;
         SizeChanged += (_, _) => CaptureWindowPlacement();
         PositionChanged += (_, _) => CaptureWindowPlacement();
@@ -77,6 +84,9 @@ public sealed partial class MainWindow : Window
         }
 
         _subscribedViewModel = DataContext as MainWindowViewModel;
+        _chats.DataContext = _subscribedViewModel;
+        _connection.DataContext = _subscribedViewModel?.Profiles;
+        ShellHost.RefreshContent();
         if (_subscribedViewModel is not null)
         {
             _subscribedViewModel.PropertyChanged += OnViewModelPropertyChanged;
@@ -90,6 +100,7 @@ public sealed partial class MainWindow : Window
 
     private void OnViewModelPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs eventArgs)
     {
+        if (eventArgs.PropertyName == nameof(MainWindowViewModel.IsChatWorkspaceVisible)) ShellHost.RefreshContent();
         if (eventArgs.PropertyName == nameof(MainWindowViewModel.SelectedTheme) &&
             sender is MainWindowViewModel viewModel)
         {

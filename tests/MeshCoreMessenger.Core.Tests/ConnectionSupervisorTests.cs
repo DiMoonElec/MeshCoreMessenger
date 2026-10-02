@@ -10,6 +10,43 @@ namespace MeshCoreMessenger.Core.Tests;
 public sealed class ConnectionSupervisorTests
 {
     [Fact]
+    public async Task SnapshotKeepsUsedSettingsUntilFreshExplicitConnection()
+    {
+        var context = CreateContext();
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        var used = Assert.IsType<ConnectionProfile>(supervisor.Snapshot.UsedProfile);
+        var original = supervisor.Snapshot;
+        var updated = used with { TcpPort = 6789, Name = "Edited", UpdatedUtc = used.UpdatedUtc.AddMinutes(1) };
+        context.Profiles.Profiles[0] = updated;
+        await context.Profiles.SelectAsync(updated.Id, CancellationToken);
+        Assert.Equal(original, supervisor.Snapshot);
+        Assert.Equal(5000, supervisor.Snapshot.UsedProfile!.TcpPort);
+        await supervisor.DisconnectAsync(CancellationToken);
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, 2);
+        Assert.Equal(updated, supervisor.Snapshot.UsedProfile);
+        Assert.Equal(1, context.Factory.MaxActiveCount);
+    }
+
+    [Fact]
+    public async Task SnapshotKeepsRetrySettingsEvenWhenSavedProfileChanges()
+    {
+        var context = CreateContext();
+        context.Factory.EnqueueStart((_, _) => throw new MeshCoreTransportException("offline"));
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting);
+        var used = supervisor.Snapshot.UsedProfile!;
+        context.Profiles.Profiles[0] = used with { TcpPort = 6789 };
+        await context.Profiles.SelectAsync(used.Id, CancellationToken);
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, 2);
+        Assert.Equal(used, supervisor.Snapshot.UsedProfile);
+    }
+
+    [Fact]
     public async Task HappyPathPublishesExactStateSequence()
     {
         var context = CreateContext();

@@ -1,0 +1,15 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConnectionProfileEditorStyles.axaml" />
+  <Style Selector="TextBlock.connection-status.online">
+    <Setter Property="Foreground" Value="{DynamicResource ShellAccentBrush}" />
+  </Style>
+  <Style Selector="TextBlock.connection-status.attention">
+    <Setter Property="Foreground" Value="{DynamicResource ChatErrorBrush}" />
+  </Style>
+  <Style Selector="SelectableTextBlock.connection-key">
+    <Setter Property="IsVisible" Value="{ReflectionBinding Text, RelativeSource={RelativeSource Self}, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="TextWrapping" Value="Wrap" />
+  </Style>
+</Styles>

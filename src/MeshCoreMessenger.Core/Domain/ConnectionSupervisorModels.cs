@@ -19,7 +19,11 @@ public sealed record ConnectionSupervisorSnapshot(
     Guid? SessionId,
     Guid? NodeId,
     string? Reason,
-    DateTimeOffset? NextAttemptUtc);
+    DateTimeOffset? NextAttemptUtc)
+{
+    /// <summary>Immutable configuration owned by this connection/retry cycle, not the edited database row.</summary>
+    public ConnectionProfile? UsedProfile { get; init; }
+}
 
 public sealed class ConnectionSupervisorStateChangedEventArgs(
     ConnectionSupervisorSnapshot previous,

@@ -1,6 +1,15 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
   <GridLength x:Key="ShellRailWidth">104</GridLength>
+  <x:Double x:Key="SettingsColumnWidth">680</x:Double>
+  <x:Double x:Key="SettingsNumberWidth">180</x:Double>
+  <x:Double x:Key="SettingsSpacing">16</x:Double>
+  <x:Double x:Key="SettingsFieldSpacing">6</x:Double>
+  <Thickness x:Key="SettingsWorkspaceMargin">0,104,0,0</Thickness>
+  <Thickness x:Key="SettingsPagePadding">20,16,20,24</Thickness>
+  <Thickness x:Key="SettingsCardPadding">20</Thickness>
+  <Thickness x:Key="SettingsActionMargin">0,4,8,4</Thickness>
+  <CornerRadius x:Key="SettingsCardRadius">16</CornerRadius>
   <GridLength x:Key="ChatListWidth">300</GridLength>
   <x:Double x:Key="ChatNarrowWidth">680</x:Double>
   <x:Double x:Key="ChatFontSize">14</x:Double>
