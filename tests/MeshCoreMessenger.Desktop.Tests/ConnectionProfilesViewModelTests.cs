@@ -29,6 +29,46 @@ public sealed class ConnectionProfilesViewModelTests
     }
 
     [Fact]
+    public async Task AvailablePortsDoNotAutomaticallySelectFirstPort()
+    {
+        var viewModel = CreateViewModel(new FakeProfileManager(), ["/dev/cu.first", "/dev/cu.second"]);
+        await viewModel.LoadAsync(CancellationToken);
+        Assert.Equal(["/dev/cu.first", "/dev/cu.second"], viewModel.AvailableSerialPorts);
+        Assert.Equal(string.Empty, viewModel.SerialPortName);
+        await viewModel.RefreshPortsCommand.ExecuteAsync(null);
+        Assert.Equal(string.Empty, viewModel.SerialPortName);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
+    public async Task RefreshReappliesDraftPortSelectionWithoutSavingOrConnecting()
+    {
+        var saved = CreateSerialProfile("Saved", "/dev/cu.saved");
+        var manager = new FakeProfileManager { Profiles = [saved], Selected = saved };
+        var supervisor = new FakeConnectionSupervisor();
+        var viewModel = CreateViewModel(manager, new FakeSerialPortCatalog(["/dev/cu.detected"]), supervisor);
+        await viewModel.LoadAsync(CancellationToken);
+        viewModel.SerialPortName = "/dev/cu.detected";
+        var reapplied = false;
+        viewModel.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(viewModel.SerialPortName))
+            {
+                Assert.Contains(viewModel.SerialPortName, viewModel.AvailableSerialPorts);
+                reapplied = true;
+            }
+        };
+        await viewModel.RefreshPortsCommand.ExecuteAsync(null);
+        Assert.True(reapplied);
+        Assert.Equal("/dev/cu.detected", viewModel.SerialPortName);
+        Assert.True(viewModel.IsDirty);
+        Assert.Null(manager.SavedDraft);
+        Assert.Equal(0, supervisor.ConnectCalls);
+        Assert.Empty(supervisor.SwitchedProfiles);
+        await viewModel.StopAsync();
+    }
+
+    [Fact]
     public async Task MissingSelectionDoesNotChooseFirstAvailableProfile()
     {
         var manager = new FakeProfileManager

@@ -144,6 +144,8 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
         var all = detected.Concat(AvailableProfiles.Select(item => item.Profile.SerialPortName).OfType<string>())
             .Append(SerialPortName).Where(port => !string.IsNullOrWhiteSpace(port)).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
         AvailableSerialPorts.Clear(); foreach (var port in all) AvailableSerialPorts.Add(port);
+        // Reapply the editor selection after ComboBox lost it during the collection reset.
+        OnPropertyChanged(nameof(SerialPortName));
         OnPropertyChanged(nameof(SerialPortNotice));
     }
     private void ReplaceProfiles(IReadOnlyList<ConnectionProfile> profiles, Guid? selected)

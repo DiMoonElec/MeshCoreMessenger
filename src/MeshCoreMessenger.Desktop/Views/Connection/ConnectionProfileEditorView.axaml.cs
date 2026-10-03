@@ -4,6 +4,13 @@ namespace MeshCoreMessenger.Desktop.Views.Connection;
 public sealed partial class ConnectionProfileEditorView : UserControl
 {
     public ConnectionProfileEditorView() => InitializeComponent();
+    private void OnSerialPortSelectionChanged(object? sender, SelectionChangedEventArgs args)
+    {
+        if (DataContext is not ConnectionProfilesViewModel owner || sender is not ComboBox picker ||
+            picker.SelectedItem is not string port || !owner.AvailableSerialPorts.Contains(port)) return;
+        // Clearing/rebuilding the detected list must not clear the saved/draft port.
+        owner.SerialPortName = port;
+    }
     private void OnProfileSelectionChanged(object? sender, SelectionChangedEventArgs args)
     {
         if (DataContext is not ConnectionProfilesViewModel owner || sender is not ComboBox picker ||

@@ -23,7 +23,8 @@
       </StackPanel>
       <StackPanel Classes="settings-field" IsVisible="{Binding IsSerial}">
         <TextBlock Classes="settings-label" Text="Serial-порт" />
-        <AutoCompleteBox ItemsSource="{Binding AvailableSerialPorts}" Text="{Binding SerialPortName, Mode=TwoWay}" ToolTip.Tip="{Binding SerialPortName}" />
+      <ComboBox ItemsSource="{Binding AvailableSerialPorts}" SelectedItem="{Binding SerialPortName, Mode=OneWay}"
+                SelectionChanged="OnSerialPortSelectionChanged" ToolTip.Tip="{Binding SerialPortName}" />
         <Button Content="Обновить порты" Command="{Binding RefreshPortsCommand}" />
         <TextBlock Classes="settings-hint" Text="{Binding SerialPortNotice}" />
         <TextBlock Classes="settings-error" Text="{Binding SerialPortNameError}" />
