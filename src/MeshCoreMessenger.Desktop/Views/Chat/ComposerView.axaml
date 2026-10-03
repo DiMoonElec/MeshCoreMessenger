@@ -5,12 +5,17 @@
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ComposerStyles.axaml" />
   </UserControl.Styles>
   <Border Classes="composer">
-    <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto">
+    <Grid RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,Auto">
       <TextBox x:Name="MessageInput" Classes="message-input" Text="{Binding Text, Mode=TwoWay}"
                IsEnabled="{Binding CanEdit}" AcceptsReturn="True" TextWrapping="Wrap" PlaceholderText="Сообщение…" />
-      <Button Classes="send-button" Grid.Column="1" Content="➤" IsEnabled="{Binding CanSend}"
-              AutomationProperties.Name="Отправить" ToolTip.Tip="Отправка будет подключена в D5/D6. Сейчас доступны проверка текста и сохранение черновика." />
+      <Button Classes="send-button" Grid.Column="1" Content="➤" IsEnabled="{Binding CanSend}" Command="{Binding SendCommand}"
+              AutomationProperties.Name="Отправить" ToolTip.Tip="{Binding SendTooltip}" />
       <TextBlock Classes="composer-status" Grid.Row="1" Text="{Binding StatusLine}" TextWrapping="Wrap" />
+      <StackPanel Grid.Row="2" Orientation="Horizontal" IsVisible="{Binding HasSlotChoice}" Spacing="8">
+        <TextBlock Text="Слот канала" VerticalAlignment="Center" />
+        <ComboBox ItemsSource="{Binding ChannelSlots}" SelectedItem="{Binding SelectedSlot, Mode=TwoWay}"
+                  PlaceholderText="Выберите слот" AutomationProperties.Name="Слот канала для отправки" />
+      </StackPanel>
     </Grid>
   </Border>
 </UserControl>

@@ -19,3 +19,29 @@ a change. The test harness temporarily suppresses viewport reporting/detaches th
 scroll adapter **only during fixture positioning**, using reflection; the measured
 load/restoration runs the normal production adapter and real layout. A fake read
 store records all advance attempts; real history reads use SQLite.
+
+
+D5 send audit uses the production composer/message controls with a simulated UI
+message service and temporary SQLite. Core tests separately run the production
+message service/client/transport against the loopback Companion emulator.
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --send-only
+```
+
+Checks Light/Dark at 420/960 pixels, explicit selection among two channel slots,
+Enter sending exactly once, Shift+Enter and IME preedit sending zero times,
+post-commit AcceptedByNode bubble and revision-safe draft clearing. Screenshots
+are saved under `$TMPDIR/meshcore-d5-send/`. No hardware node or radio is used.
+
+
+Public chat switching regression (native ChatsView/ListBox, simulated sends,
+temporary SQLite):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --switch-only
+```
+
+Runs A send → select B → B send → select A → A send in Light/Dark without
+incoming notifications during the scenario. Also fails on logged exceptions,
+including off-thread command availability notifications.

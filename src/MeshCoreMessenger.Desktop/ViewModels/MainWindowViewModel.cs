@@ -25,6 +25,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly ComposerContextCoordinator[] _composerContexts;
+    private readonly IOutgoingMessageStore? _outgoingMessages;
+    private readonly ConcurrentQueue<OutgoingMessageCommit> _pendingOutgoing = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _projectionRefreshSignal = new(0);
     private readonly SemaphoreSlim _viewSelectionPersistence = new(1, 1);
@@ -66,8 +68,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IDraftDelay draftDelay,
         ILogger<MainWindowViewModel> logger,
         IOutgoingTextProcessor? textProcessor = null,
-        ISendReadinessReader? sendReadiness = null)
+        ISendReadinessReader? sendReadiness = null,
+        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null)
     {
+        _outgoingMessages = outgoingMessages;
+        if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
         _nodes = nodes;
         _settings = settings;
         _preferences = preferences;
@@ -81,8 +86,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
             directory, history, readStates, readWrites, drafts, settings, dispatcher, searchDelay, draftDelay, logger, tab),
             (navigation, item, token) => Track(SelectConversationCoreAsync(navigation, item, token)), settings, dispatcher, textProcessor);
-        _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger),
-            new(Chats.Private, supervisor, sendReadiness, dispatcher, logger)];
+        _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
+            new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
@@ -346,6 +351,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             return;
         }
 
+        if (_outgoingMessages is not null) _outgoingMessages.MessageCommitted -= OnOutgoingCommitted;
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted -= OnMessageCommitted;
         Shell.PropertyChanged -= OnShellPropertyChanged;
@@ -672,6 +678,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
     }
 
+    private void OnOutgoingCommitted(object? sender, OutgoingMessageCommit commit)
+    {
+        if (Volatile.Read(ref _stopped) != 0) return;
+        _pendingOutgoing.Enqueue(commit);
+        RequestProjectionRefresh();
+    }
+
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)
     {
         await Chats.RefreshAsync(cancellationToken);
@@ -681,6 +694,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             await Chats.HandleCommittedMessageAsync(message, cancellationToken);
         }
 
+        while (_pendingOutgoing.TryDequeue(out var outgoing))
+            foreach (var workspace in new[] { Chats.Public, Chats.Private })
+                await workspace.Navigation.History.HandleOutgoingCommitAsync(outgoing, cancellationToken);
         await _dispatcher.InvokeAsync(() => Status = Navigation.Status, cancellationToken);
     }
 

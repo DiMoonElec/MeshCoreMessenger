@@ -166,6 +166,54 @@ public sealed class DraftEditorViewModelTests
         await editor.StopAsync();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task DraftOwnerPublicationUsesDispatcherAfterAsyncChatSwitchAndStartupCanStayInline(bool dispatchResult)
+    {
+        var dispatcher = new OwnerAuditDispatcher();
+        var model = new DraftEditorViewModel(new AsyncSwitchDraftBuffer(), new ControlledDraftDelay(), dispatcher, NullLogger.Instance);
+        await model.OpenAsync(Item(NodeA, "A", ConversationDirectorySection.Channels, 1), CancellationToken, dispatchResult: false);
+        Assert.Equal(0, dispatcher.Calls);
+        model.Text = "A draft";
+        var ownerPublished = false;
+        model.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName != nameof(DraftEditorViewModel.CanEdit)) return;
+            ownerPublished = true;
+            Assert.Equal(dispatchResult, dispatcher.IsDispatching);
+            Assert.Equal((byte)2, model.Capture().Target.Identity[0]);
+        };
+        await Task.Run(() => model.OpenAsync(Item(NodeA, "B", ConversationDirectorySection.Channels, 2), CancellationToken, dispatchResult), CancellationToken);
+        Assert.True(ownerPublished);
+        Assert.Equal(string.Empty, model.Text);
+        await model.StopAsync();
+    }
+
+    private sealed class OwnerAuditDispatcher : IUiDispatcher
+    {
+        private readonly AsyncLocal<bool> _dispatching = new();
+        public bool IsDispatching => _dispatching.Value;
+        public int Calls { get; private set; }
+        public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            var previous = _dispatching.Value;
+            _dispatching.Value = true;
+            try { action(); }
+            finally { _dispatching.Value = previous; }
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class AsyncSwitchDraftBuffer : IDraftBuffer
+    {
+        public Task<string> LoadTextAsync(DraftTarget target, CancellationToken cancellationToken = default) => Task.FromResult(string.Empty);
+        public void Update(DraftTarget target, string text, long revision) { }
+        public async Task FlushAsync(DraftTarget target, CancellationToken cancellationToken = default) => await Task.Yield();
+    }
+
     private static DraftEditorViewModel Create(
         IDraftBuffer drafts,
         IDraftDelay? delay = null) =>

@@ -10,6 +10,11 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private Task? _serverTask;
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
+    public int ChannelSendCount { get; private set; }
+    public string? LastChannelText { get; private set; }
+    public byte? LastChannelSlot { get; private set; }
+    public bool RejectChannelSend { get; set; }
+    public Func<Task>? BeforeChannelResponse { get; set; }
     public Task Completion => _serverTask ?? Task.CompletedTask;
 
     public void Start()
@@ -56,8 +61,20 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 continue;
             }
 
+            if (type == CommandType.SendChannelTextMessage)
+            {
+                ChannelSendCount++;
+                LastChannelSlot = command[2];
+                LastChannelText = Encoding.UTF8.GetString(command.AsSpan(7));
+                if (BeforeChannelResponse is not null) await BeforeChannelResponse();
+                await WriteFrameAsync(stream, 0x3E, RejectChannelSend
+                    ? [(byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound] : [(byte)PacketType.Ok]);
+                continue;
+            }
+
             var response = type switch
             {
+                CommandType.GetChannel => BuildChannel(command[1]),
                 CommandType.AppStart => BuildSelfInfo(),
                 CommandType.DeviceQuery => BuildDeviceInfo(),
                 CommandType.GetDeviceTime => BuildCurrentTime(),
@@ -66,6 +83,19 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             };
             await WriteFrameAsync(stream, 0x3E, response);
         }
+    }
+
+    private static byte[] BuildChannel(byte slot)
+    {
+        var frame = new byte[2 + ProtocolLimits.ChannelNameSize + ProtocolLimits.ChannelSecretSize];
+        frame[0] = (byte)PacketType.ChannelInfo;
+        frame[1] = slot;
+        if (slot == 0)
+        {
+            WriteFixed(frame.AsSpan(2, ProtocolLimits.ChannelNameSize), "Emulated public");
+            frame.AsSpan(2 + ProtocolLimits.ChannelNameSize).Fill(3);
+        }
+        return frame;
     }
 
     private static byte[] BuildMessage(PacketType type, string text)

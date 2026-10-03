@@ -64,3 +64,14 @@ D4: будущий MessageService получает scoped `SessionCommandLease` 
 владеет этими задачами. При закрытии lease неопределённость сохраняется под прежним
 owner; failed status writes удерживаются для Retry/Flush без повторения TX.
 D4 даёт только инфраструктуру; runtime Send остаётся выключенным до D5/D6.
+
+
+D5: production `MessageService` выполняет одну явную канальную отправку через D4
+lease. Capture включает точные session/generation/binding и ревизию draft;
+processor использует имя фактической ноды. После atomic Prepare передаётся
+ответственность за текст outgoing store; только совпавшая ревизия draft очищается.
+Кнопка/Enter подключены для каналов, выбор нескольких slots явный. Канал получает
+Accepted+NotExpected после OK, Failed после явного ERROR либо Unknown при
+неопределённости. Separate outgoing notifications обновляют пузырёк/preview
+после commit без увеличения unread; статус не создаёт новый пузырёк.
+Private send и manual retry ещё не подключены. [Проверки D5](../plan/d5-channel-send.md).

@@ -357,6 +357,46 @@ public sealed class HistoryWindowViewModel : ObservableObject
         await LoadRelativeAsync(before: false, autoScrollToEnd: true, cancellationToken);
     }
 
+    public async Task HandleOutgoingCommitAsync(OutgoingMessageCommit commit, CancellationToken cancellationToken = default)
+    {
+        if (commit.NodeId != _nodeId || commit.ConversationId != _conversationId) return;
+        var version = Volatile.Read(ref _contextVersion);
+        var shouldLoad = false;
+        await _loadGate.WaitAsync(cancellationToken);
+        try
+        {
+            var position = await _history.GetMessagePositionAsync(commit.NodeId, commit.ConversationId, commit.MessageId, cancellationToken);
+            if (position is null) return;
+            var page = await _history.GetMessagesAroundAsync(position, 0, 0, cancellationToken);
+            var message = page.Items.SingleOrDefault(m => m.Id == commit.MessageId);
+            if (message is null) return;
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (!IsCurrent(commit.NodeId, commit.ConversationId, version)) return;
+                var existing = Messages.FirstOrDefault(m => m.Id == commit.MessageId);
+                if (existing is not null)
+                {
+                    ViewportChanging?.Invoke(this, EventArgs.Empty);
+                    existing.Presentation = new HistoryMessageListItem(message).Presentation;
+                    ScrollRequested?.Invoke(this, new(HistoryScrollIntent.PreserveViewport, _firstVisibleSequence));
+                    return;
+                }
+                if (!commit.Inserted || !_handledCommitIds.Add(commit.MessageId)) return;
+                if (IsAtLatest || Messages.Count == 0) shouldLoad = true;
+                else
+                {
+                    _hasLater = true;
+                    RaiseStateProperties();
+                }
+            }, cancellationToken);
+        }
+        finally { _loadGate.Release(); }
+        if (!shouldLoad || !IsCurrent(commit.NodeId, commit.ConversationId, version)) return;
+        // Read the complete bounded interval, including incoming commits interleaved with this send.
+        if (_lastPosition is null) await JumpToLatestAsync(cancellationToken);
+        else await LoadRelativeAsync(before: false, autoScrollToEnd: true, cancellationToken);
+    }
+
     /// <summary>Reports what is actually visible and conservatively advances read state.</summary>
     public void ReportVisibleRange(
         long? firstSequence,

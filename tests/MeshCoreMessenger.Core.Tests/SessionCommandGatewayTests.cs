@@ -11,7 +11,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class SessionCommandGatewayTests
+public sealed partial class SessionCommandGatewayTests
 {
     [Theory]
     [InlineData("connect")]
@@ -491,6 +491,7 @@ public sealed class SessionCommandGatewayTests
         public int Tx;
         public bool Disposed { get; private set; }
         public string? SentText { get; private set; }
+        public Func<Task>? ChannelSendAction { get; set; }
         public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
         public void Fail()
         {
@@ -559,10 +560,11 @@ public sealed class SessionCommandGatewayTests
             cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx); SentText = text;
             return Task.FromResult(new TextMessageSendResult(42, new(false, 1, 1000), Task.FromResult(new MessageDeliveryResult(MessageDeliveryStatus.NotExpected, null))));
         }
-        public Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default)
+        public async Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx); SentText = text;
-            return Task.FromResult(new ChannelMessageSendResult(slot, 42));
+            if (ChannelSendAction is not null) await ChannelSendAction();
+            return new ChannelMessageSendResult(slot, 42);
         }
     }
 }

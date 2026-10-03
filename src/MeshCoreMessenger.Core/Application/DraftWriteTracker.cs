@@ -3,8 +3,13 @@ using MeshCoreMessenger.Core.Persistence;
 
 namespace MeshCoreMessenger.Core.Application;
 
+public sealed record DraftCapture(DraftTarget Target, string Text, long Revision);
+
 public interface IDraftBuffer
 {
+    Task<bool> ClearTransferredAsync(DraftCapture capture, CancellationToken cancellationToken = default) =>
+        Task.FromResult(false);
+
     Task<string> LoadTextAsync(
         DraftTarget target,
         CancellationToken cancellationToken = default);
@@ -92,6 +97,24 @@ public sealed class DraftWriteTracker(
                 revision,
                 existing?.PersistedRevision ?? 0);
         }
+    }
+
+    public async Task<bool> ClearTransferredAsync(DraftCapture capture, CancellationToken cancellationToken = default)
+    {
+        var key = Key(Copy(capture.Target));
+        await _flushGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            lock (_gate)
+            {
+                if (!_states.TryGetValue(key, out var state) || state.Revision != capture.Revision || state.Text != capture.Text)
+                    return false;
+                _states[key] = state with { Text = string.Empty, PersistedRevision = state.Revision - 1 };
+            }
+        }
+        finally { _flushGate.Release(); }
+        await FlushAsync(capture.Target, cancellationToken).ConfigureAwait(false);
+        return true;
     }
 
     public Task FlushAsync(

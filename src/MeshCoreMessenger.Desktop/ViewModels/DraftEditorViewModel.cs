@@ -117,8 +117,17 @@ public sealed class DraftEditorViewModel : ObservableObject
         }
 
         var version = Interlocked.Increment(ref _contextVersion);
-        _target = nextTarget;
-        OnPropertyChanged(nameof(CanEdit));
+        // This publication also refreshes UI command availability after the asynchronous flush.
+        await ApplyAsync(
+            () =>
+            {
+                if (version != Volatile.Read(ref _contextVersion)) return;
+                _target = nextTarget;
+                OnPropertyChanged(nameof(CanEdit));
+            },
+            dispatchResult,
+            cancellationToken);
+        if (version != Volatile.Read(ref _contextVersion)) return;
         if (nextTarget is null)
         {
             await ApplyAsync(() => SetLoadedText(string.Empty), dispatchResult, cancellationToken);
@@ -141,6 +150,17 @@ public sealed class DraftEditorViewModel : ObservableObject
             },
             dispatchResult,
             cancellationToken);
+    }
+
+    public DraftCapture Capture() => _target is null
+        ? throw new InvalidOperationException("No draft target.")
+        : new(_target with { Identity = _target.Identity.ToArray() }, Text, Volatile.Read(ref _revision));
+
+    public void AcceptTransfer(DraftCapture capture)
+    {
+        if (!SameOwner(capture.Target, _target) || capture.Revision != Volatile.Read(ref _revision) || Text != capture.Text) return;
+        CancelDebounce();
+        SetLoadedText(string.Empty);
     }
 
     public void Clear()

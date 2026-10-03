@@ -40,7 +40,20 @@ recovery без TX, отдельные post-commit notifications и latest-attem
 [D4](d4-session-commands.md) реализован и автоматически проверен: Online admission/
 immutable leases, typed adapters, owned workflows/observers, outgoing status Retry/Flush,
 проверки перед invocation и teardown/next-session/shutdown commit barriers.
-Runtime Send/mutations/advert не подключены. Следующий подэтап — D5; D5–D18 не начаты.
+Runtime Send/mutations/advert в рамках D4 не подключались.
+[D5](d5-channel-send.md) реализован: production отправка в канал, byte processor capture,
+revision-safe draft transfer, post-commit bubble/status, выбор неоднозначного слота,
+Enter/Shift+Enter/IME и single-flight. OK означает AcceptedByNode, без channel ACK.
+Debug/Release: библиотека 96/96, Core 198/198, Desktop 277/277;
+настоящий TCP-клиент проверен на loopback Companion emulator (OK/ERROR), нативный
+send audit Light/Dark 420/960 пройден. Аппаратная нода не использовалась; по указанию
+пользователя аппаратную приёмку он выполняет самостоятельно.
+После аппаратной проверки пользователь обнаружил блокировку send при переходе
+между публичными чатами; исправлена публикация draft owner/CanEdit из фонового
+потока. Native ChatsView/ListBox A → B → A проверен в Light/Dark без incoming,
+добавлены dispatcher/startup регрессии. Пользователь повторил аппаратный сценарий
+и подтвердил: баг исправлен.
+Следующий подэтап — D6; D6–D18 не начаты.
 D4 Debug/Release: библиотека 96/96, Core 180/180, Desktop 267/267.
 Ручная аппаратная проверка D4 не требуется.
 D3 Debug/Release: библиотека 96/96, Core 159/159, Desktop 265/265.

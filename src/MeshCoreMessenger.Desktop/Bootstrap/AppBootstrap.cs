@@ -67,6 +67,7 @@ public static class AppBootstrap
         services.AddSingleton<IDurableMessageIngress>(provider =>
             provider.GetRequiredService<MessageIngestor>());
         services.AddSingleton<IDurableOutgoingWrites, OutgoingAttemptWriteTracker>();
+        services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<SessionCommandGateway>();
         services.AddSingleton<ISessionCommandGateway>(provider => provider.GetRequiredService<SessionCommandGateway>());
         services.AddSingleton<IConnectionAttemptFactory, ConnectionAttemptFactory>();

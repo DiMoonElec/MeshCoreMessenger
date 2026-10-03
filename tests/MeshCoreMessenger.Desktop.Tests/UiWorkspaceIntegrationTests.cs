@@ -266,7 +266,7 @@ public sealed partial class UiWorkspaceIntegrationTests
         public LocalStorage Storage { get; private set; } = null!;
         public NodeData A { get; private set; } = null!;
         public NodeData B { get; private set; } = null!;
-        public MainWindowViewModel Root { get; private set; } = null!;
+        public MainWindowViewModel Root { get; set; } = null!;
         public FakeConnectionSupervisor Supervisor { get; } = new();
         public FakeMessageCommitNotifications Notifications { get; } = new();
         public Guid ProfileId { get; } = Guid.NewGuid();
@@ -281,8 +281,15 @@ public sealed partial class UiWorkspaceIntegrationTests
             w.Storage = await LocalStorage.OpenAsync(DesktopAppPaths.CreateForDirectory(w._directory), Token);
             await w.Storage.ConnectionProfiles.SaveAsync(new ConnectionProfile
             {
-                Id = w.ProfileId, Name = "UI6 fake endpoint", Transport = ConnectionTransportKind.Tcp,
-                TcpHost = "127.0.0.1", TcpPort = 1, AutoConnect = false, Reconnect = false, CreatedUtc = Now, UpdatedUtc = Now,
+                Id = w.ProfileId,
+                Name = "UI6 fake endpoint",
+                Transport = ConnectionTransportKind.Tcp,
+                TcpHost = "127.0.0.1",
+                TcpPort = 1,
+                AutoConnect = false,
+                Reconnect = false,
+                CreatedUtc = Now,
+                UpdatedUtc = Now,
             }, Token);
             w.A = await w.SeedNodeAsync(1, publicMessageCount, variableMessageHeight);
             w.B = await w.SeedNodeAsync(2);
@@ -292,7 +299,8 @@ public sealed partial class UiWorkspaceIntegrationTests
             return w;
         }
         public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null,
-            ISendReadinessReader? sendReadiness = null)
+            ISendReadinessReader? sendReadiness = null, IMessageService? messageService = null,
+            Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null)
         {
             FailingDraftStore = new FaultingDraftStore(Storage.Drafts);
             Drafts = new DraftWriteTracker(FailingDraftStore, TimeProvider.System);
@@ -303,8 +311,9 @@ public sealed partial class UiWorkspaceIntegrationTests
                 Supervisor, new EmptyPorts(), NullLogger<ConnectionProfilesViewModel>.Instance);
             return new MainWindowViewModel(Storage.ConversationDirectory, Storage.History, readStore, Reads,
                 Drafts, Storage.Nodes, Storage.Settings, Preferences, profiles, Supervisor, Notifications,
-                dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), NullLogger<MainWindowViewModel>.Instance,
-                sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory));
+                dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), logger ?? NullLogger<MainWindowViewModel>.Instance,
+                sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory),
+                messageService: messageService, outgoingMessages: Storage.OutgoingMessages);
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));
@@ -329,9 +338,13 @@ public sealed partial class UiWorkspaceIntegrationTests
             StoredIncomingMessage privateLast = null!;
             for (var index = 0; index < 12; index++)
                 privateLast = await StorePrivateAsync(partial, index == 2 ? "private needle" : $"private message {index}");
-            return partial with { ConversationId = last.ConversationId, Target = new DraftTarget(node.Id, last.ConversationId, ConversationKind.Channel, fingerprint),
+            return partial with
+            {
+                ConversationId = last.ConversationId,
+                Target = new DraftTarget(node.Id, last.ConversationId, ConversationKind.Channel, fingerprint),
                 PrivateConversationId = privateLast.ConversationId,
-                PrivateTarget = new DraftTarget(node.Id, privateLast.ConversationId, ConversationKind.Contact, Enumerable.Repeat((byte)9, 32).ToArray()) };
+                PrivateTarget = new DraftTarget(node.Id, privateLast.ConversationId, ConversationKind.Contact, Enumerable.Repeat((byte)9, 32).ToArray())
+            };
         }
         public Task<StoredIncomingMessage> StoreAsync(NodeData node, string text) => Storage.IncomingMessages.StoreAsync(
             new IncomingMessageEnvelope(Guid.NewGuid(), node.SessionId, node.NodeId,

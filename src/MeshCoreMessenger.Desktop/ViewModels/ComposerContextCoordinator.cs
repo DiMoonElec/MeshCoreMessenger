@@ -12,6 +12,8 @@ internal sealed class ComposerContextCoordinator
     private readonly ChatWorkspaceViewModel _workspace;
     private readonly IConnectionSupervisor _supervisor;
     private readonly ISendReadinessReader? _reader;
+    private readonly IMessageService? _messages;
+    private string? _recipientKey;
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger _logger;
     private readonly CancellationTokenSource _stop = new();
@@ -22,16 +24,32 @@ internal sealed class ComposerContextCoordinator
     private bool _initialized;
 
     public ComposerContextCoordinator(ChatWorkspaceViewModel workspace, IConnectionSupervisor supervisor,
-        ISendReadinessReader? reader, IUiDispatcher dispatcher, ILogger logger)
+        ISendReadinessReader? reader, IUiDispatcher dispatcher, ILogger logger, IMessageService? messages = null)
     {
         _workspace = workspace;
         _supervisor = supervisor;
         _reader = reader;
+        _messages = messages;
+        if (messages is not null) workspace.Composer.ConfigureSend(SendAsync);
+        workspace.Composer.PropertyChanged += OnComposerChanged;
         _dispatcher = dispatcher;
         _logger = logger;
         workspace.PropertyChanged += OnWorkspaceChanged;
         workspace.Navigation.PropertyChanged += OnNavigationChanged;
         Refresh();
+    }
+
+    private async Task SendAsync()
+    {
+        var snapshot = _workspace.Composer.SendCapture ?? throw new InvalidOperationException("No send target.");
+        var request = snapshot with { Draft = _workspace.Composer.Draft!.Capture(), Options = _workspace.Composer.Options };
+        await _messages!.SendChannelAsync(request, capture => _dispatcher.InvokeAsync(
+            () => _workspace.Composer.Draft!.AcceptTransfer(capture), CancellationToken.None), _stop.Token);
+    }
+
+    private void OnComposerChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName is nameof(ComposerViewModel.SelectedSlot) or nameof(ComposerViewModel.CanEdit)) Refresh();
     }
 
     private void OnWorkspaceChanged(object? sender, PropertyChangedEventArgs args)
@@ -84,8 +102,15 @@ internal sealed class ComposerContextCoordinator
             connection = _supervisor.Snapshot;
             node = _workspace.ViewedNode?.Id;
             var entry = _workspace.SelectedConversation?.Entry;
+            var recipientKey = entry is null ? null : $"{node}:{Convert.ToHexString(entry.Identity)}";
+            if (_recipientKey != recipientKey)
+            {
+                _recipientKey = recipientKey;
+                _workspace.Composer.ResetSendContext(clearSlots: true);
+            }
+            else _workspace.Composer.ResetSendContext();
             if (entry is not null)
-                recipient = new(entry.Kind, entry.Identity.ToArray());
+                recipient = new(entry.Kind, entry.Identity.ToArray(), _workspace.Composer.SelectedSlot);
             var isChannel = entry?.Kind is ConversationKind.Channel or ConversationKind.UnknownChannel ||
                 (entry is null && _workspace.Navigation.SelectedTab.Tab == MessengerNavigationTab.Channels);
             var senderName = connection.State == ConnectionSupervisorState.Online && connection.NodeId == node && connection.SessionId is not null
@@ -98,9 +123,14 @@ internal sealed class ComposerContextCoordinator
             var readiness = _reader is not null
                 ? await _reader.ReadAsync(connection, node, recipient, _stop.Token).ConfigureAwait(false)
                 : SendReadinessReader.CheckContext(connection, node, recipient) ?? SendReadiness.ReadFailed;
+            var targets = _messages is not null && recipient?.Kind == ConversationKind.Channel
+                ? await _messages.GetChannelTargetsAsync(node!.Value, recipient.Identity, _stop.Token).ConfigureAwait(false)
+                : [];
             void Apply()
             {
-                if (IsCurrent(revision)) _workspace.Composer.Readiness = readiness;
+                if (!IsCurrent(revision)) return;
+                _workspace.Composer.Readiness = readiness;
+                if (targets.Count > 0) _workspace.Composer.SetSendContext(node!.Value, connection.SessionId!.Value, connection.Generation, targets);
             }
             if (dispatchResult) await _dispatcher.InvokeAsync(Apply, _stop.Token);
             else Apply();
@@ -130,10 +160,13 @@ internal sealed class ComposerContextCoordinator
             _revision++;
             pending = [.. _pending];
         }
+        _workspace.Composer.StopSend();
+        _workspace.Composer.PropertyChanged -= OnComposerChanged;
         _workspace.PropertyChanged -= OnWorkspaceChanged;
         _workspace.Navigation.PropertyChanged -= OnNavigationChanged;
         _stop.Cancel();
         await Task.WhenAll(pending).ConfigureAwait(false);
+        if (_workspace.Composer.SendCommand.ExecutionTask is { } send) await send.ConfigureAwait(false);
         _stop.Dispose();
     }
 }

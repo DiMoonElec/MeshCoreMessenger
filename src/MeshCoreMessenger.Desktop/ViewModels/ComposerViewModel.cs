@@ -1,5 +1,7 @@
 using System.ComponentModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreSharp.Models;
 
@@ -18,6 +20,7 @@ public sealed class ComposerViewModel : ObservableObject
 
     public ComposerViewModel(DraftEditorViewModel? draft = null, IOutgoingTextProcessor? processor = null)
     {
+        SendCommand = new AsyncRelayCommand(SendAsync, () => CanSend);
         Draft = draft;
         _processor = processor ?? new PassthroughOutgoingTextProcessor();
         _processedText = _processor.Process(Text, Context, Options);
@@ -36,7 +39,67 @@ public sealed class ComposerViewModel : ObservableObject
     }
     public bool CanEdit => Draft?.CanEdit ?? true;
     // Validation/readiness is presentation only. D5/D6 will supply actual command admission.
-    public bool CanSend => false;
+    private Func<Task>? _send;
+    private bool _sending;
+    private bool _stopped;
+    private string? _sendError;
+    private byte? _selectedSlot;
+    public IReadOnlyList<byte> ChannelSlots { get; private set; } = [];
+    public bool HasSlotChoice => ChannelSlots.Count > 1;
+    public byte? SelectedSlot
+    {
+        get => _selectedSlot;
+        set { if (SetProperty(ref _selectedSlot, value)) InvalidateSend(); }
+    }
+    internal ChannelSendRequest? SendCapture { get; private set; }
+    public IAsyncRelayCommand SendCommand { get; }
+    public string SendTooltip => Context.IsChannel ? "Отправить в канал (Enter). Новая строка: Shift+Enter." : "Личная отправка будет подключена в D6.";
+    public bool CanSend => !_stopped && !_sending && _send is not null && SendCapture is not null &&
+        IsReadyForSend && !string.IsNullOrWhiteSpace(Text);
+    internal void ConfigureSend(Func<Task> send) { _send = send; InvalidateSend(); }
+    internal void SetSendContext(Guid nodeId, Guid sessionId, long generation, IReadOnlyList<OutgoingRecipient> targets)
+    {
+        var previousSlot = _selectedSlot;
+        var slots = targets.Select(t => t.Slot!.Value).ToArray();
+        var slotsChanged = !ChannelSlots.SequenceEqual(slots);
+        if (slotsChanged) ChannelSlots = slots;
+        if (ChannelSlots.Count == 1) _selectedSlot = ChannelSlots[0];
+        else if (_selectedSlot is not null && !ChannelSlots.Contains(_selectedSlot.Value)) _selectedSlot = null;
+        var target = targets.SingleOrDefault(t => t.Slot == _selectedSlot);
+        SendCapture = target is null || Draft?.CanEdit != true ? null : new(nodeId, sessionId, generation, target, Draft.Capture(), Options);
+        if (slotsChanged)
+        {
+            OnPropertyChanged(nameof(ChannelSlots));
+            OnPropertyChanged(nameof(HasSlotChoice));
+        }
+        if (previousSlot != _selectedSlot) OnPropertyChanged(nameof(SelectedSlot));
+        InvalidateSend();
+    }
+    internal void ResetSendContext(bool clearSlots = false)
+    {
+        SendCapture = null;
+        if (clearSlots)
+        {
+            ChannelSlots = [];
+            _selectedSlot = null;
+            OnPropertyChanged(nameof(ChannelSlots)); OnPropertyChanged(nameof(HasSlotChoice)); OnPropertyChanged(nameof(SelectedSlot));
+        }
+        InvalidateSend();
+    }
+    internal void StopSend() { _stopped = true; InvalidateSend(); }
+    private async Task SendAsync()
+    {
+        if (!CanSend) return;
+        _sending = true; _sendError = null; InvalidateSend();
+        try { await _send!(); }
+        catch (Exception) { _sendError = "Не удалось завершить отправку. Проверьте статус сообщения и подключения."; }
+        finally { _sending = false; InvalidateSend(); }
+    }
+    private void InvalidateSend()
+    {
+        OnPropertyChanged(nameof(CanSend)); OnPropertyChanged(nameof(StatusLine));
+        SendCommand.NotifyCanExecuteChanged();
+    }
     public ProcessedOutgoingText ProcessedText => _processedText;
     public bool IsReadyForSend => Readiness == SendReadiness.Ready && ProcessedText.Validation.IsValid;
     public string ByteCounter => $"{ProcessedText.Validation.Utf8ByteCount?.ToString() ?? "—"} / " +
@@ -59,6 +122,7 @@ public sealed class ComposerViewModel : ObservableObject
             if (!SetProperty(ref _readiness, value)) return;
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(IsReadyForSend));
+            InvalidateSend();
         }
     }
     public string PreviewExplanation
@@ -71,7 +135,7 @@ public sealed class ComposerViewModel : ObservableObject
         get
         {
             var explanation = Draft is null ? PreviewExplanation : Draft.ErrorMessage ?? Draft.Status;
-            var statuses = string.Join(" • ", new[] { ReadinessMessage, ValidationMessage, explanation }.Where(s => !string.IsNullOrWhiteSpace(s)));
+            var statuses = string.Join(" • ", new[] { ReadinessMessage, ValidationMessage, explanation, _sendError }.Where(s => !string.IsNullOrWhiteSpace(s)));
             return statuses.Length == 0 ? ByteCounter : $"{ByteCounter} - {statuses}";
         }
     }
@@ -86,6 +150,8 @@ public sealed class ComposerViewModel : ObservableObject
     private void RefreshText()
     {
         _processedText = _processor.Process(Text, Context, Options);
+        InvalidateSend();
+        OnPropertyChanged(nameof(SendTooltip));
         OnPropertyChanged(nameof(ProcessedText));
         OnPropertyChanged(nameof(ByteCounter));
         OnPropertyChanged(nameof(ValidationMessage));

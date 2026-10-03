@@ -9,7 +9,12 @@ Exception? failure = null;
 var completed = false;
 Dispatcher.UIThread.Post(async () =>
 {
-    try { await UiWorkspaceIntegrationTests.NativeAudit.RunAsync(!args.Contains("--measure-only")); }
+    try
+    {
+        if (args.Contains("--switch-only")) await UiWorkspaceIntegrationTests.NativeSwitchAudit.RunAsync();
+        else if (args.Contains("--send-only")) await UiWorkspaceIntegrationTests.NativeSendAudit.RunAsync();
+        else await UiWorkspaceIntegrationTests.NativeAudit.RunAsync(!args.Contains("--measure-only"));
+    }
     catch (Exception error) { failure = error; }
     finally { completed = true; lifetime.Cancel(); }
 });
