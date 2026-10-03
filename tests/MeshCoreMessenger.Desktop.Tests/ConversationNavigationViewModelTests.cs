@@ -14,6 +14,51 @@ public sealed class ConversationNavigationViewModelTests
     private static readonly Guid NodeB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
+    public async Task RefreshDuringNodeInitializationDoesNotSkipOpeningHistoryAndDraft()
+    {
+        var directory = new FakeDirectoryReader();
+        directory.Set(NodeA, ConversationDirectorySection.ChatContacts,
+            Entry(NodeA, "chat", ConversationDirectorySection.ChatContacts, Guid.NewGuid()));
+        var dispatcher = new QueuedUiDispatcher();
+        var model = Create(directory, dispatcher: dispatcher);
+        var load = model.LoadNodeAsync(NodeA, CancellationToken);
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        dispatcher.RunNext(); // Projection selected, but History.Open is still queued.
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        var refresh = model.RefreshAsync(CancellationToken);
+        Assert.False(refresh.IsCompleted);
+        Assert.Equal(1, dispatcher.PendingCount);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(5));
+        while (!load.IsCompleted || !refresh.IsCompleted)
+        {
+            if (dispatcher.PendingCount > 0) dispatcher.RunNext();
+            else await Task.Delay(1, timeout.Token);
+        }
+        await Task.WhenAll(load, refresh);
+        Assert.True(model.History.HasConversation);
+        Assert.True(model.Draft.CanEdit);
+        Assert.Equal("chat", model.SelectedConversation?.StableKey);
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task ShutdownCancelsRefreshWaitingForNodeInitialization()
+    {
+        var directory = new FakeDirectoryReader();
+        directory.Gates[(NodeA, ConversationDirectorySection.ChatContacts)] =
+            new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var model = Create(directory);
+        var load = model.LoadNodeAsync(NodeA, CancellationToken);
+        var refresh = model.RefreshAsync(CancellationToken);
+        Assert.False(load.IsCompleted);
+        Assert.False(refresh.IsCompleted);
+        await model.StopAsync();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => load);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => refresh);
+    }
+
+    [Fact]
     public void TechnicalListResetDoesNotBecomeConversationDeselection()
     {
         Assert.Null(MainWindow.ConversationSelectionToApply(null));

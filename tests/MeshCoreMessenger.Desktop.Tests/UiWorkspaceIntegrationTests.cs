@@ -12,7 +12,7 @@ using Xunit;
 namespace MeshCoreMessenger.Desktop.Tests;
 
 /// <summary>UI6: real SQLite/durable owners, fake supervisor/dispatcher/delays; no physical transport.</summary>
-public sealed class UiWorkspaceIntegrationTests
+public sealed partial class UiWorkspaceIntegrationTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
     private static readonly DateTimeOffset Now = new(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
@@ -275,7 +275,7 @@ public sealed class UiWorkspaceIntegrationTests
         public ConversationReadStateTracker Reads { get; private set; } = null!;
         public DesktopPreferences Preferences { get; private set; } = null!;
 
-        public static async Task<Workspace> CreateAsync()
+        public static async Task<Workspace> CreateAsync(int publicMessageCount = 12)
         {
             var w = new Workspace();
             w.Storage = await LocalStorage.OpenAsync(DesktopAppPaths.CreateForDirectory(w._directory), Token);
@@ -284,7 +284,7 @@ public sealed class UiWorkspaceIntegrationTests
                 Id = w.ProfileId, Name = "UI6 fake endpoint", Transport = ConnectionTransportKind.Tcp,
                 TcpHost = "127.0.0.1", TcpPort = 1, AutoConnect = false, Reconnect = false, CreatedUtc = Now, UpdatedUtc = Now,
             }, Token);
-            w.A = await w.SeedNodeAsync(1);
+            w.A = await w.SeedNodeAsync(1, publicMessageCount);
             w.B = await w.SeedNodeAsync(2);
             await w.Storage.Settings.SetAsync(MainWindowViewModel.LastConnectedNodeSettingKey, w.A.NodeId.ToString("D"), Token);
             w.Root = w.CreateRoot();
@@ -305,7 +305,7 @@ public sealed class UiWorkspaceIntegrationTests
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));
-        private async Task<NodeData> SeedNodeAsync(byte key)
+        private async Task<NodeData> SeedNodeAsync(byte key, int publicMessageCount = 12)
         {
             var node = await Storage.Nodes.FindOrCreateAsync(Enumerable.Repeat(key, 32).ToArray(), $"Node {key}", Now, Token);
             var session = Guid.NewGuid();
@@ -319,7 +319,7 @@ public sealed class UiWorkspaceIntegrationTests
             var binding = Assert.Single(snapshot.ActiveBindings);
             var partial = new NodeData(node.Id, session, Guid.Empty, binding, null!);
             StoredIncomingMessage last = null!;
-            for (var index = 0; index < 12; index++)
+            for (var index = 0; index < publicMessageCount; index++)
                 last = await StoreAsync(partial, index == 2 ? $"Node {key} needle" : $"Node {key} message {index}");
             await Storage.Settings.SetAsync(ConversationNavigationViewModel.TabSettingKey(node.Id), MessengerNavigationTab.Channels.ToString(), Token);
             StoredIncomingMessage privateLast = null!;

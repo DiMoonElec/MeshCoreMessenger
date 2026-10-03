@@ -66,6 +66,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     private long _directorySearchRevision;
     private ChannelAccessFilterItem _selectedChannelFilter;
     private long _contextVersion;
+    private TaskCompletionSource? _nodeLoadCompletion;
     private int _stopped;
 
     public ConversationNavigationViewModel(
@@ -307,6 +308,18 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         CancellationToken cancellationToken = default,
         bool dispatchResult = true)
     {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Interlocked.Exchange(ref _nodeLoadCompletion, completion);
+        try { await LoadNodeCoreAsync(nodeId, cancellationToken, dispatchResult); }
+        finally
+        {
+            completion.TrySetResult();
+            Interlocked.CompareExchange(ref _nodeLoadCompletion, null, completion);
+        }
+    }
+
+    private async Task LoadNodeCoreAsync(Guid nodeId, CancellationToken cancellationToken, bool dispatchResult)
+    {
         ResetDirectorySearch();
         var version = Interlocked.Increment(ref _contextVersion);
         _nodeId = nodeId;
@@ -452,6 +465,11 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
+        using var linked = CreateLinkedCancellation(cancellationToken);
+        // A refresh must not supersede node initialization between projection and
+        // history/draft opening. A newer node load still proceeds independently.
+        while (Volatile.Read(ref _nodeLoadCompletion) is { } loading)
+            await loading.Task.WaitAsync(linked.Token);
         var nodeId = _nodeId;
         if (nodeId is null)
         {
@@ -463,7 +481,6 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         var selectedConversationId = SelectedConversation?.Id;
         var previousSelectedKey = SelectedConversation?.StableKey;
         var tab = SelectedTab.Tab;
-        using var linked = CreateLinkedCancellation(cancellationToken);
         var projection = await ReadProjectionAsync(nodeId.Value, tab, selectedKey, linked.Token);
         var applied = false;
         var conversationChanged = false;
