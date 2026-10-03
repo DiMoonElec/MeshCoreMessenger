@@ -28,6 +28,7 @@
 - [c9-preferences](messenger/plan/c9-preferences.md) — C9: темы, window placement и keyboard UX.
 - [ui-components](messenger/plan/ui-components.md) — Актуальный согласованный UI1–UI6 и результаты shell/иконок.
 - [ui6-integration](messenger/plan/ui6-integration.md) — Общая интеграция экранов, regression и ручная приёмка.
+- [chat-workspaces](messenger/plan/chat-workspaces.md) — Независимые Public/Private owners и сохранение состояния при переключении.
 - [c10-acceptance](messenger/plan/c10-acceptance.md) — C10: совместная приёмка и 100 000 сообщений.
 - [stage-c-risks](messenger/plan/stage-c-risks.md) — Исторический baseline C1, риски и отложенные возможности.
 - [stage-d](messenger/plan/stage-d.md) — Stage D: отправка и управление контактами/каналами.

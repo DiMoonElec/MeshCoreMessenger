@@ -15,8 +15,8 @@
 3. **Разная семантика screen и conversation.** Settings не является четвёртым
    `MessengerNavigationTab`, принадлежащим ноде. Shell section и последняя
    node-scoped вкладка/запись — разные состояния. Возврат из Settings сохраняет
-   диалог, search и draft; переключение Channels/Personal использует существующий
-   node-scoped контракт, не обещая новый кеш всех переписок.
+   диалог, search и draft. После уточнения UI6 Channels/Personal также сохраняют
+   независимые presentation состояния: два фиксированных workspace, не кеш всех переписок.
 4. **Черновик.** Уход с экрана не теряет dirty revision и не меняет его owner;
    смена NodeId/conversation по-прежнему выполняет безопасный flush. Connect из
    Settings может определить другую ноду: прежний draft остаётся в прежней истории.

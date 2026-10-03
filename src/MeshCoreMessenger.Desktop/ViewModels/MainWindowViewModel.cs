@@ -46,7 +46,6 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private int _projectionRefreshRequested;
     private int _stopped;
     private bool _syncingShell;
-    private readonly SemaphoreSlim _shellNavigationGate = new(1, 1);
     private long _shellRequestVersion;
 
     public MainWindowViewModel(
@@ -76,17 +75,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _logger = logger;
         _connectionState = supervisor.Snapshot.State;
         Devices = new DevicesWorkspaceViewModel(directory, dispatcher, searchDelay, logger);
-        Navigation = new ConversationNavigationViewModel(
-            directory,
-            history,
-            readStates,
-            readWrites,
-            drafts,
-            settings,
-            dispatcher,
-            searchDelay,
-            draftDelay,
-            logger);
+        Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
+            directory, history, readStates, readWrites, drafts, settings, dispatcher, searchDelay, draftDelay, logger, tab),
+            (navigation, item, token) => Track(SelectConversationCoreAsync(navigation, item, token)), settings, dispatcher);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
@@ -96,7 +87,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _supervisor.StateChanged += OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted += OnMessageCommitted;
         Shell.PropertyChanged += OnShellPropertyChanged;
-        Navigation.PropertyChanged += OnNavigationPropertyChanged;
+        Chats.PropertyChanged += OnNavigationPropertyChanged;
         _projectionRefreshWorker = Track(ProcessProjectionRefreshesAsync());
     }
 
@@ -105,6 +96,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     public NavigationShellViewModel Shell { get; } = new();
     public DevicesWorkspaceViewModel Devices { get; }
+    public ChatWorkspacesViewModel Chats { get; }
     public bool IsChatWorkspaceVisible => Shell.IsChatSelected && Navigation.SelectedTab.Tab ==
         (Shell.SelectedItem.Section == ShellSection.PublicChats ? MessengerNavigationTab.Channels : MessengerNavigationTab.Personal);
 
@@ -203,7 +195,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public IRelayCommand ToggleConnectionSettingsCommand { get; }
     public IRelayCommand CloseConnectionSettingsCommand { get; }
     public ConnectionProfilesViewModel Profiles { get; }
-    public ConversationNavigationViewModel Navigation { get; }
+    public ConversationNavigationViewModel Navigation => Chats.Active.Navigation;
     public ObservableCollection<KnownNodeListItem> KnownNodes { get; } = [];
     public ObservableCollection<ConversationListItem> Conversations => Navigation.Conversations;
     public ObservableCollection<HistoryMessageListItem> Messages => Navigation.Messages;
@@ -331,7 +323,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ConversationListItem? conversation,
         CancellationToken cancellationToken = default)
     {
-        return Track(SelectConversationCoreAsync(conversation, cancellationToken));
+        return Track(SelectConversationCoreAsync(Navigation, conversation, cancellationToken));
     }
 
     public Task SelectNavigationTabAsync(
@@ -351,12 +343,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted -= OnMessageCommitted;
         Shell.PropertyChanged -= OnShellPropertyChanged;
-        Navigation.PropertyChanged -= OnNavigationPropertyChanged;
+        Chats.PropertyChanged -= OnNavigationPropertyChanged;
         _lifetimeCancellation.Cancel();
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
         _projectionRefreshSignal.Release();
-        await Navigation.StopAsync().ConfigureAwait(false);
+        await Chats.StopAsync().ConfigureAwait(false);
         await Profiles.StopAsync().ConfigureAwait(false);
         await Devices.StopAsync().ConfigureAwait(false);
 
@@ -466,7 +458,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
-            await Navigation.SelectTabAsync(tab, linkedCancellation.Token);
+            Shell.SelectSection(tab.Tab == MessengerNavigationTab.Channels ? ShellSection.PublicChats : ShellSection.PrivateChats);
+            await Chats.SaveActiveSectionAsync(linkedCancellation.Token);
             Status = Navigation.Status;
         }
         catch (OperationCanceledException)
@@ -673,11 +666,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)
     {
-        await Navigation.RefreshAsync(cancellationToken);
+        await Chats.RefreshAsync(cancellationToken);
         await Devices.RefreshAsync(cancellationToken);
         while (_pendingCommittedMessages.TryDequeue(out var message))
         {
-            await Navigation.HandleCommittedMessageAsync(message, cancellationToken);
+            await Chats.HandleCommittedMessageAsync(message, cancellationToken);
         }
 
         await _dispatcher.InvokeAsync(() => Status = Navigation.Status, cancellationToken);
@@ -695,7 +688,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
 
         var shellVersion = Volatile.Read(ref _shellRequestVersion);
-        await Navigation.LoadNodeAsync(nodeId, cancellationToken, dispatchResult);
+        await Chats.LoadNodeAsync(nodeId, cancellationToken, dispatchResult);
         if (contextVersion == Volatile.Read(ref _viewContextVersion))
             await Devices.RefreshAsync(cancellationToken, dispatchResult);
         if (contextVersion == Volatile.Read(ref _viewContextVersion) && ViewedNode?.Id == nodeId && Shell.IsChatSelected &&
@@ -730,38 +723,33 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                 OnPropertyChanged(nameof(IsChatWorkspaceVisible));
             return;
         }
+        Interlocked.Increment(ref _shellRequestVersion);
+        Chats.SelectSection(Shell.SelectedItem.Section);
         OnPropertyChanged(nameof(IsChatWorkspaceVisible));
-        Navigation.History.ReportVisibleRange(null, null, false, false);
-        var revision = Interlocked.Increment(ref _shellRequestVersion);
-        var tab = Shell.SelectedItem.Section switch
-        {
-            ShellSection.PublicChats => MessengerNavigationTab.Channels,
-            ShellSection.PrivateChats => MessengerNavigationTab.Personal,
-            _ => (MessengerNavigationTab?)null,
-        };
-        if (tab is { } selected)
-            Track(ApplyShellTabAsync(selected, revision));
+        if (Shell.IsChatSelected) Track(PersistChatSectionAsync());
     }
 
     private void OnNavigationPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedTab))
-            OnPropertyChanged(nameof(IsChatWorkspaceVisible));
+        OnPropertyChanged(nameof(Navigation));
+        OnPropertyChanged(nameof(Conversations));
+        OnPropertyChanged(nameof(Messages));
+        OnPropertyChanged(nameof(SelectedConversation));
+        OnPropertyChanged(nameof(IsChatWorkspaceVisible));
     }
 
-    private async Task ApplyShellTabAsync(MessengerNavigationTab tab, long revision)
+    private async Task PersistChatSectionAsync()
     {
         try
         {
-            await _shellNavigationGate.WaitAsync(_lifetimeCancellation.Token);
-            try
-            {
-                if (revision == Volatile.Read(ref _shellRequestVersion))
-                    await SelectNavigationTabCoreAsync(Navigation.Tabs.Single(item => item.Tab == tab), _lifetimeCancellation.Token);
-            }
-            finally { _shellNavigationGate.Release(); }
+            await Chats.SaveActiveSectionAsync(_lifetimeCancellation.Token);
         }
         catch (OperationCanceledException) when (_lifetimeCancellation.IsCancellationRequested) { }
+        catch (Exception error)
+        {
+            _logger.LogError(error, "Could not save the chat section.");
+            await SetErrorAsync("Не удалось сохранить выбранный раздел.");
+        }
     }
 
     private async Task PersistViewedNodeAsync(
@@ -792,7 +780,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         var version = Interlocked.Increment(ref _viewContextVersion);
         ViewedNode = node;
         Devices.SetNode(node?.Id, node?.HeaderLabel);
-        Navigation.ClearNode();
+        Chats.SetNode(node);
         ErrorMessage = null;
         Status = node is null ? "Нет истории подключённой ноды" : "Загрузка истории ноды…";
         return version;
@@ -823,6 +811,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         if (ViewedNode?.Id == item.Id)
         {
             ViewedNode = item;
+            Chats.UpdateNodeLabel(item);
             Devices.SetNode(item.Id, item.HeaderLabel);
         }
 
@@ -873,6 +862,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     }
 
     private async Task SelectConversationCoreAsync(
+        ConversationNavigationViewModel navigation,
         ConversationListItem? conversation,
         CancellationToken cancellationToken)
     {
@@ -881,7 +871,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 _lifetimeCancellation.Token);
-            await Navigation.SelectConversationAsync(conversation, linkedCancellation.Token);
+            await navigation.SelectConversationAsync(conversation, linkedCancellation.Token);
             Status = Navigation.Status;
         }
         catch (OperationCanceledException)

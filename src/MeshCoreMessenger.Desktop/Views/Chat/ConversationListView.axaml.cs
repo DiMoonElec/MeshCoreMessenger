@@ -11,7 +11,7 @@ public sealed partial class ConversationListView : UserControl
         InitializeComponent();
         ConversationList.PointerReleased += async (_, _) =>
         {
-            if (DataContext is MainWindowViewModel owner && ConversationList.SelectedItem is ConversationListItem item &&
+            if (DataContext is ChatWorkspaceViewModel owner && ConversationList.SelectedItem is ConversationListItem item &&
                 ReferenceEquals(item, owner.SelectedConversation))
             {
                 try { await owner.SelectConversationAsync(item); }
@@ -20,7 +20,7 @@ public sealed partial class ConversationListView : UserControl
         };
         ConversationList.KeyDown += async (_, args) =>
         {
-            if (args.Key == Key.Enter && DataContext is MainWindowViewModel owner && ConversationList.SelectedItem is ConversationListItem item)
+            if (args.Key == Key.Enter && DataContext is ChatWorkspaceViewModel owner && ConversationList.SelectedItem is ConversationListItem item)
             {
                 args.Handled = true;
                 try { await owner.SelectConversationAsync(item); }
@@ -34,7 +34,7 @@ public sealed partial class ConversationListView : UserControl
     private async void OnSelectionChanged(object? sender, SelectionChangedEventArgs args)
     {
         // Collection refresh nulls are not user requests to close a conversation.
-        if (DataContext is MainWindowViewModel owner && ConversationList.SelectedItem is ConversationListItem item &&
+        if (DataContext is ChatWorkspaceViewModel owner && ConversationList.SelectedItem is ConversationListItem item &&
             !ReferenceEquals(item, owner.SelectedConversation))
         {
             try { await owner.SelectConversationAsync(item); }

@@ -34,6 +34,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     private const int DirectoryPageSize = 100;
     private readonly IConversationDirectoryReader _directory;
     private readonly ISettingsStore _settings;
+    private readonly MessengerNavigationTab? _fixedTab;
     private readonly IUiDispatcher _dispatcher;
     private readonly ISearchDelay _searchDelay;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
@@ -77,10 +78,12 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         IUiDispatcher dispatcher,
         ISearchDelay searchDelay,
         IDraftDelay draftDelay,
-        ILogger logger)
+        ILogger logger,
+        MessengerNavigationTab? fixedTab = null)
     {
         _directory = directory;
         _settings = settings;
+        _fixedTab = fixedTab;
         _dispatcher = dispatcher;
         _searchDelay = searchDelay;
         History = new HistoryWindowViewModel(
@@ -98,7 +101,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             new(MessengerNavigationTab.Channels, "Каналы"),
             new(MessengerNavigationTab.Devices, "Устройства"),
         ];
-        _selectedTab = Tabs[0];
+        _selectedTab = Tabs.Single(item => item.Tab == (fixedTab ?? MessengerNavigationTab.Personal));
         ChannelFilters =
         [
             new(ChannelAccessFilter.All, "Все каналы"),
@@ -309,10 +312,13 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         _nodeId = nodeId;
         using var linked = CreateLinkedCancellation(cancellationToken);
         var storedTab = await _settings.GetAsync(TabSettingKey(nodeId), linked.Token);
-        var tab = Enum.TryParse<MessengerNavigationTab>(storedTab, out var parsed)
+        var legacyTab = Enum.TryParse<MessengerNavigationTab>(storedTab, out var parsed)
             ? parsed
             : MessengerNavigationTab.Personal;
-        var selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId), linked.Token);
+        var tab = _fixedTab ?? legacyTab;
+        var selectedKey = await _settings.GetAsync(SelectionSettingKey(nodeId), linked.Token);
+        if (selectedKey is null && _fixedTab is not null && legacyTab == tab)
+            selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId), linked.Token);
         var projection = await ReadProjectionAsync(nodeId, tab, selectedKey, linked.Token);
         var applied = false;
         await ApplyAsync(
@@ -328,7 +334,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             },
             dispatchResult,
             linked.Token);
-        if (applied)
+        if (applied && IsCurrent(nodeId, version))
         {
             await History.OpenAsync(
                 nodeId,
@@ -355,6 +361,9 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             throw new ArgumentException("The tab is not part of this navigation model.", nameof(tab));
         }
 
+        if (_fixedTab is { } fixedTab && tab.Tab != fixedTab)
+            throw new InvalidOperationException("A chat workspace cannot change its directory section.");
+
         var nodeId = _nodeId;
         if (nodeId is null || tab.Tab == SelectedTab.Tab)
         {
@@ -364,7 +373,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         ResetDirectorySearch();
         var version = Interlocked.Increment(ref _contextVersion);
         using var linked = CreateLinkedCancellation(cancellationToken);
-        var selectedKey = await _settings.GetAsync(ConversationSettingKey(nodeId.Value), linked.Token);
+        var selectedKey = await _settings.GetAsync(SelectionSettingKey(nodeId.Value), linked.Token);
         var projection = await ReadProjectionAsync(nodeId.Value, tab.Tab, selectedKey, linked.Token);
         var applied = false;
         await _dispatcher.InvokeAsync(
@@ -377,7 +386,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 }
             },
             linked.Token);
-        if (applied)
+        if (applied && IsCurrent(nodeId.Value, version))
         {
             await History.OpenAsync(
                 nodeId.Value,
@@ -825,9 +834,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 return;
             }
 
-            await _settings.SetAsync(TabSettingKey(nodeId), SelectedTab.Tab.ToString(), cancellationToken);
+            if (_fixedTab is null)
+                await _settings.SetAsync(TabSettingKey(nodeId), SelectedTab.Tab.ToString(), cancellationToken);
             await _settings.SetAsync(
-                ConversationSettingKey(nodeId),
+                SelectionSettingKey(nodeId),
                 SelectedConversation?.StableKey ?? string.Empty,
                 cancellationToken);
         }
@@ -1053,6 +1063,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     internal static string TabSettingKey(Guid nodeId) => $"desktop.node.{nodeId:D}.navigation-tab";
     internal static string ConversationSettingKey(Guid nodeId) => $"desktop.node.{nodeId:D}.conversation-key";
+    internal static string ConversationSettingKey(Guid nodeId, MessengerNavigationTab tab) =>
+        $"desktop.node.{nodeId:D}.{tab}.conversation-key";
+    private string SelectionSettingKey(Guid nodeId) => _fixedTab is { } tab
+        ? ConversationSettingKey(nodeId, tab) : ConversationSettingKey(nodeId);
 
     private sealed record NavigationProjection(
         MessengerNavigationTab Tab,

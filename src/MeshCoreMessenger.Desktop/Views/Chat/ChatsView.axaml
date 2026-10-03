@@ -1,6 +1,6 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
-             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ChatsView" x:DataType="vm:MainWindowViewModel">
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ChatsView" x:DataType="vm:ChatWorkspaceViewModel">
   <UserControl.Styles>
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ChatsStyles.axaml" />
   </UserControl.Styles>

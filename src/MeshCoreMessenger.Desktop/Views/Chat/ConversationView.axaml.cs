@@ -14,7 +14,7 @@ namespace MeshCoreMessenger.Desktop.Views.Chat;
 /// <summary>Visual viewport adapter only: no storage, sessions or ownership of VM lifetime.</summary>
 public sealed partial class ConversationView : UserControl
 {
-    private MainWindowViewModel? _owner;
+    private ChatWorkspaceViewModel? _owner;
     private Window? _window;
     private HistoryWindowViewModel? _history;
     private long _revision;
@@ -23,6 +23,8 @@ public sealed partial class ConversationView : UserControl
     private bool _pendingScroll;
     private bool _viewportPosted;
     private (Guid? Node, string? Chat, long Sequence, double Y)? _anchor;
+    private Guid? _contextNode;
+    private string? _contextChat;
 
     public ConversationView()
     {
@@ -93,10 +95,12 @@ public sealed partial class ConversationView : UserControl
     {
         UnbindOwner();
         _anchor = null;
-        if (!_attached || DataContext is not MainWindowViewModel owner)
+        if (!_attached || DataContext is not ChatWorkspaceViewModel owner)
             return;
         _owner = owner;
         _history = owner.Navigation.History;
+        _contextNode = owner.ViewedNode?.Id;
+        _contextChat = owner.SelectedConversation?.StableKey;
         _history.ScrollRequested += OnScrollRequested;
         _history.Messages.CollectionChanged += OnMessagesChanged;
         owner.PropertyChanged += OnOwnerChanged;
@@ -107,7 +111,7 @@ public sealed partial class ConversationView : UserControl
 
     private void OnOwnerChanged(object? sender, PropertyChangedEventArgs args)
     {
-        if (args.PropertyName == nameof(MainWindowViewModel.ViewedNode))
+        if (args.PropertyName == nameof(ChatWorkspaceViewModel.ViewedNode))
             InvalidateContext();
     }
 
@@ -119,6 +123,11 @@ public sealed partial class ConversationView : UserControl
 
     private void InvalidateContext()
     {
+        var node = _owner?.ViewedNode?.Id;
+        var chat = _owner?.SelectedConversation?.StableKey;
+        if (node == _contextNode && chat == _contextChat) return;
+        _contextNode = node;
+        _contextChat = chat;
         _revision++;
         _anchor = null;
         _pendingScroll = false;
@@ -138,7 +147,7 @@ public sealed partial class ConversationView : UserControl
 
     private void OnLayout()
     {
-        var visible = _attached && IsEffectivelyVisible;
+        var visible = _attached && IsEffectivelyVisible && _owner?.IsVisible == true;
         if (visible != _wasVisible)
         {
             _revision++;
@@ -196,14 +205,15 @@ public sealed partial class ConversationView : UserControl
         }, DispatcherPriority.Loaded);
     }
 
-    private bool CanApplyScroll(long revision) => ChatViewportPolicy.CanApplyCallback(revision, _revision, _attached, IsEffectivelyVisible);
+    private bool CanApplyScroll(long revision) => _owner?.IsVisible == true &&
+        ChatViewportPolicy.CanApplyCallback(revision, _revision, _attached, IsEffectivelyVisible);
     private ScrollViewer? GetScrollViewer() => HistoryList.GetVisualDescendants().OfType<ScrollViewer>().FirstOrDefault();
 
     private void ReportViewport()
     {
         if (_history is null || _pendingScroll)
             return;
-        if (!_attached || !IsEffectivelyVisible || _history.Messages.FirstOrDefault()?.ConversationId != _owner?.Navigation.SelectedConversation?.Id)
+        if (!_attached || !IsEffectivelyVisible || _owner?.IsVisible != true || _history.Messages.FirstOrDefault()?.ConversationId != _owner?.Navigation.SelectedConversation?.Id)
         {
             _history.ReportVisibleRange(null, null, false, false);
             return;

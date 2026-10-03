@@ -104,20 +104,22 @@ public sealed class ConversationNavigationViewModelTests
         await model.StopAsync();
     }
 
-    [Fact]
-    public async Task LateNodeLoadCannotOverwriteNewNode()
+    [Theory]
+    [InlineData(null)]
+    [InlineData(MessengerNavigationTab.Personal)]
+    [InlineData(MessengerNavigationTab.Channels)]
+    public async Task LateNodeLoadCannotOverwriteNewNode(MessengerNavigationTab? fixedTab)
     {
         var directory = new FakeDirectoryReader();
-        directory.Set(NodeA, ConversationDirectorySection.ChatContacts,
-            Entry(NodeA, "a", ConversationDirectorySection.ChatContacts));
-        directory.Set(NodeB, ConversationDirectorySection.ChatContacts,
-            Entry(NodeB, "b", ConversationDirectorySection.ChatContacts));
+        var section = fixedTab == MessengerNavigationTab.Channels ? ConversationDirectorySection.Channels : ConversationDirectorySection.ChatContacts;
+        directory.Set(NodeA, section, Entry(NodeA, "a", section));
+        directory.Set(NodeB, section, Entry(NodeB, "b", section));
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        directory.Gates[(NodeA, ConversationDirectorySection.ChatContacts)] = gate;
-        var model = Create(directory);
+        directory.Gates[(NodeA, section)] = gate;
+        var model = Create(directory, fixedTab: fixedTab);
 
         var slowA = model.LoadNodeAsync(NodeA, CancellationToken);
-        await directory.WaitForReadAsync(NodeA, ConversationDirectorySection.ChatContacts, CancellationToken);
+        await directory.WaitForReadAsync(NodeA, section, CancellationToken);
         await model.LoadNodeAsync(NodeB, CancellationToken);
         gate.SetResult();
         await slowA;
@@ -271,11 +273,67 @@ public sealed class ConversationNavigationViewModelTests
         await model.StopAsync();
     }
 
+    [Fact]
+    public async Task FixedWorkspacesPersistIndependentSelectionsWithoutOverwritingLegacyOrLastTab()
+    {
+        var directory = new FakeDirectoryReader();
+        directory.Set(NodeA, ConversationDirectorySection.Channels,
+            Entry(NodeA, "c1", ConversationDirectorySection.Channels), Entry(NodeA, "c2", ConversationDirectorySection.Channels));
+        directory.Set(NodeA, ConversationDirectorySection.ChatContacts,
+            Entry(NodeA, "p1", ConversationDirectorySection.ChatContacts), Entry(NodeA, "p2", ConversationDirectorySection.ChatContacts));
+        var settings = new FakeSettingsStore();
+        settings.Values[ConversationNavigationViewModel.TabSettingKey(NodeA)] = MessengerNavigationTab.Channels.ToString();
+        settings.Values[ConversationNavigationViewModel.ConversationSettingKey(NodeA)] = "c2";
+        settings.Values[ConversationNavigationViewModel.ConversationSettingKey(NodeA, MessengerNavigationTab.Personal)] = "p2";
+        var channels = Create(directory, settings: settings, fixedTab: MessengerNavigationTab.Channels);
+        var personal = Create(directory, settings: settings, fixedTab: MessengerNavigationTab.Personal);
+        await channels.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+        await personal.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+        Assert.Equal("c2", channels.SelectedConversation?.StableKey);
+        Assert.Equal("p2", personal.SelectedConversation?.StableKey);
+        await channels.SelectConversationAsync(channels.Conversations[0], CancellationToken);
+        await personal.SelectConversationAsync(personal.Conversations[0], CancellationToken);
+        Assert.Equal("c2", settings.Values[ConversationNavigationViewModel.ConversationSettingKey(NodeA)]);
+        Assert.Equal("Channels", settings.Values[ConversationNavigationViewModel.TabSettingKey(NodeA)]);
+        await channels.StopAsync();
+        await personal.StopAsync();
+        var restoredChannels = Create(directory, settings: settings, fixedTab: MessengerNavigationTab.Channels);
+        var restoredPersonal = Create(directory, settings: settings, fixedTab: MessengerNavigationTab.Personal);
+        await restoredChannels.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+        await restoredPersonal.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+        Assert.Equal("c1", restoredChannels.SelectedConversation?.StableKey);
+        Assert.Equal("p1", restoredPersonal.SelectedConversation?.StableKey);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => restoredChannels.SelectTabAsync(restoredChannels.Tabs[0], CancellationToken));
+        await restoredChannels.StopAsync();
+        await restoredPersonal.StopAsync();
+    }
+
+    [Theory]
+    [InlineData(MessengerNavigationTab.Personal)]
+    [InlineData(MessengerNavigationTab.Channels)]
+    public async Task LegacySelectionFallbackIsUsedOnlyForItsOriginalTab(MessengerNavigationTab savedTab)
+    {
+        var directory = new FakeDirectoryReader();
+        foreach (var section in new[] { ConversationDirectorySection.Channels, ConversationDirectorySection.ChatContacts })
+            directory.Set(NodeA, section, Entry(NodeA, "first", section), Entry(NodeA, "second", section));
+        var settings = new FakeSettingsStore();
+        settings.Values[ConversationNavigationViewModel.TabSettingKey(NodeA)] = savedTab.ToString();
+        settings.Values[ConversationNavigationViewModel.ConversationSettingKey(NodeA)] = "second";
+        foreach (var tab in new[] { MessengerNavigationTab.Personal, MessengerNavigationTab.Channels })
+        {
+            var model = Create(directory, settings: settings, fixedTab: tab);
+            await model.LoadNodeAsync(NodeA, CancellationToken, dispatchResult: false);
+            Assert.Equal(tab == savedTab ? "second" : "first", model.SelectedConversation?.StableKey);
+            await model.StopAsync();
+        }
+    }
+
     private static ConversationNavigationViewModel Create(
         FakeDirectoryReader directory,
         FakeHistoryReader? history = null,
         FakeSettingsStore? settings = null,
-        IUiDispatcher? dispatcher = null)
+        IUiDispatcher? dispatcher = null,
+        MessengerNavigationTab? fixedTab = null)
     {
         var readStates = new FakeConversationReadStateService();
         return new(
@@ -288,7 +346,7 @@ public sealed class ConversationNavigationViewModelTests
             dispatcher ?? new ImmediateUiDispatcher(),
             new ImmediateSearchDelay(),
             new ImmediateDraftDelay(),
-            NullLogger.Instance);
+            NullLogger.Instance, fixedTab);
     }
 
     private static ConversationDirectoryEntry Entry(

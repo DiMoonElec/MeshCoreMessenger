@@ -5,7 +5,7 @@ using MeshCoreMessenger.Desktop.ViewModels;
 
 namespace MeshCoreMessenger.Desktop.Views.Chat;
 
-/// <summary>One persistent chat workspace, sharing the existing node-scoped navigation/history/draft.</summary>
+/// <summary>One retained section with its own node-scoped navigation/history/draft.</summary>
 public sealed partial class ChatsView : UserControl
 {
     public ChatsView()
@@ -20,7 +20,7 @@ public sealed partial class ChatsView : UserControl
 
     internal void HandleShortcut(KeyEventArgs args)
     {
-        if (!IsEffectivelyVisible || DataContext is not MainWindowViewModel owner)
+        if (!IsEffectivelyVisible || DataContext is not ChatWorkspaceViewModel owner || !owner.IsVisible)
             return;
         var focused = TopLevel.GetTopLevel(this)?.FocusManager?.GetFocusedElement();
         var action = DesktopShortcutRouter.Route(new DesktopShortcutContext(args.Key, args.KeyModifiers,
@@ -41,7 +41,7 @@ public sealed partial class ChatsView : UserControl
 
     private void UpdateWorkspaceLayout()
     {
-        if (DataContext is not MainWindowViewModel owner || Bounds.Width <= 0)
+        if (DataContext is not ChatWorkspaceViewModel owner || Bounds.Width <= 0)
             return;
         var threshold = (double)this.FindResource("ChatNarrowWidth")!;
         var narrow = Bounds.Width < threshold;

@@ -24,6 +24,12 @@ Snapshot.ProfileId, а выбор в редакторе профиля отоб�
 UI6 добавляет глобальное немодальное уведомление **только при ошибке** локальной
 записи/startup/shutdown: оно видно с любого экрана, но не возвращает постоянную
 панель статуса и не меняет lifecycle/writer policy.
+После ручной проверки UI6 Public/Private используют два сохраняемых ChatsView и
+независимых navigation/history/search/draft owners; переключение не переоткрывает
+историю. Общий coordinator применяет NodeId к обоим, раздаёт post-commit уведомления
+и останавливает оба на shutdown. SQLite/session/durable trackers остаются общими.
+Selection Settings scoped по ноде и разделу с legacy fallback; лимит истории —
+500 DTO на workspace, до 1000 суммарно. [Контракт и проверки](../plan/chat-workspaces.md).
 
 `ViewedNodeId` — собственная нода, чья история открыта в UI. Уточнение UI2
 (02.10.2026) заменяет прежний offline selector: теперь в любом состоянии ручного

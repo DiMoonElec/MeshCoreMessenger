@@ -10,7 +10,7 @@
 | `NavigationRailView` | Выбор верхнего раздела, кнопка Settings снизу | Shell section, независимый от выбранного диалога |
 | Глобальный connection status / node context | Заголовок окна: статус, Online — имя и короткий ключ active node; offline — история последней ноды без selector | `MainWindowViewModel`; суффикс папки добавляет Window |
 | `ConnectionStatusView` | Статус и явные connect/disconnect внутри вкладки подключения | `ConnectionControlViewModel`, immutable supervisor snapshot |
-| `ChatsView` | Chat directory, adaptive list/detail, фокус поиска | Один сохраняемый navigation coordinator для Public/Private |
+| `ChatsView` | Chat directory, adaptive list/detail, фокус поиска | Два сохраняемых ChatWorkspaceViewModel для Public/Private; общий ChatWorkspacesViewModel координирует node/commit/shutdown |
 | `ConversationListView` | Список, search, selection events | `ConversationNavigationViewModel` |
 | `ConversationView` / `ComposerView` | Header, history search, viewport/scroll adapter / draft | `HistoryWindowViewModel` / `DraftEditorViewModel` |
 | `ConnectionSettingsView` | Редактор профилей, port refresh, дополнительные параметры | `ConnectionProfilesViewModel` / `ConnectionProfileEditorViewModel`; theme остаётся отдельной вкладкой |
@@ -28,11 +28,14 @@ UserControl не должен читать БД, создавать client/super
 session events. Бизнес-команды идут через ViewModel; code-behind допустим для
 viewport, focus, translating positions и platform window events.
 
-На первом шаге сохраняется один navigation/history/draft coordinator и его
+На первом шаге UI2 сохранялся один navigation/history/draft coordinator и его
 существующие post-commit подписки. ViewModel живёт до shutdown приложения, а view
 может скрываться или переподключаться. `StopAsync` не вызывается при переключении
 вкладки: он необратимо останавливает workers. Заново создавать coordinator на каждый
 выбор иконки нельзя. Скрытые views при этом не должны сообщать просмотр сообщений.
+После ручной проверки UI6 приняты два независимых фиксированных chat owners:
+[актуальное разделение](../plan/chat-workspaces.md). Их durable services/session
+остаются общими; лимит истории 500 на owner, не неограниченный кеш.
 
 Для небольшой фиксированной навигации можно использовать явные DataTemplates в
 ContentControl с сохранёнными VM, либо сохранённые views с переключением видимости.

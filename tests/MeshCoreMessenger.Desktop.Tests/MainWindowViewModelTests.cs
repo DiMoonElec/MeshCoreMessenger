@@ -580,7 +580,7 @@ public sealed class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task ShellHidesSharedWorkspaceWithoutStoppingOrRecreatingOwners()
+    public async Task ShellHidesActiveWorkspaceWithoutStoppingOrRecreatingItsOwners()
     {
         var history = new FakeHistoryReader();
         var id = Guid.NewGuid();
@@ -600,27 +600,30 @@ public sealed class MainWindowViewModelTests
         Assert.Same(navigation, vm.Navigation);
         Assert.Same(window, vm.Navigation.History);
         Assert.Same(draft, vm.Navigation.Draft);
+        Assert.NotSame(navigation, vm.Chats.Public.Navigation);
         Assert.Equal(id, vm.SelectedConversation?.Id);
         Assert.Equal("Body", Assert.Single(vm.Messages).Body);
         await vm.StopAsync();
     }
 
     [Fact]
-    public async Task RapidPublicPrivateSwitchCannotExposeLatePublicProjectionUnderPrivateTab()
+    public async Task RapidPublicPrivateSwitchChangesActiveOwnerWithoutReloadingHistory()
     {
         var history = new FakeHistoryReader();
         var vm = CreateViewModel(history);
         await vm.LoadAsync(CancellationToken);
         var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         history.ConversationGates[NodeAId] = gate;
+        var reads = history.GetConversationReads(NodeAId);
         vm.Shell.SelectSection(ShellSection.PublicChats);
-        await WaitUntilAsync(() => history.GetConversationReads(NodeAId) >= 2);
         vm.Shell.SelectSection(ShellSection.PrivateChats);
         gate.SetResult();
         await WaitUntilAsync(() => vm.Navigation.SelectedTab.Tab == MessengerNavigationTab.Personal && vm.IsChatWorkspaceVisible);
         await Task.Delay(30, CancellationToken);
         Assert.Equal(MessengerNavigationTab.Personal, vm.Navigation.SelectedTab.Tab);
         Assert.Equal(ShellSection.PrivateChats, vm.Shell.SelectedItem.Section);
+        Assert.Same(vm.Chats.Private.Navigation, vm.Navigation);
+        Assert.Equal(reads, history.GetConversationReads(NodeAId));
         await vm.StopAsync();
     }
 

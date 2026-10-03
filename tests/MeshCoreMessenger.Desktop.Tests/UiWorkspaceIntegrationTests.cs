@@ -18,6 +18,85 @@ public sealed class UiWorkspaceIntegrationTests
     private static readonly DateTimeOffset Now = new(2026, 10, 3, 12, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public async Task PublicPrivateRoundTripsRetainIndependentSelectionWindowSearchDraftAndNarrowNavigation()
+    {
+        await using var workspace = await Workspace.CreateAsync();
+        var root = workspace.Root;
+        var channels = root.Chats.Public.Navigation;
+        var personal = root.Chats.Private.Navigation;
+        Assert.NotSame(channels, personal);
+        Assert.NotSame(channels.History, personal.History);
+        Assert.NotSame(channels.Draft, personal.Draft);
+        channels.History.SearchText = "needle";
+        await UntilAsync(() => channels.History.SearchResults.Count == 1);
+        await channels.History.JumpToSearchResultAsync(channels.History.SearchResults[0], Token);
+        channels.Draft.Text = "public draft 🐈";
+        channels.SetNarrowLayout(true);
+        await channels.SelectConversationAsync(channels.SelectedConversation, Token);
+        var publicSelection = channels.SelectedConversation!.StableKey;
+        var publicWindow = channels.Messages.ToArray();
+        channels.History.ReportVisibleRange(publicWindow[1].LocalSequence, publicWindow[2].LocalSequence, true, false);
+        root.Shell.SelectSection(ShellSection.PrivateChats);
+        Assert.Same(personal, root.Navigation);
+        Assert.False(channels.History.IsWindowActive);
+        personal.History.SearchText = "private needle";
+        await UntilAsync(() => personal.History.SearchResults.Count == 1);
+        await personal.History.JumpToSearchResultAsync(personal.History.SearchResults[0], Token);
+        personal.Draft.Text = "private draft 👋";
+        personal.SetNarrowLayout(true);
+        personal.BackCommand.Execute(null);
+        var privateSelection = personal.SelectedConversation!.StableKey;
+        var privateWindow = personal.Messages.ToArray();
+        channels.DirectorySearchText = "Shared";
+        personal.DirectorySearchText = "Personal";
+        await UntilAsync(() => !channels.IsDirectorySearching && !personal.IsDirectorySearching);
+        for (var index = 0; index < 20; index++)
+        {
+            root.Shell.SelectSection(ShellSection.PublicChats);
+            Assert.Same(channels, root.Navigation);
+            Assert.Equal(publicSelection, root.SelectedConversation?.StableKey);
+            Assert.Equal(publicWindow, channels.Messages.ToArray());
+            Assert.Equal("needle", channels.History.SearchText);
+            Assert.Equal("Shared", channels.DirectorySearchText);
+            Assert.Equal("public draft 🐈", channels.Draft.Text);
+            Assert.True(channels.IsDetailVisible);
+            root.Shell.SelectSection(ShellSection.PrivateChats);
+            Assert.Same(personal, root.Navigation);
+            Assert.Equal(privateSelection, root.SelectedConversation?.StableKey);
+            Assert.Equal(privateWindow, personal.Messages.ToArray());
+            Assert.Equal("private needle", personal.History.SearchText);
+            Assert.Equal("Personal", personal.DirectorySearchText);
+            Assert.Equal("private draft 👋", personal.Draft.Text);
+            Assert.False(personal.IsDetailVisible);
+        }
+        Assert.Equal(0, workspace.Supervisor.ConnectCalls);
+    }
+
+    [Fact]
+    public async Task IncomingMessageInHiddenOtherWorkspaceDoesNotReadOrReplaceItsWindow()
+    {
+        await using var workspace = await Workspace.CreateAsync();
+        var root = workspace.Root;
+        var hidden = root.Chats.Private.Navigation;
+        hidden.History.SearchText = "private needle";
+        await UntilAsync(() => hidden.History.SearchResults.Count == 1);
+        var original = hidden.Messages.ToArray();
+        var before = await workspace.Storage.ReadStates.GetAsync(workspace.A.NodeId, workspace.A.PrivateConversationId, Token);
+        var inserted = await workspace.StorePrivateAsync(workspace.A, "hidden private incoming");
+        workspace.Notifications.Publish(inserted);
+        await UntilAsync(() => hidden.History.PendingNewMessageCount == 1);
+        Assert.Equal(original, hidden.Messages.ToArray());
+        Assert.Equal("private needle", hidden.History.SearchText);
+        Assert.Equal(before.LastReadSequence, (await workspace.Storage.ReadStates.GetAsync(workspace.A.NodeId, workspace.A.PrivateConversationId, Token)).LastReadSequence);
+        Assert.False(hidden.History.IsWindowActive);
+        Assert.Same(root.Chats.Public.Navigation, root.Navigation);
+        root.Shell.SelectSection(ShellSection.PrivateChats);
+        Assert.Equal(original, hidden.Messages.ToArray());
+        await hidden.History.JumpToLatestAsync(Token);
+        Assert.Contains(hidden.Messages, message => message.Body == "hidden private incoming");
+    }
+
+    [Fact]
     public async Task AllScreensPreserveChatWindowSearchDraftAndHiddenUnread()
     {
         await using var workspace = await Workspace.CreateAsync();
@@ -67,27 +146,35 @@ public sealed class UiWorkspaceIntegrationTests
         await using var workspace = await Workspace.CreateAsync();
         var root = workspace.Root;
         root.Navigation.Draft.Text = "A draft";
+        root.Chats.Private.Navigation.Draft.Text = "A private draft";
         root.Shell.SelectSection(ShellSection.Connection);
         workspace.Publish(workspace.B, 2);
         await UntilAsync(() => root.ViewedNode?.Id == workspace.B.NodeId && root.Devices.Items.Count == 1 &&
             root.Devices.Items[0].NodeId == workspace.B.NodeId && root.Navigation.Draft.CanEdit && root.Messages.Count > 0 &&
-            root.SelectedConversation?.Entry.NodeId == workspace.B.NodeId);
+            root.SelectedConversation?.Entry.NodeId == workspace.B.NodeId && root.Chats.Private.Navigation.Draft.CanEdit);
         Assert.Equal(ShellSection.Connection, root.Shell.SelectedItem.Section);
         Assert.All(root.Messages, item => Assert.Equal(workspace.B.ConversationId, item.ConversationId));
         Assert.Equal(string.Empty, root.Navigation.Draft.Text);
         root.Navigation.Draft.Text = "B draft";
+        root.Chats.Private.Navigation.Draft.Text = "B private draft";
         workspace.Publish(workspace.A, 3);
         await UntilAsync(() => root.ViewedNode?.Id == workspace.A.NodeId && root.Navigation.Draft.Text == "A draft" &&
-            root.Devices.Items.Count == 1 && root.Devices.Items[0].NodeId == workspace.A.NodeId);
+            root.Devices.Items.Count == 1 && root.Devices.Items[0].NodeId == workspace.A.NodeId &&
+            root.Chats.Private.Navigation.Draft.Text == "A private draft");
         var staleCommit = await workspace.StoreAsync(workspace.B, "old B session committed");
         workspace.Notifications.Publish(staleCommit);
         await root.Devices.RefreshAsync(Token);
         Assert.All(root.Messages, item => Assert.Equal(workspace.A.ConversationId, item.ConversationId));
+        Assert.All(root.Chats.Private.Navigation.Messages, item => Assert.Equal(workspace.A.PrivateConversationId, item.ConversationId));
         Assert.All(root.Devices.Items, item => Assert.Equal(workspace.A.NodeId, item.NodeId));
         await workspace.Drafts.FlushAsync(workspace.A.Target, Token);
         await workspace.Drafts.FlushAsync(workspace.B.Target, Token);
+        await workspace.Drafts.FlushAsync(workspace.A.PrivateTarget!, Token);
+        await workspace.Drafts.FlushAsync(workspace.B.PrivateTarget!, Token);
         Assert.Equal("A draft", (await workspace.Storage.Drafts.GetAsync(workspace.A.Target, Token))!.Text);
         Assert.Equal("B draft", (await workspace.Storage.Drafts.GetAsync(workspace.B.Target, Token))!.Text);
+        Assert.Equal("A private draft", (await workspace.Storage.Drafts.GetAsync(workspace.A.PrivateTarget!, Token))!.Text);
+        Assert.Equal("B private draft", (await workspace.Storage.Drafts.GetAsync(workspace.B.PrivateTarget!, Token))!.Text);
         Assert.Equal(0, workspace.Supervisor.ConnectCalls);
     }
 
@@ -103,6 +190,7 @@ public sealed class UiWorkspaceIntegrationTests
         var root = workspace.Root;
         var selected = root.SelectedConversation!.Entry;
         root.Navigation.Draft.Text = "Последний символ 🐈\n";
+        root.Chats.Private.Navigation.Draft.Text = "Личный черновик 👋";
         root.SelectedTheme = root.ThemeOptions.Single(option => option.Value == DesktopThemePreference.Dark);
         root.UpdateWindowPlacement(new WindowPlacement(80, 60, 1040, 700, false));
         root.Shell.SelectSection(section);
@@ -117,6 +205,10 @@ public sealed class UiWorkspaceIntegrationTests
         await Assert.ThrowsAsync<DesktopShutdownException>(() => coordinator.ShutdownAsync(Token));
         Assert.False(coordinator.IsCompleted);
         Assert.True(root.HasError);
+        Assert.False(root.Chats.Public.IsVisible);
+        Assert.False(root.Chats.Private.IsVisible);
+        Assert.False(root.Chats.Public.Navigation.History.IsWindowActive);
+        Assert.False(root.Chats.Private.Navigation.History.IsWindowActive);
         Assert.True(workspace.Drafts.IsPaused);
         Assert.Equal(1, ui.StopCount);
         var error = root.ErrorMessage;
@@ -131,6 +223,7 @@ public sealed class UiWorkspaceIntegrationTests
         Assert.Equal(1, ui.StopCount);
         Assert.False(workspace.Drafts.IsPaused);
         Assert.Equal("Последний символ 🐈\n", (await workspace.Storage.Drafts.GetAsync(workspace.A.Target, Token))!.Text);
+        Assert.Equal("Личный черновик 👋", (await workspace.Storage.Drafts.GetAsync(workspace.A.PrivateTarget!, Token))!.Text);
         var restarted = workspace.CreateRoot();
         await restarted.LoadAsync(Token);
         Assert.Equal(workspace.A.NodeId, restarted.ViewedNode?.Id);
@@ -138,6 +231,7 @@ public sealed class UiWorkspaceIntegrationTests
         await UntilAsync(() => restarted.SelectedConversation?.StableKey == selected.StableKey && restarted.Navigation.Draft.CanEdit);
         Assert.Equal(selected.StableKey, restarted.SelectedConversation?.StableKey);
         Assert.Equal("Последний символ 🐈\n", restarted.Navigation.Draft.Text);
+        Assert.Equal("Личный черновик 👋", restarted.Chats.Private.Navigation.Draft.Text);
         Assert.Equal(DesktopThemePreference.Dark, restarted.SelectedTheme.Value);
         Assert.Equal(1040, restarted.SavedWindowPlacement?.Width);
         await restarted.StopAsync();
@@ -163,7 +257,8 @@ public sealed class UiWorkspaceIntegrationTests
         public Task<DraftRecord?> SaveAsync(DraftTarget target, string text, DateTimeOffset updated, CancellationToken token = default) =>
             FailWrites ? Task.FromException<DraftRecord?>(new IOException("UI6 injected disk failure")) : inner.SaveAsync(target, text, updated, token);
     }
-    private sealed record NodeData(Guid NodeId, Guid SessionId, Guid ConversationId, ChannelBindingRecord Binding, DraftTarget Target);
+    private sealed record NodeData(Guid NodeId, Guid SessionId, Guid ConversationId, ChannelBindingRecord Binding, DraftTarget Target,
+        Guid PrivateConversationId = default, DraftTarget? PrivateTarget = null);
 
     private sealed class Workspace : IAsyncDisposable
     {
@@ -218,7 +313,8 @@ public sealed class UiWorkspaceIntegrationTests
             await Storage.Sessions.EndAsync(session, Now, "UI6Fake", Token);
             var fingerprint = Enumerable.Repeat((byte)42, 32).ToArray();
             var snapshot = await Storage.Directories.ApplySnapshotAsync(node.Id, session,
-                [new DirectoryContactSnapshot(Enumerable.Repeat((byte)7, 32).ToArray(), "Same repeater", 2, 0, new byte[64], Now, 0, 0)],
+                [new DirectoryContactSnapshot(Enumerable.Repeat((byte)7, 32).ToArray(), "Same repeater", 2, 0, new byte[64], Now, 0, 0),
+                 new DirectoryContactSnapshot(Enumerable.Repeat((byte)9, 32).ToArray(), "Personal chat", 1, 0, new byte[64], Now, 0, 0)],
                 [new DirectoryChannelSnapshot(0, "Shared name", fingerprint, ChannelAccessKind.Unknown)], Now, Token);
             var binding = Assert.Single(snapshot.ActiveBindings);
             var partial = new NodeData(node.Id, session, Guid.Empty, binding, null!);
@@ -226,11 +322,19 @@ public sealed class UiWorkspaceIntegrationTests
             for (var index = 0; index < 12; index++)
                 last = await StoreAsync(partial, index == 2 ? $"Node {key} needle" : $"Node {key} message {index}");
             await Storage.Settings.SetAsync(ConversationNavigationViewModel.TabSettingKey(node.Id), MessengerNavigationTab.Channels.ToString(), Token);
-            return partial with { ConversationId = last.ConversationId, Target = new DraftTarget(node.Id, last.ConversationId, ConversationKind.Channel, fingerprint) };
+            StoredIncomingMessage privateLast = null!;
+            for (var index = 0; index < 12; index++)
+                privateLast = await StorePrivateAsync(partial, index == 2 ? "private needle" : $"private message {index}");
+            return partial with { ConversationId = last.ConversationId, Target = new DraftTarget(node.Id, last.ConversationId, ConversationKind.Channel, fingerprint),
+                PrivateConversationId = privateLast.ConversationId,
+                PrivateTarget = new DraftTarget(node.Id, privateLast.ConversationId, ConversationKind.Contact, Enumerable.Repeat((byte)9, 32).ToArray()) };
         }
         public Task<StoredIncomingMessage> StoreAsync(NodeData node, string text) => Storage.IncomingMessages.StoreAsync(
             new IncomingMessageEnvelope(Guid.NewGuid(), node.SessionId, node.NodeId,
                 new ChannelMessage(0, 1, MessageTextType.Plain, Now, text, 0), Now, node.Binding, null), Token);
+        public Task<StoredIncomingMessage> StorePrivateAsync(NodeData node, string text) => Storage.IncomingMessages.StoreAsync(
+            new IncomingMessageEnvelope(Guid.NewGuid(), node.SessionId, node.NodeId,
+                new ContactMessage(Enumerable.Repeat((byte)9, 6).ToArray(), 1, MessageTextType.Plain, Now, text, ReadOnlyMemory<byte>.Empty, 0), Now, null, null), Token);
         public async ValueTask DisposeAsync()
         {
             if (Root is not null) await Root.StopAsync();

@@ -28,7 +28,8 @@ public sealed partial class MainWindow : Window
     private bool _placementInitialized;
     private WindowPlacement? _normalPlacement;
     private MainWindowViewModel? _subscribedViewModel;
-    private readonly ChatsView _chats = new();
+    private readonly ChatsView _publicChats = new();
+    private readonly ChatsView _privateChats = new();
     private readonly ConnectionSettingsView _connection = new();
     private readonly ApplicationSettingsView _settings = new();
     private readonly DevicesWorkspaceView _devices = new();
@@ -36,8 +37,8 @@ public sealed partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        ShellHost.RegisterContent(ShellSection.PublicChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
-        ShellHost.RegisterContent(ShellSection.PrivateChats, _chats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
+        ShellHost.RegisterContent(ShellSection.PublicChats, _publicChats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
+        ShellHost.RegisterContent(ShellSection.PrivateChats, _privateChats, () => _subscribedViewModel?.IsChatWorkspaceVisible == true);
         ShellHost.RegisterContent(ShellSection.Connection, _connection);
         ShellHost.RegisterContent(ShellSection.Settings, _settings);
         ShellHost.RegisterContent(ShellSection.Devices, _devices);
@@ -101,7 +102,8 @@ public sealed partial class MainWindow : Window
         }
 
         _subscribedViewModel = DataContext as MainWindowViewModel;
-        _chats.DataContext = _subscribedViewModel;
+        _publicChats.DataContext = _subscribedViewModel?.Chats.Public;
+        _privateChats.DataContext = _subscribedViewModel?.Chats.Private;
         _connection.DataContext = _subscribedViewModel?.Profiles;
         _settings.DataContext = _subscribedViewModel;
         _devices.DataContext = _subscribedViewModel?.Devices;
@@ -138,7 +140,11 @@ public sealed partial class MainWindow : Window
     private void OnWorkspaceKeyDown(object? sender, KeyEventArgs args)
     {
         if (args.Handled || DataContext is not MainWindowViewModel owner) return;
-        if (owner.IsChatWorkspaceVisible) { _chats.HandleShortcut(args); return; }
+        if (owner.IsChatWorkspaceVisible)
+        {
+            (owner.Shell.SelectedItem.Section == ShellSection.PublicChats ? _publicChats : _privateChats).HandleShortcut(args);
+            return;
+        }
         if (owner.Shell.SelectedItem.Section != ShellSection.Settings) return;
         var action = DesktopShortcutRouter.Route(new DesktopShortcutContext(args.Key, args.KeyModifiers,
             FocusManager?.GetFocusedElement() is TextBox, false, false, true, false, false, false));

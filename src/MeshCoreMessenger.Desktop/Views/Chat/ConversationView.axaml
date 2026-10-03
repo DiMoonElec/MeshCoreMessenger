@@ -1,7 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
              xmlns:controls="using:MeshCoreMessenger.Desktop.Controls"
-             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationView" x:DataType="vm:MainWindowViewModel">
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationView" x:DataType="vm:ChatWorkspaceViewModel">
   <UserControl.Styles>
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConversationStyles.axaml" />
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/MentionStyles.axaml" />
@@ -46,7 +46,7 @@
                   <TextBlock Classes="message-date" Text="{Binding ReceivedTime}" />
                   <TextBlock Classes="chat-meta" Text="{Binding ContentLabel}" IsVisible="{Binding HasContentLabel}" />
                   <controls:MentionTextBlock Classes="message-body" MessageText="{Binding Body}" TextWrapping="Wrap"
-                    OwnNodeName="{Binding $parent[chat:ConversationView].((vm:MainWindowViewModel)DataContext).ViewedNode.MentionName}" />
+                    OwnNodeName="{Binding $parent[chat:ConversationView].((vm:ChatWorkspaceViewModel)DataContext).ViewedNode.MentionName}" />
                 </StackPanel>
               </Border>
             </DataTemplate>
