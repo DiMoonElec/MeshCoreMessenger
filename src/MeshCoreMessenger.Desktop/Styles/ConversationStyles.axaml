@@ -46,6 +46,28 @@
   <Style Selector="ListBox.history-search-results">
     <Setter Property="MaxHeight" Value="{StaticResource ChatComposerMaxHeight}" />
   </Style>
+  <Style Selector="Button.history-jump">
+    <Setter Property="Width" Value="44" />
+    <Setter Property="Height" Value="44" />
+    <Setter Property="MinWidth" Value="44" />
+    <Setter Property="MinHeight" Value="44" />
+    <Setter Property="CornerRadius" Value="22" />
+    <Setter Property="Padding" Value="0" />
+    <Setter Property="Margin" Value="0,8,24,12" />
+    <Setter Property="HorizontalAlignment" Value="Right" />
+    <Setter Property="VerticalAlignment" Value="Bottom" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ChatSeparatorBrush}" />
+    <Setter Property="BorderThickness" Value="1" />
+  </Style>
+  <Style Selector="Button.history-jump:pointerover /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ChatHoverBrush}" />
+  </Style>
+  <Style Selector="Button.history-jump:pressed /template/ ContentPresenter">
+    <Setter Property="Background" Value="{DynamicResource ChatSelectedBrush}" />
+  </Style>
   <Style Selector="TextBlock.history-empty">
     <Setter Property="HorizontalAlignment" Value="Center" />
     <Setter Property="VerticalAlignment" Value="Center" />

@@ -8,13 +8,12 @@
   </UserControl.Styles>
   <Grid Classes="conversation" RowDefinitions="Auto,*,Auto">
     <Border Classes="conversation-header">
-      <Grid ColumnDefinitions="Auto,*,Auto">
+      <Grid ColumnDefinitions="Auto,*">
         <Button Content="‹" Command="{Binding Navigation.BackCommand}" IsVisible="{Binding Navigation.CanNavigateBack}" ToolTip.Tip="Назад к чатам" />
         <StackPanel Grid.Column="1" Classes="header-text">
           <TextBlock Classes="chat-title" Text="{Binding Navigation.SelectedTitle}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Navigation.SelectedTitle}" />
           <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
-        <Button Grid.Column="2" Content="↓" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.HasSelection}" ToolTip.Tip="К последнему сообщению" />
       </Grid>
     </Border>
     <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto">
@@ -42,10 +41,18 @@
         </controls:VirtualizedHistoryListBox>
         <TextBlock Classes="history-empty" Text="В этом чате пока нет сообщений" IsVisible="{Binding !Navigation.History.HasMessages}" />
       </Grid>
-      <StackPanel Grid.Row="2" Classes="history-tools">
-        <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
-        <TextBlock Classes="chat-error" Text="{Binding Navigation.History.ReadErrorMessage}" IsVisible="{Binding Navigation.History.HasReadError}" />
-      </StackPanel>
+      <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
+        <StackPanel Classes="history-tools">
+          <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
+          <TextBlock Classes="chat-error" Text="{Binding Navigation.History.ReadErrorMessage}" IsVisible="{Binding Navigation.History.HasReadError}" />
+        </StackPanel>
+        <Button x:Name="JumpToLatestButton" Grid.Column="1" Classes="history-jump" Command="{Binding Navigation.History.JumpToLatestCommand}"
+                IsVisible="{Binding Navigation.HasSelection}" ToolTip.Tip="К последнему сообщению"
+                AutomationProperties.Name="К последнему сообщению">
+          <Path Width="20" Height="22" Stretch="Uniform" Data="M 10,0 L 10,20 M 2,12 L 10,20 L 18,12"
+                Stroke="{DynamicResource ChatTextBrush}" StrokeThickness="2.5" />
+        </Button>
+      </Grid>
     </Grid>
     <Border Grid.Row="2" IsVisible="{Binding Navigation.HasSelection}">
       <chat:ComposerView DataContext="{Binding Composer}" />
