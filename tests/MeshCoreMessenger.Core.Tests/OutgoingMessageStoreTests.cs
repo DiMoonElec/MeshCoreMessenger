@@ -7,7 +7,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class OutgoingMessageStoreTests
+public sealed partial class OutgoingMessageStoreTests
 {
     [Fact]
     public async Task PrepareIsIdempotentAndNotifiesAfterCommitWithoutUnread()

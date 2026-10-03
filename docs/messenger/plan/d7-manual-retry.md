@@ -10,6 +10,9 @@ Prepared/Unknown, Unconfirmed/Failed. Повтор — новый AttemptNumber 
 channel fingerprint. Новые wire timestamp/ACK metadata; старые attempts не стирать,
 late ACK не завершает новую. Durable retry записи отличать от radio retry.
 Prepared тоже передавать только явно.
+D14/D15 уже реализованы досрочно: повтор должен удерживать общий
+ConversationOperationGuard на всём prepare/send/ACK/durable-write lifetime,
+чтобы очистка истории не удаляла активную попытку; проверить гонку retry/clear.
 
 **Не входит:** background outbox, automatic retry, редактирование сохранённого текста.
 **Зависимости:** D3–D6, warning preview D1.

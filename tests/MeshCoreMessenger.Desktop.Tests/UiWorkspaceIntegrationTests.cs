@@ -264,6 +264,7 @@ public sealed partial class UiWorkspaceIntegrationTests
     {
         private readonly string _directory = Path.Combine(Path.GetTempPath(), "MeshCoreMessenger.UI6.Tests", Guid.NewGuid().ToString("N"));
         public LocalStorage Storage { get; private set; } = null!;
+        public string StoragePath() => Path.Combine(_directory, "messenger.db");
         public NodeData A { get; private set; } = null!;
         public NodeData B { get; private set; } = null!;
         public MainWindowViewModel Root { get; set; } = null!;
@@ -313,7 +314,8 @@ public sealed partial class UiWorkspaceIntegrationTests
                 Drafts, Storage.Nodes, Storage.Settings, Preferences, profiles, Supervisor, Notifications,
                 dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), logger ?? NullLogger<MainWindowViewModel>.Instance,
                 sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory),
-                messageService: messageService, outgoingMessages: Storage.OutgoingMessages);
+                messageService: messageService, outgoingMessages: Storage.OutgoingMessages,
+                historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)));
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));

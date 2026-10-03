@@ -1,6 +1,6 @@
 # D14 — UI локальной очистки истории
 
-[Stage D](stage-d.md) · **Статус: не начат.**
+[Stage D](stage-d.md) · **Статус: реализован 03.10.2026 вместе с D15; ручная приёмка ожидается.**
 
 **Цель:** отличить локальную очистку от удаления contact/channel с ноды.
 
@@ -11,7 +11,8 @@ busy/write failure preview; по умолчанию сохранить contact/c
 При активном send действие недоступно с объяснением.
 
 **Не входит:** DELETE, очистка приложения, удаление peer на ноде, bulk operations.
-Runtime action disabled. **Зависимости:** D7, D13; identity/preview harness.
+По запросу пользователя runtime action подключён вместе с D15 до D7/D13;
+identity/history/draft и отправка D3–D6 уже реализованы.
 
 **Тесты:** cancel/no SQL/no wire; immutable target при смене чата;
 availability/busy/errors; remove-from-node не путается с clear-local.
@@ -19,3 +20,5 @@ availability/busy/errors; remove-from-node не путается с clear-local.
 **Готово:** последствия понятны, target проверяем, форма готова к D15.
 **Ручная проверка: обязательна** — темы/narrow/keyboard cancel-confirm,
 long name и отсутствие удаления от первого клика.
+
+Результат и проверки: [отчёт очистки](../../testing/history-clear.md).

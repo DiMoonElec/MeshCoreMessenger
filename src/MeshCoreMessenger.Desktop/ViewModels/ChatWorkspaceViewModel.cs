@@ -21,6 +21,7 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
 
     public ConversationNavigationViewModel Navigation { get; }
     public ComposerViewModel Composer { get; }
+    public HistoryClearViewModel HistoryClear { get; internal set; } = new(() => null, null, _ => Task.CompletedTask);
     public ConversationListItem? SelectedConversation => Navigation.SelectedConversation;
     public KnownNodeListItem? ViewedNode
     {

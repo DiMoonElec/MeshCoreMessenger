@@ -617,6 +617,31 @@ public sealed class HistoryWindowViewModelTests
         await model.StopAsync();
     }
 
+    [Fact]
+    public async Task HistoryClearRejectsLatePageAndOldIncomingCommitAfterReopening()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 250);
+        var model = Create(reader);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        var oldMessage = reader.MessageAt(NodeA, conversation, 250);
+        reader.CaptureRelativePageBeforeWait = true;
+        reader.RelativeGate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        var loading = model.LoadOlderAsync(CancellationToken);
+        await reader.RelativeReadStarted.Task.WaitAsync(CancellationToken);
+        model.InvalidateHistoryClear(new(NodeA, conversation, 250, 250));
+        reader.Seed(NodeA, conversation, 0);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        reader.RelativeGate.SetResult(); await loading;
+        Assert.Empty(model.Messages);
+        model.ReportVisibleRange(null, null, true, false);
+        await model.HandleCommittedMessageAsync(new(oldMessage.Id, Guid.NewGuid(), NodeA, conversation, 250, true), CancellationToken);
+        Assert.Equal(0, model.PendingNewMessageCount);
+        Assert.Empty(model.Messages);
+        await model.StopAsync();
+    }
+
     private static HistoryWindowViewModel Create(
         FakeHistoryReader reader,
         IUiDispatcher? dispatcher = null,
@@ -665,6 +690,7 @@ public sealed class HistoryWindowViewModelTests
         public TaskCompletionSource RelativeReadStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource? RelativeGate { get; set; }
+        public bool CaptureRelativePageBeforeWait { get; set; }
 
         public void Seed(Guid nodeId, Guid conversationId, int count)
         {
@@ -731,7 +757,7 @@ public sealed class HistoryWindowViewModelTests
                     await initialGate.Task.WaitAsync(cancellationToken);
                 }
             }
-            else if (RelativeGate is { } relativeGate)
+            else if (!CaptureRelativePageBeforeWait && RelativeGate is { } relativeGate)
             {
                 RelativeReadStarted.TrySetResult();
                 await relativeGate.Task.WaitAsync(cancellationToken);
@@ -744,7 +770,13 @@ public sealed class HistoryWindowViewModelTests
                 .Take(limit)
                 .OrderBy(item => item.LocalSequence)
                 .ToArray();
-            return Page(nodeId, conversationId, all, items);
+            var page = Page(nodeId, conversationId, all, items);
+            if (before is not null && CaptureRelativePageBeforeWait && RelativeGate is { } capturedGate)
+            {
+                RelativeReadStarted.TrySetResult();
+                await capturedGate.Task.WaitAsync(cancellationToken);
+            }
+            return page;
         }
 
         public Task<HistoryMessagePage> GetMessagesAfterAsync(

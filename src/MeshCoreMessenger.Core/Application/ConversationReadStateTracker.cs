@@ -22,6 +22,7 @@ public sealed class ConversationReadStateTracker(IConversationReadStateStore sto
     private readonly Dictionary<(Guid NodeId, Guid ConversationId), HistoryMessagePosition> _pending = [];
     private readonly Dictionary<(Guid NodeId, Guid ConversationId), ConversationReadState> _latest = [];
     private Exception? _failure;
+    private readonly Dictionary<(Guid NodeId, Guid ConversationId), long> _clearedThrough = [];
 
     public bool IsPaused => Volatile.Read(ref _failure) is not null;
 
@@ -92,7 +93,10 @@ public sealed class ConversationReadStateTracker(IConversationReadStateStore sto
                 ConversationReadState state;
                 try
                 {
-                    state = await store.AdvanceAsync(pending, cancellationToken).ConfigureAwait(false);
+                    var clearKey = (pending.NodeId, pending.ConversationId);
+                    state = _clearedThrough.TryGetValue(clearKey, out var cutoff) && pending.LocalSequence <= cutoff
+                        ? await store.GetAsync(pending.NodeId, pending.ConversationId, cancellationToken).ConfigureAwait(false)
+                        : await store.AdvanceAsync(pending, cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -120,6 +124,23 @@ public sealed class ConversationReadStateTracker(IConversationReadStateStore sto
         {
             _gate.Release();
         }
+    }
+
+    public async Task<HistoryClearResult> ClearHistoryAsync(Func<Task<HistoryClearResult>> clear, CancellationToken cancellationToken = default)
+    {
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (_failure is { } failure) throw new ReadStatePersistenceException(failure);
+            var result = await clear().ConfigureAwait(false);
+            var key = (result.NodeId, result.ConversationId);
+            _clearedThrough[key] = Math.Max(_clearedThrough.GetValueOrDefault(key), result.CutoffSequence);
+            lock (_pending) _latest[key] = new(result.NodeId, result.ConversationId,
+                Math.Max(result.CutoffSequence, _latest.GetValueOrDefault(key)?.LastReadSequence ?? 0), 0, null);
+            return result;
+        }
+        finally { _gate.Release(); }
     }
 
     private bool TryGetPending(out HistoryMessagePosition position)

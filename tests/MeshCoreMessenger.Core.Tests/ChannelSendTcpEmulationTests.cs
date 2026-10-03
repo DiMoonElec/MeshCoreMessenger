@@ -50,7 +50,7 @@ public sealed partial class SessionCommandGatewayTests
             var fingerprint = SHA256.HashData(Enumerable.Repeat((byte)3, 16).ToArray());
             var drafts = new DraftWriteTracker(storage.Drafts, time);
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
-                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts);
+                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, new ConversationOperationGuard());
             var target = Assert.Single(await sender.GetChannelTargetsAsync(node, fingerprint, CancellationToken));
             var draftTarget = new DraftTarget(node, null, ConversationKind.Channel, fingerprint);
             await drafts.LoadTextAsync(draftTarget, CancellationToken);

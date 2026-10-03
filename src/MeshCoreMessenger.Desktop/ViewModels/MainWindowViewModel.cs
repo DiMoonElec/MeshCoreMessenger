@@ -69,7 +69,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ILogger<MainWindowViewModel> logger,
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
-        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null)
+        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null)
     {
         _outgoingMessages = outgoingMessages;
         if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
@@ -86,6 +86,10 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
             directory, history, readStates, readWrites, drafts, settings, dispatcher, searchDelay, draftDelay, logger, tab),
             (navigation, item, token) => Track(SelectConversationCoreAsync(navigation, item, token)), settings, dispatcher, textProcessor);
+        foreach (var workspace in new[] { Chats.Public, Chats.Private })
+            workspace.HistoryClear = new(() => workspace.ViewedNode is { } node && workspace.SelectedConversation is { Id: { } id } conversation
+                ? new HistoryClearTarget(node.Id, id, node.HeaderLabel, conversation.Title) : null,
+                historyClear, ApplyHistoryClearAsync, Track, _lifetimeCancellation.Token);
         _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
             new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
@@ -683,6 +687,20 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         if (Volatile.Read(ref _stopped) != 0) return;
         _pendingOutgoing.Enqueue(commit);
         RequestProjectionRefresh();
+    }
+
+    private async Task ApplyHistoryClearAsync(HistoryClearResult result)
+    {
+        await _dispatcher.InvokeAsync(() =>
+        {
+            foreach (var workspace in new[] { Chats.Public, Chats.Private })
+                workspace.Navigation.InvalidateHistoryClear(result);
+        }, _lifetimeCancellation.Token);
+        await Chats.RefreshAsync(_lifetimeCancellation.Token);
+        await Devices.RefreshAsync(_lifetimeCancellation.Token);
+        foreach (var workspace in new[] { Chats.Public, Chats.Private })
+            if (workspace.ViewedNode?.Id == result.NodeId && workspace.SelectedConversation?.Id == result.ConversationId)
+                await workspace.Navigation.History.OpenAsync(result.NodeId, result.ConversationId, _lifetimeCancellation.Token);
     }
 
     private async Task RefreshCommittedProjectionAsync(CancellationToken cancellationToken)

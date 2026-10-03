@@ -5,6 +5,7 @@ using Avalonia.Controls;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using MeshCoreMessenger.Desktop.ViewModels;
 
 namespace MeshCoreMessenger.Desktop.Views.Chat;
@@ -33,6 +34,19 @@ public sealed partial class ConversationView : UserControl
         DataContextChanged += (_, _) => BindOwner();
         HistoryList.AddHandler(ScrollViewer.ScrollChangedEvent, (_, _) => ReportViewport());
         LayoutUpdated += (_, _) => OnLayout();
+    }
+
+    private async void OnConversationMenuOpening(object? sender, EventArgs args)
+    {
+        if (DataContext is ChatWorkspaceViewModel workspace) await workspace.HistoryClear.RefreshAsync();
+    }
+
+    private async void OnClearHistoryClick(object? sender, RoutedEventArgs args)
+    {
+        if (DataContext is not ChatWorkspaceViewModel workspace ||
+            workspace.HistoryClear.Capture() is not { } target || TopLevel.GetTopLevel(this) is not Window owner) return;
+        var dialog = new HistoryClearDialog(target) { RequestedThemeVariant = owner.ActualThemeVariant, Width = Math.Min(420, owner.ClientSize.Width) };
+        if (await dialog.ShowDialog<bool>(owner)) await workspace.HistoryClear.ClearAsync(target);
     }
 
     public void FocusSearch() { HistorySearch.Focus(); HistorySearch.SelectAll(); }

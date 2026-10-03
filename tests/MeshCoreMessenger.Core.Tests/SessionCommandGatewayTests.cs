@@ -390,6 +390,7 @@ public sealed partial class SessionCommandGatewayTests
 
     private sealed class Fixture : IAsyncDisposable
     {
+        public ConversationOperationGuard Operations { get; } = new();
         public sealed record Paths(string DataDirectory) : IAppPaths
         {
             public string DatabasePath => Path.Combine(DataDirectory, "messenger.db");

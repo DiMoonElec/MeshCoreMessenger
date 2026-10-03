@@ -30,7 +30,7 @@ public interface IMessageService
 /// <summary>One explicit send, owned by its captured session through the durable final status.</summary>
 public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMessageStore messages,
     IDirectoryStore directories, IConversationDirectoryReader directory, IDraftBuffer drafts,
-    IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore) : IMessageService
+    IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations) : IMessageService
 {
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
 
@@ -68,6 +68,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             throw new InvalidOperationException("An outgoing send is already in progress.");
         SessionCommandLease? lease = null;
         var observing = false;
+        IDisposable? activity = null;
         try
         {
             var recipient = request.Recipient with { Identity = request.Recipient.Identity.ToArray() };
@@ -76,6 +77,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             if (recipient.Kind != kind || capture.Target.NodeId != request.NodeId || capture.Target.Kind != kind ||
                 !capture.Target.Identity.AsSpan().SequenceEqual(recipient.Identity.Span))
                 throw new InvalidOperationException("Draft and recipient ownership differ.");
+            activity = operations.BeginSend(request.NodeId, kind, recipient.Identity);
             lease = gateway.Acquire(request.NodeId, isChannel
                 ? new ChannelCommandTarget(recipient) : new ContactCommandTarget(recipient.Identity), cancellationToken);
             if (lease.Owner.SessionId != request.SessionId || lease.Owner.Generation != request.Generation)
@@ -147,12 +149,23 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                     var completion = lease.DisposeAsync().AsTask();
                     // FinishAsync waits for registered observers; the session owns this lease
                     // until completion, including shutdown and durable-write failure barriers.
-                    if (observing) ObserveFailure(completion);
+                    if (observing)
+                    {
+                        var retained = activity;
+                        activity = null;
+                        ObserveFailure(ReleaseActivityAsync(completion, retained));
+                    }
                     else await completion.ConfigureAwait(false);
                 }
             }
-            finally { _singleFlight.Release(); }
+            finally { activity?.Dispose(); _singleFlight.Release(); }
         }
+    }
+
+    private static async Task ReleaseActivityAsync(Task completion, IDisposable? activity)
+    {
+        try { await completion.ConfigureAwait(false); }
+        finally { activity?.Dispose(); }
     }
 
     private static async Task RecordDeliveryAsync(SessionCommandLease lease, TextMessageSendResult sent, CancellationToken token)

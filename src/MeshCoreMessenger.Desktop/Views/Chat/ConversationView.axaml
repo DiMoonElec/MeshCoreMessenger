@@ -24,14 +24,15 @@
             </Border.OpacityMask>
           </Border>
           <Button.Flyout>
-            <MenuFlyout Placement="BottomEdgeAlignedRight">
-              <!-- UI placeholders: no commands or device/storage side effects yet. -->
+            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="OnConversationMenuOpening">
+              <!-- The first five actions remain UI placeholders. History clearing is local only. -->
               <MenuItem Header="Подробности (тест)" />
               <MenuItem Header="Поиск (тест)" />
               <MenuItem Header="Поделиться (тест)" />
               <MenuItem Header="Задать маршрут (тест)" />
               <MenuItem Header="Сбросить маршрут (тест)" />
-              <MenuItem Header="Удалить историю сообщений (тест)" />
+              <MenuItem Header="Удалить историю сообщений" IsEnabled="{Binding HistoryClear.CanClear}"
+                        ToolTip.Tip="{Binding HistoryClear.AvailabilityMessage}" ToolTip.ShowOnDisabled="True" Click="OnClearHistoryClick" />
             </MenuFlyout>
           </Button.Flyout>
         </Button>
@@ -65,6 +66,7 @@
       <Grid Grid.Row="2" ColumnDefinitions="*,Auto">
         <StackPanel Classes="history-tools">
           <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
+          <TextBlock Classes="chat-error" Text="{Binding HistoryClear.ErrorMessage}" TextWrapping="Wrap" IsVisible="{Binding HistoryClear.HasError}" />
           <TextBlock Classes="chat-error" Text="{Binding Navigation.History.ReadErrorMessage}" IsVisible="{Binding Navigation.History.HasReadError}" />
         </StackPanel>
         <Button x:Name="JumpToLatestButton" Grid.Column="1" Classes="history-jump" Command="{Binding Navigation.History.JumpToLatestCommand}"

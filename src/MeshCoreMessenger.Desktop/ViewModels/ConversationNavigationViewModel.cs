@@ -464,6 +464,14 @@ public sealed class ConversationNavigationViewModel : ObservableObject
         }
     }
 
+    internal void InvalidateHistoryClear(HistoryClearResult result)
+    {
+        if (_nodeId != result.NodeId) return;
+        Interlocked.Increment(ref _contextVersion);
+        History.InvalidateHistoryClear(result);
+        if (IsDirectorySearchActive) QueueDirectorySearch();
+    }
+
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
         using var linked = CreateLinkedCancellation(cancellationToken);

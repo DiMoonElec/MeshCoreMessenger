@@ -37,6 +37,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.OutgoingMessages);
         services.AddSingleton(storage.History);
+        services.AddSingleton(storage.HistoryClear);
         services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.Drafts);
         services.AddSingleton(storage.ConversationDirectory);
@@ -67,6 +68,8 @@ public static class AppBootstrap
         services.AddSingleton<IDurableMessageIngress>(provider =>
             provider.GetRequiredService<MessageIngestor>());
         services.AddSingleton<IDurableOutgoingWrites, OutgoingAttemptWriteTracker>();
+        services.AddSingleton<ConversationOperationGuard>();
+        services.AddSingleton<IHistoryClearService, HistoryClearService>();
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<SessionCommandGateway>();
         services.AddSingleton<ISessionCommandGateway>(provider => provider.GetRequiredService<SessionCommandGateway>());

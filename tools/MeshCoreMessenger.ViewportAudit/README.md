@@ -45,3 +45,16 @@ dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --switc
 Runs A send → select B → B send → select A → A send in Light/Dark without
 incoming notifications during the scenario. Also fails on logged exceptions,
 including off-thread command availability notifications.
+
+
+History clear audit (production conversation menu/dialog, temporary SQLite, offline):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --history-clear-only
+```
+
+Runs Public/Private × Light/Dark × 420/960: opens the real menu, cancels confirmation,
+then confirms deletion, checks empty history and retained draft. Screenshots go to
+`$TMPDIR/meshcore-history-clear/`. No hardware or user database is used.
+See [verification report](../../docs/testing/history-clear.md) for the actual run
+status; the current environment may fail before opening a window with RenderTimer -6661.

@@ -89,6 +89,25 @@ public sealed partial class SessionCommandGatewayTests
         Assert.Single(f.Server.PrivateTransmissions);
     }
 
+    [Fact]
+    public async Task TcpHistoryClearWaitsForPrivateAckThenDeletesWithoutWireCommands()
+    {
+        await using var f = await TcpPrivateFixture.CreateAsync(autoAck: false);
+        var sent = await f.Send("Clear after ACK", 0xA1, 1);
+        var stored = await f.Storage.OutgoingMessages.GetAsync(f.Node, sent.MessageId, CancellationToken);
+        Assert.NotNull(await f.Clear.GetUnavailableReasonAsync(f.Node, stored.ConversationId, CancellationToken));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Clear.ClearAsync(f.Node, stored.ConversationId, CancellationToken));
+        var wire = Assert.Single(f.Server.PrivateTransmissions);
+        await f.Server.SendAcknowledgementAsync(wire.ExpectedAck);
+        await f.WaitState(sent.MessageId, SendAttemptState.Delivered);
+        await Until(() => !f.Operations.IsBusy(f.Node, ConversationKind.Contact, stored.Recipient.Identity));
+        Assert.Null(await f.Clear.GetUnavailableReasonAsync(f.Node, stored.ConversationId, CancellationToken));
+        var count = (await f.Storage.History.GetMessagesAsync(f.Node, stored.ConversationId, null, 50, CancellationToken)).Count;
+        Assert.Equal(count, (await f.Clear.ClearAsync(f.Node, stored.ConversationId, CancellationToken)).DeletedCount);
+        Assert.Single(f.Server.PrivateTransmissions);
+        Assert.Equal(ConnectionSupervisorState.Online, f.Supervisor.Snapshot.State);
+    }
+
     private sealed class TcpPrivateFixture : IAsyncDisposable
     {
         public required FakeCompanionServer Server { get; init; }
@@ -97,6 +116,8 @@ public sealed partial class SessionCommandGatewayTests
         public required MessageIngestor Ingress { get; init; }
         public required ConnectionSupervisor Supervisor { get; init; }
         public required MessageService Sender { get; init; }
+        public required ConversationOperationGuard Operations { get; init; }
+        public required HistoryClearService Clear { get; init; }
         public required DraftWriteTracker Drafts { get; init; }
         public required Guid Node { get; init; }
         public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000)
@@ -127,10 +148,12 @@ public sealed partial class SessionCommandGatewayTests
             await Until(() => supervisor.Snapshot.State is ConnectionSupervisorState.Online or ConnectionSupervisorState.NeedsAttention);
             Assert.Equal(ConnectionSupervisorState.Online, supervisor.Snapshot.State);
             var drafts = new DraftWriteTracker(storage.Drafts, time);
+            var operations = new ConversationOperationGuard();
+            var clear = new HistoryClearService(storage.HistoryClear, operations, new(storage.ReadStates), outgoing);
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
-                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts);
+                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations);
             return new() { Server = server, Paths = paths, Storage = storage, Ingress = ingress, Supervisor = supervisor,
-                Sender = sender, Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
+                Sender = sender, Operations = operations, Clear = clear, Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
         }
         public async Task<PrivateSendOutcome> Send(string text, byte peer, long revision)
         {

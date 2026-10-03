@@ -10,7 +10,7 @@ public sealed partial class SessionCommandGatewayTests
 {
     private static MessageService Sender(Fixture f, DraftWriteTracker drafts, IOutgoingTextProcessor? processor = null) =>
         new(f.Gateway, f.Storage.OutgoingMessages, f.Storage.Directories, f.Storage.ConversationDirectory,
-            drafts, processor ?? new PassthroughOutgoingTextProcessor(), TimeProvider.System, f.Storage.Drafts);
+            drafts, processor ?? new PassthroughOutgoingTextProcessor(), TimeProvider.System, f.Storage.Drafts, f.Operations);
 
     private static async Task<ChannelSendRequest> Request(Fixture f, DraftWriteTracker drafts, string text = "Тест 👋")
     {

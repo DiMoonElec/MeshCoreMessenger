@@ -159,6 +159,15 @@ public sealed class HistoryWindowViewModel : ObservableObject
                 : string.Empty);
     public bool HasSearchStatus => !string.IsNullOrEmpty(SearchStatus);
 
+    private readonly Dictionary<(Guid NodeId, Guid ConversationId), long> _clearedThrough = [];
+
+    internal void InvalidateHistoryClear(HistoryClearResult result)
+    {
+        var key = (result.NodeId, result.ConversationId);
+        _clearedThrough[key] = Math.Max(_clearedThrough.GetValueOrDefault(key), result.CutoffSequence);
+        if (_nodeId == result.NodeId && _conversationId == result.ConversationId) Clear();
+    }
+
     public void Clear()
     {
         ResetSearch();
@@ -306,6 +315,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);
+        if (_clearedThrough.TryGetValue((message.NodeId, message.ConversationId), out var cutoff) && message.LocalSequence <= cutoff) return;
         if (!message.Inserted)
         {
             return;
