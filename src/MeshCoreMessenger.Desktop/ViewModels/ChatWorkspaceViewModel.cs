@@ -8,20 +8,31 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
 {
     private KnownNodeListItem? _viewedNode;
     private bool _isVisible;
+    private HistoryClearViewModel _historyClear = new(() => null, null, _ => Task.CompletedTask);
     private readonly Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> _select;
 
-    internal ChatWorkspaceViewModel(ConversationNavigationViewModel navigation,
+    internal ChatWorkspaceViewModel(MessengerNavigationTab kind, ConversationNavigationViewModel navigation,
         Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> select,
         IOutgoingTextProcessor? textProcessor = null)
     {
         Navigation = navigation;
+        Menu = new ConversationMenuViewModel(kind, _historyClear);
         Composer = new ComposerViewModel(navigation.Draft, textProcessor);
         _select = select;
     }
 
     public ConversationNavigationViewModel Navigation { get; }
     public ComposerViewModel Composer { get; }
-    public HistoryClearViewModel HistoryClear { get; internal set; } = new(() => null, null, _ => Task.CompletedTask);
+    public ConversationMenuViewModel Menu { get; }
+    public HistoryClearViewModel HistoryClear
+    {
+        get => _historyClear;
+        internal set
+        {
+            _historyClear = value;
+            Menu.SetHistoryClear(value);
+        }
+    }
     public ConversationListItem? SelectedConversation => Navigation.SelectedConversation;
     public KnownNodeListItem? ViewedNode
     {

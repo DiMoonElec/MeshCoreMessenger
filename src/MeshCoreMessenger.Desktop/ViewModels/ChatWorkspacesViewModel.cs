@@ -24,8 +24,8 @@ public sealed class ChatWorkspacesViewModel : ObservableObject
     {
         _settings = settings;
         _dispatcher = dispatcher;
-        Public = new(create(MessengerNavigationTab.Channels), select, textProcessor);
-        Private = new(create(MessengerNavigationTab.Personal), select, textProcessor);
+        Public = new(MessengerNavigationTab.Channels, create(MessengerNavigationTab.Channels), select, textProcessor);
+        Private = new(MessengerNavigationTab.Personal, create(MessengerNavigationTab.Personal), select, textProcessor);
         _active = Public;
         foreach (var workspace in All) workspace.Navigation.PropertyChanged += OnNavigationChanged;
     }

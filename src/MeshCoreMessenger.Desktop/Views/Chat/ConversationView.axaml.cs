@@ -38,15 +38,15 @@ public sealed partial class ConversationView : UserControl
 
     private async void OnConversationMenuOpening(object? sender, EventArgs args)
     {
-        if (DataContext is ChatWorkspaceViewModel workspace) await workspace.HistoryClear.RefreshAsync();
+        if (DataContext is ChatWorkspaceViewModel workspace) await workspace.Menu.RefreshAsync();
     }
 
-    private async void OnClearHistoryClick(object? sender, RoutedEventArgs args)
+    private async void OnHistoryClearRequested(object? sender, HistoryClearRequestedEventArgs args)
     {
-        if (DataContext is not ChatWorkspaceViewModel workspace ||
-            workspace.HistoryClear.Capture() is not { } target || TopLevel.GetTopLevel(this) is not Window owner) return;
-        var dialog = new HistoryClearDialog(target) { RequestedThemeVariant = owner.ActualThemeVariant, Width = Math.Min(420, owner.ClientSize.Width) };
-        if (await dialog.ShowDialog<bool>(owner)) await workspace.HistoryClear.ClearAsync(target);
+        if (_owner is not { } workspace || !ReferenceEquals(sender, workspace.Menu) ||
+            TopLevel.GetTopLevel(this) is not Window owner) return;
+        var dialog = new HistoryClearDialog(args.Target) { RequestedThemeVariant = owner.ActualThemeVariant, Width = Math.Min(420, owner.ClientSize.Width) };
+        if (await dialog.ShowDialog<bool>(owner)) await args.Operation.ClearAsync(args.Target);
     }
 
     public void FocusSearch() { HistorySearch.Focus(); HistorySearch.SelectAll(); }
@@ -92,6 +92,7 @@ public sealed partial class ConversationView : UserControl
         }
         if (_owner is not null)
         {
+            _owner.Menu.HistoryClearRequested -= OnHistoryClearRequested;
             _owner.PropertyChanged -= OnOwnerChanged;
             _owner.Navigation.PropertyChanged -= OnNavigationChanged;
         }
@@ -112,6 +113,7 @@ public sealed partial class ConversationView : UserControl
         _history.ScrollRequested += OnScrollRequested;
         _history.ViewportChanging += OnViewportChanging;
         _history.Messages.CollectionChanged += OnMessagesChanged;
+        owner.Menu.HistoryClearRequested += OnHistoryClearRequested;
         owner.PropertyChanged += OnOwnerChanged;
         owner.Navigation.PropertyChanged += OnNavigationChanged;
         UpdateMessageVisibility();

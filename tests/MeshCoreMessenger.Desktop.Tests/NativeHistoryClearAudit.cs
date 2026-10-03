@@ -1,5 +1,8 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
+using System.Reflection;
+using MeshCoreMessenger.Desktop.ViewModels;
 using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
@@ -36,12 +39,21 @@ public sealed partial class UiWorkspaceIntegrationTests
                         await SettleAsync(window);
                         var button = view.FindControl<Button>("ConversationMenuButton")!;
                         var flyout = (MenuFlyout)button.Flyout!;
-                        var item = flyout.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Удалить историю сообщений"));
                         flyout.ShowAt(button);
                         await UntilAsync(() => workspace.HistoryClear.CanClear);
                         await SettleAsync(window);
+                        var popup = typeof(PopupFlyoutBase).GetProperties(BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)
+                            .Where(property => typeof(Popup).IsAssignableFrom(property.PropertyType))
+                            .Select(property => property.GetValue(flyout)).OfType<Popup>().Single();
+                        var menuItems = popup.Child!.GetLogicalDescendants().OfType<MenuItem>().ToArray();
+                        if (menuItems.Length != (privateChat ? 6 : 4) ||
+                            menuItems.Any(i => Equals(i.Header, "Сбросить маршрут (тест)")) != privateChat)
+                            throw new InvalidOperationException("Public/Private menu composition failed.");
+                        var item = menuItems.Single(i => Equals(i.Header, "Удалить историю сообщений"));
+                        if (!ReferenceEquals(item.Command, workspace.Menu.Items.Single(i => i.Action == ConversationMenuAction.ClearHistory).Command))
+                            throw new InvalidOperationException("Menu command binding failed.");
                         if (!item.IsEnabled) throw new InvalidOperationException("Clear menu binding failed.");
-                        item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        item.Command!.Execute(item.CommandParameter);
                         await UntilAsync(() => window.OwnedWindows.OfType<HistoryClearDialog>().Any());
                         var dialog = window.OwnedWindows.OfType<HistoryClearDialog>().Single();
                         await SettleAsync(dialog);
@@ -55,7 +67,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                         if (workspace.Navigation.Messages.Count != 12) throw new InvalidOperationException("Cancel deleted history.");
                         flyout.Hide(); flyout.ShowAt(button);
                         await UntilAsync(() => workspace.HistoryClear.CanClear);
-                        item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+                        item.Command!.Execute(item.CommandParameter);
                         await UntilAsync(() => window.OwnedWindows.OfType<HistoryClearDialog>().Any());
                         dialog = window.OwnedWindows.OfType<HistoryClearDialog>().Single();
                         await SettleAsync(dialog);

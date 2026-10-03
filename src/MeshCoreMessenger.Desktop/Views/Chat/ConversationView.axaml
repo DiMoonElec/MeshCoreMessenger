@@ -24,15 +24,15 @@
             </Border.OpacityMask>
           </Border>
           <Button.Flyout>
-            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="OnConversationMenuOpening">
-              <!-- The first five actions remain UI placeholders. History clearing is local only. -->
-              <MenuItem Header="Подробности (тест)" />
-              <MenuItem Header="Поиск (тест)" />
-              <MenuItem Header="Поделиться (тест)" />
-              <MenuItem Header="Задать маршрут (тест)" />
-              <MenuItem Header="Сбросить маршрут (тест)" />
-              <MenuItem Header="Удалить историю сообщений" IsEnabled="{Binding HistoryClear.CanClear}"
-                        ToolTip.Tip="{Binding HistoryClear.AvailabilityMessage}" ToolTip.ShowOnDisabled="True" Click="OnClearHistoryClick" />
+            <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="OnConversationMenuOpening" ItemsSource="{Binding Menu.Items}">
+              <MenuFlyout.ItemContainerTheme>
+                <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:ConversationMenuItemViewModel">
+                  <Setter Property="Header" Value="{Binding Header}" />
+                  <Setter Property="Command" Value="{Binding Command}" />
+                  <Setter Property="ToolTip.Tip" Value="{Binding AvailabilityMessage}" />
+                  <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
+                </ControlTheme>
+              </MenuFlyout.ItemContainerTheme>
             </MenuFlyout>
           </Button.Flyout>
         </Button>
