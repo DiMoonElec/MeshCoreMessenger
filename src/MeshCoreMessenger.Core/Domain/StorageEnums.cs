@@ -42,4 +42,5 @@ public enum SendAttemptState
     Unconfirmed = 3,
     Failed = 4,
     Unknown = 5,
+    Sending = 6,
 }

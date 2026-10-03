@@ -22,6 +22,7 @@ public sealed class LocalStorage : IAsyncDisposable
         Sessions = new SqliteSessionStore(writer, reader);
         Directories = new SqliteDirectoryStore(writer, reader);
         IncomingMessages = new SqliteIncomingMessageStore(writer);
+        OutgoingMessages = new SqliteOutgoingMessageStore(writer, reader);
         History = new SqliteLocalHistoryReader(reader);
         ReadStates = new SqliteConversationReadStateStore(writer, reader);
         Drafts = new SqliteDraftStore(writer, reader);
@@ -34,6 +35,7 @@ public sealed class LocalStorage : IAsyncDisposable
     public ISessionStore Sessions { get; }
     public IDirectoryStore Directories { get; }
     public IIncomingMessageStore IncomingMessages { get; }
+    public IOutgoingMessageStore OutgoingMessages { get; }
     public ILocalHistoryReader History { get; }
     public IConversationReadStateStore ReadStates { get; }
     public IDraftStore Drafts { get; }
@@ -47,8 +49,21 @@ public sealed class LocalStorage : IAsyncDisposable
         {
             Directory.CreateDirectory(Path.GetFullPath(paths.DataDirectory));
             Directory.CreateDirectory(Path.GetFullPath(paths.BackupsDirectory));
-            var writer = await DatabaseWorker.OpenAsync(databasePath, cancellationToken).ConfigureAwait(false);
-            return new LocalStorage(databasePath, writer);
+            var writer = await DatabaseWorker.OpenAsync(databasePath, cancellationToken, paths.BackupsDirectory).ConfigureAwait(false);
+            try
+            {
+                await writer.ExecuteAsync(connection =>
+                {
+                    SqliteOutgoingMessageStore.Recover(connection);
+                    return true;
+                }, cancellationToken).ConfigureAwait(false);
+                return new LocalStorage(databasePath, writer);
+            }
+            catch
+            {
+                await writer.DisposeAsync().ConfigureAwait(false);
+                throw;
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -134,7 +149,12 @@ public sealed class LocalStorage : IAsyncDisposable
 
             await using (var stagingWorker = await DatabaseWorker.OpenAsync(stagingPath, cancellationToken).ConfigureAwait(false))
             {
-                // Opening applies any supported pending migration to the disposable staging copy.
+                // Recover the disposable copy before replacing the active database.
+                await stagingWorker.ExecuteAsync(connection =>
+                {
+                    SqliteOutgoingMessageStore.Recover(connection);
+                    return true;
+                }, cancellationToken).ConfigureAwait(false);
             }
             DatabaseInspector.ValidateExisting(stagingPath);
 

@@ -22,7 +22,7 @@ internal sealed class DatabaseWorker : IAsyncDisposable
         _thread.Start();
     }
 
-    public static async Task<DatabaseWorker> OpenAsync(string databasePath, CancellationToken cancellationToken = default)
+    public static async Task<DatabaseWorker> OpenAsync(string databasePath, CancellationToken cancellationToken = default, string? backupsDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(databasePath);
         var fullPath = Path.GetFullPath(databasePath);
@@ -30,6 +30,8 @@ internal sealed class DatabaseWorker : IAsyncDisposable
 
         await Task.Run(() => DatabaseInspector.ValidateExisting(fullPath), cancellationToken).ConfigureAwait(false);
 
+        await Task.Run(() => BackupBeforeMigration(fullPath, backupsDirectory), cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         var worker = new DatabaseWorker(fullPath);
         try
         {
@@ -40,6 +42,39 @@ internal sealed class DatabaseWorker : IAsyncDisposable
         {
             await worker.DisposeAsync().ConfigureAwait(false);
             throw;
+        }
+    }
+
+    private static void BackupBeforeMigration(string path, string? backupsDirectory)
+    {
+        if (!File.Exists(path)) return;
+        using var source = SqliteDatabase.CreateConnection(path, SqliteOpenMode.ReadOnly);
+        source.Open();
+        if (SqliteDatabase.GetUserVersion(source) >= DatabaseMigrator.CurrentVersion) return;
+        var directory = Path.GetFullPath(backupsDirectory ?? Path.Combine(Path.GetDirectoryName(path)!, "backups"));
+        Directory.CreateDirectory(directory);
+        var destination = Path.Combine(directory, $"{Path.GetFileNameWithoutExtension(path)}-before-v{DatabaseMigrator.CurrentVersion}-{DateTimeOffset.UtcNow:yyyyMMddTHHmmssfff}-{Guid.NewGuid():N}.db");
+        var temporary = destination + ".tmp";
+        try
+        {
+            using (var backup = SqliteDatabase.CreateConnection(temporary, SqliteOpenMode.ReadWriteCreate))
+            {
+                backup.Open();
+                source.BackupDatabase(backup);
+                // A standalone backup must not require WAL sidecars, even on later read-only opens.
+                using var journal = backup.CreateCommand();
+                journal.CommandText = "PRAGMA journal_mode=DELETE;";
+                journal.ExecuteScalar();
+            }
+            DatabaseInspector.ValidateExisting(temporary);
+            File.Move(temporary, destination);
+        }
+        finally
+        {
+            foreach (var file in new[] { temporary, temporary + "-wal", temporary + "-shm" })
+            {
+                if (File.Exists(file)) File.Delete(file);
+            }
         }
     }
 

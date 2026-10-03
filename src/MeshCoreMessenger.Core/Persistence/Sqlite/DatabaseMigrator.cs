@@ -4,15 +4,16 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private static readonly Migration[] Migrations =
     [
         new(1, "Initial local storage", InitialSchemaSql),
         new(2, "Incoming message metadata", IncomingMessageMetadataSql),
+        new(3, "Durable outgoing messages", OutgoingMessagesSql),
     ];
 
-    public static void ApplyPending(SqliteConnection connection)
+    public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
     {
         var currentVersion = SqliteDatabase.GetUserVersion(connection);
         if (currentVersion > CurrentVersion)
@@ -20,7 +21,7 @@ internal static class DatabaseMigrator
             throw new DatabaseVersionTooNewException(currentVersion, CurrentVersion);
         }
 
-        foreach (var migration in Migrations.Where(item => item.Version > currentVersion))
+        foreach (var migration in Migrations.Where(item => item.Version > currentVersion && item.Version <= targetVersion))
         {
             Apply(connection, migration);
             currentVersion = migration.Version;
@@ -264,6 +265,39 @@ internal static class DatabaseMigrator
             UpdatedUtc TEXT NOT NULL,
             FOREIGN KEY (ConversationId) REFERENCES Conversations(Id) ON DELETE CASCADE
         );
+        """;
+
+    private const string OutgoingMessagesSql = """
+        ALTER TABLE Messages ADD COLUMN TransmissionText TEXT;
+        CREATE TABLE SendAttempts_v3 (
+            Id TEXT NOT NULL PRIMARY KEY,
+            MessageId TEXT NOT NULL,
+            SessionId TEXT,
+            AttemptNumber INTEGER NOT NULL CHECK (AttemptNumber > 0),
+            State INTEGER NOT NULL CHECK (State BETWEEN 0 AND 6),
+            StartedUtc TEXT NOT NULL,
+            AcceptedUtc TEXT,
+            CompletedUtc TEXT,
+            WireTimestamp INTEGER,
+            ExpectedAck BLOB,
+            RoundTripMilliseconds INTEGER CHECK (RoundTripMilliseconds IS NULL OR RoundTripMilliseconds >= 0),
+            ErrorCode TEXT,
+            AckExpectation INTEGER NOT NULL DEFAULT 0 CHECK (AckExpectation BETWEEN 0 AND 2),
+            FOREIGN KEY (MessageId) REFERENCES Messages(Id) ON DELETE CASCADE,
+            FOREIGN KEY (SessionId) REFERENCES Sessions(Id) ON DELETE SET NULL,
+            UNIQUE (MessageId, AttemptNumber),
+            CHECK (AcceptedUtc IS NULL OR AcceptedUtc >= StartedUtc),
+            CHECK (CompletedUtc IS NULL OR CompletedUtc >= StartedUtc)
+        );
+        INSERT INTO SendAttempts_v3
+            (Id, MessageId, SessionId, AttemptNumber, State, StartedUtc, AcceptedUtc,
+             CompletedUtc, WireTimestamp, ExpectedAck, RoundTripMilliseconds, ErrorCode)
+        SELECT Id, MessageId, SessionId, AttemptNumber, State, StartedUtc, AcceptedUtc,
+               CompletedUtc, WireTimestamp, ExpectedAck, RoundTripMilliseconds, ErrorCode
+        FROM SendAttempts;
+        DROP TABLE SendAttempts;
+        ALTER TABLE SendAttempts_v3 RENAME TO SendAttempts;
+        CREATE INDEX IX_SendAttempts_Message_StartedUtc ON SendAttempts(MessageId, StartedUtc);
         """;
 
     private const string IncomingMessageMetadataSql = """

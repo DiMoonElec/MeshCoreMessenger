@@ -9,8 +9,14 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
     internal const int MaximumPageSize = 500;
     internal const int MaximumSearchPageSize = 100;
     private const string MessageColumns =
-        "Id, LocalSequence, ConversationId, Direction, MessageKind, Text, ReceivedUtc, " +
-        "TextType, BinaryDataType, WireTimestamp, ResolutionState";
+        "m.Id, m.LocalSequence, m.ConversationId, m.Direction, m.MessageKind, m.Text, m.ReceivedUtc, " +
+        "m.TextType, m.BinaryDataType, m.WireTimestamp, m.ResolutionState, " +
+        "a.Id, a.MessageId, a.SessionId, a.AttemptNumber, a.State, a.AckExpectation, a.StartedUtc, a.AcceptedUtc, " +
+        "a.CompletedUtc, a.WireTimestamp, a.ExpectedAck, a.RoundTripMilliseconds, a.ErrorCode";
+    private const string MessagesWithAttempts = """
+        Messages AS m LEFT JOIN SendAttempts AS a ON a.MessageId=m.Id AND a.AttemptNumber=(
+            SELECT MAX(latest.AttemptNumber) FROM SendAttempts latest WHERE latest.MessageId=m.Id)
+        """;
 
     public Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
         Guid nodeId,
@@ -83,14 +89,14 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
             command.CommandText = beforeLocalSequence is null
                 ? $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                     ORDER BY LocalSequence DESC
                     LIMIT $limit;
                     """
                 : $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                       AND LocalSequence < $beforeLocalSequence
                     ORDER BY LocalSequence DESC
@@ -159,14 +165,14 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
             command.CommandText = before is null
                 ? $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                     ORDER BY LocalSequence DESC
                     LIMIT $limit;
                     """
                 : $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                       AND LocalSequence < $sequence
                     ORDER BY LocalSequence DESC
@@ -212,14 +218,14 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
             command.CommandText = after is null
                 ? $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                     ORDER BY LocalSequence ASC
                     LIMIT $limit;
                     """
                 : $"""
                     SELECT {MessageColumns}
-                    FROM Messages
+                    FROM {MessagesWithAttempts}
                     WHERE ConversationId = $conversationId
                       AND LocalSequence > $sequence
                     ORDER BY LocalSequence ASC
@@ -394,7 +400,7 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT {MessageColumns}
-            FROM Messages
+            FROM {MessagesWithAttempts}
             WHERE ConversationId = $conversationId
               AND LocalSequence {(before ? "<" : ">")} $sequence
             ORDER BY LocalSequence {(before ? "DESC" : "ASC")}
@@ -413,8 +419,8 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
         using var command = connection.CreateCommand();
         command.CommandText = $"""
             SELECT {MessageColumns}
-            FROM Messages
-            WHERE Id = $messageId
+            FROM {MessagesWithAttempts}
+            WHERE m.Id = $messageId
               AND ConversationId = $conversationId
               AND LocalSequence = $sequence;
             """;
@@ -449,6 +455,7 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
                 BinaryDataType = result.IsDBNull(8) ? null : checked((ushort)result.GetInt32(8)),
                 WireTimestamp = result.IsDBNull(9) ? null : result.GetInt64(9),
                 ResolutionState = (MessageResolutionState)result.GetInt32(10),
+                LatestAttempt = result.IsDBNull(11) ? null : SqliteOutgoingMessageStore.ReadAttempt(result, 11),
             });
         }
 

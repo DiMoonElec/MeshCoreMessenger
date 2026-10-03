@@ -247,11 +247,17 @@ public sealed class LocalStorageTests
         Directory.CreateDirectory(paths.DataDirectory);
         using (var connection = OpenWritable(paths.DatabasePath))
         {
-            Execute(connection, "CREATE TABLE SchemaMigrations (Version INTEGER NOT NULL PRIMARY KEY, Name TEXT NOT NULL UNIQUE, AppliedUtc TEXT NOT NULL);");
-            Execute(connection, "CREATE TABLE Messages (Id TEXT NOT NULL PRIMARY KEY, Text TEXT);");
-            Execute(connection, "INSERT INTO SchemaMigrations (Version, Name, AppliedUtc) VALUES (1, 'Initial local storage', '2026-09-25T00:00:00Z');");
-            Execute(connection, "INSERT INTO Messages (Id, Text) VALUES ('existing', 'preserve');");
-            Execute(connection, "PRAGMA user_version=1;");
+            DatabaseMigrator.ApplyPending(connection, targetVersion: 1);
+            Execute(connection, """
+                INSERT INTO Nodes (Id,PublicKey,FirstSeenUtc,LastSeenUtc)
+                VALUES ('node',zeroblob(32),'2026-09-25T00:00:00Z','2026-09-25T00:00:00Z');
+                INSERT INTO Contacts (NodeId,PublicKey,PublicKeyPrefix,DisplayName,ContactType,Flags,PresentOnNode,UpdatedUtc)
+                VALUES ('node',zeroblob(32),zeroblob(6),'Peer',1,0,1,'2026-09-25T00:00:00Z');
+                INSERT INTO Conversations (Id,NodeId,Kind,ContactPublicKey,IsArchived,CreatedUtc,UpdatedUtc)
+                VALUES ('conversation','node',0,zeroblob(32),0,'2026-09-25T00:00:00Z','2026-09-25T00:00:00Z');
+                INSERT INTO Messages (Id,ConversationId,Direction,MessageKind,Text,ReceivedUtc)
+                VALUES ('existing','conversation',0,0,'preserve','2026-09-25T00:00:00Z');
+                """);
         }
 
         await using (var storage = await LocalStorage.OpenAsync(paths, CancellationToken))

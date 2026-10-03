@@ -32,10 +32,16 @@ Desktop 251/251 Debug/Release, native preview/viewport audits пройдены.
 [D2](d2-text-validation.md) реализован и автоматически проверен: общий UTF-8 validator, application
 text processor-заглушка, живой счётчик и read-only readiness. Все уровни пока no-op;
 настройка настоящего приложения/алгоритм замен — будущая задача.
-Пользователь подтвердил ручную проверку D2 03.10.2026; следующий подэтап — D3.
-D3–D18 не начаты. Для будущей доработки зафиксировано обрезание лишних символов
+Пользователь подтвердил ручную проверку D2 03.10.2026.
+[D3](d3-outgoing-storage.md) реализован: atomic prepare/operation ID, CAS Sending,
+сохранение TransmissionText/ACK metadata, миграция v3 с backup, startup/restore
+recovery без TX, отдельные post-commit notifications и latest-attempt projection.
+Ручная приёмка D3 ожидается; следующий подэтап — D4. D4–D18 не начаты.
+D3 Debug/Release: библиотека 96/96, Core 159/159, Desktop 265/265.
+Первый Release Desktop runner завис; диагностический повтор прошёл, детали в D3.
+ Для будущей доработки зафиксировано обрезание лишних символов
 в composer при превышении лимита; сейчас оно не реализовано, детали — в D2.
-Debug/Release: библиотека 96/96, Core 139/139, Desktop 256/256.
+D2 Debug/Release: библиотека 96/96, Core 139/139, Desktop 256/256.
 Фильтры каналов и отдельная
 визуальная группа unknown сознательно отложены: семантику/алгоритм нужно переосмыслить
 будущей задачей, а не возвращать в рамках UI6/C10.

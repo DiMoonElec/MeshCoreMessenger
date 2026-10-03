@@ -1,4 +1,5 @@
 using System.Windows.Input;
+using MeshCoreMessenger.Core.Domain;
 
 namespace MeshCoreMessenger.Desktop.Presentation;
 
@@ -18,6 +19,19 @@ public sealed record MessagePresentation(
 
 public static class MessageMetadataFormatter
 {
+    public static MessagePresentation FromAttempt(OutgoingAttemptSnapshot attempt) => new(
+        attempt.State switch
+        {
+            SendAttemptState.Prepared => MessageSendDisplayState.Prepared,
+            SendAttemptState.Sending => MessageSendDisplayState.Sending,
+            SendAttemptState.Accepted when attempt.AckExpectation == AckExpectation.Expected => MessageSendDisplayState.AwaitingAck,
+            SendAttemptState.Accepted when attempt.AckExpectation == AckExpectation.NotExpected => MessageSendDisplayState.AcceptedByNode,
+            SendAttemptState.Delivered => MessageSendDisplayState.Delivered,
+            SendAttemptState.Unconfirmed => MessageSendDisplayState.Unconfirmed,
+            SendAttemptState.Failed => MessageSendDisplayState.Failed,
+            _ => MessageSendDisplayState.Unknown,
+        }, AttemptNumber: attempt.AttemptNumber, Details: attempt.ErrorCode);
+
     public static string Format(string time, MessagePresentation presentation)
     {
         var parts = new List<string> { time };

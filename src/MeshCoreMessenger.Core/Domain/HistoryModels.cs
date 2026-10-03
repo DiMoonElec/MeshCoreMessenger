@@ -33,6 +33,8 @@ public sealed record HistoryMessage(
     /// <summary>Device-provided timestamp when one existed; display order never depends on it.</summary>
     public long? WireTimestamp { get; init; }
 
+    public OutgoingAttemptSnapshot? LatestAttempt { get; init; }
+
     public MessageResolutionState ResolutionState { get; init; }
 }
 

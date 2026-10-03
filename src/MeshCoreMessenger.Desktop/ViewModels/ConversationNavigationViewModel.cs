@@ -1217,6 +1217,8 @@ public sealed class HistoryMessageListItem : ObservableObject
         CopyText = message.Text ?? Body;
         ReceivedTime = message.ReceivedUtc.ToLocalTime().ToString("g");
         _isSearchMatch = isSearchMatch;
+        if (IsOutgoing && message.LatestAttempt is { } attempt)
+            _presentation = MessageMetadataFormatter.FromAttempt(attempt);
     }
 
     public Guid Id { get; }

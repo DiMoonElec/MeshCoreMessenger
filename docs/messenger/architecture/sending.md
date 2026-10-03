@@ -45,3 +45,13 @@ D2: общий helper реализован; composer получает byte count
 с API уровней будущей оптимизации. Encoder использует общий validator и сам
 не меняет текст. Отправка должна сохранять и использовать захваченный результат
 обработки, сохраняя исходный draft до передачи ответственности хранилищу.
+
+D3: `LocalStorage.OutgoingMessages` атомарно сохраняет оригинал и TransmissionText
+с первой Prepared-попыткой, использует MessageId как идемпотентный operation ID.
+CAS переходы адресованы точным node/message/attempt/session. Sending=6 не меняет
+прежние значения enum. Accepted+Expected означает AwaitingAck, Accepted+NotExpected —
+завершённый AcceptedByNode. Миграция v3 и startup recovery выполняются до возврата
+LocalStorage, с SQLite backup перед upgrade; неопределённые попытки становятся Unknown
+без отправки. Legacy private Accepted без явной expectation трактуется консервативно.
+History DTO получает последнюю попытку одним bounded SQL join; исходящие уведомления
+отдельны от incoming/unread. Детали и проверки — [D3](../plan/d3-outgoing-storage.md).
