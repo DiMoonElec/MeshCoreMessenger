@@ -27,6 +27,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     private readonly IReconnectJitter _jitter;
     private readonly TimeProvider _timeProvider;
     private readonly IPlatformPowerEvents? _powerEvents;
+    private readonly IDurableOutgoingWrites? _outgoing;
     private readonly Channel<SupervisorMessage> _messages = Channel.CreateUnbounded<SupervisorMessage>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
     private readonly Task _loop;
@@ -53,8 +54,10 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         IReconnectDelay delay,
         IReconnectJitter jitter,
         TimeProvider timeProvider,
-        IPlatformPowerEvents? powerEvents = null)
+        IPlatformPowerEvents? powerEvents = null,
+        IDurableOutgoingWrites? outgoing = null)
     {
+        _outgoing = outgoing;
         _profiles = profiles;
         _attempts = attempts;
         _failures = failures;
@@ -217,6 +220,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private async Task ConnectNowCoreAsync()
     {
+        // Explicit recovery resets persistence pause only. The attempt factory flushes before creating a client.
+        if (_outgoing?.IsPaused == true) await _outgoing.RetryAsync().ConfigureAwait(false);
         _connectionDesired = true;
         if (_suspended)
         {
@@ -249,7 +254,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             if (active.RunCompleted && !active.TeardownStarted)
             {
                 Publish(ConnectionSupervisorState.Disconnecting, "Replacing the current connection attempt.", null);
-                BeginTeardown(active, TeardownIntent.Restart, "Reconnect requested");
+                if (active.Attempt is null) CompleteWithoutAttempt(active, TeardownIntent.Restart);
+                else BeginTeardown(active, TeardownIntent.Restart, "Reconnect requested");
             }
             return;
         }
@@ -513,11 +519,13 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
 
     private Task HandleOnlineAsync(AttemptOnlineMessage online)
     {
-        if (_suspended || !IsCurrent(online.Active, online.Active.Generation) || online.Active.TeardownStarted)
+        if (_suspended || !IsCurrent(online.Active, online.Active.Generation) || online.Active.TeardownStarted ||
+            online.Active.RunCompleted || online.Active.PendingIntent is not null || online.Active.Cancellation.IsCancellationRequested)
         {
             return Task.CompletedTask;
         }
 
+        online.Active.Attempt?.OpenCommandAdmission();
         online.Active.OnlineSinceUtc = _timeProvider.GetUtcNow();
         Publish(
             ConnectionSupervisorState.Online,
@@ -592,6 +600,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             return;
         }
 
+        active.Attempt?.CloseCommandAdmission();
         active.TeardownStarted = true;
         active.PendingIntent = intent;
         active.Cancellation.Cancel();
@@ -640,6 +649,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         }
         active.Cancellation.Dispose();
         _active = null;
+        // A later switch/restart intent does not change the old attempt's disconnect barrier.
+        CompleteDisconnectWaiters();
 
         if (teardown.Error is not null &&
             _failures.Classify(teardown.Error) == ConnectionFailureDisposition.NeedsAttention &&
@@ -679,6 +690,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
     {
         active.Cancellation.Dispose();
         _active = null;
+        CompleteDisconnectWaiters();
         switch (intent)
         {
             case TeardownIntent.Retry:
@@ -790,6 +802,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         Guid? sessionId = null,
         Guid? nodeId = null)
     {
+        if (state != ConnectionSupervisorState.Online) _active?.Attempt?.CloseCommandAdmission();
         var previous = Snapshot;
         var current = new ConnectionSupervisorSnapshot(
             state,

@@ -35,6 +35,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.Sessions);
         services.AddSingleton(storage.Directories);
         services.AddSingleton(storage.IncomingMessages);
+        services.AddSingleton(storage.OutgoingMessages);
         services.AddSingleton(storage.History);
         services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.Drafts);
@@ -65,6 +66,9 @@ public static class AppBootstrap
         services.AddSingleton<MessageIngestor>();
         services.AddSingleton<IDurableMessageIngress>(provider =>
             provider.GetRequiredService<MessageIngestor>());
+        services.AddSingleton<IDurableOutgoingWrites, OutgoingAttemptWriteTracker>();
+        services.AddSingleton<SessionCommandGateway>();
+        services.AddSingleton<ISessionCommandGateway>(provider => provider.GetRequiredService<SessionCommandGateway>());
         services.AddSingleton<IConnectionAttemptFactory, ConnectionAttemptFactory>();
         services.AddSingleton<IConnectionFailureClassifier, ConnectionFailureClassifier>();
         services.AddSingleton<IReconnectDelay, SystemReconnectDelay>();

@@ -35,3 +35,11 @@ SessionId/NodeId, а старые lifecycle-события не переключ
 Первый относится к протоколу, второй допустимо оставить в Core. Надёжное поштучное
 чтение с ожиданием хранилища и ограничением очереди — отдельный будущий API, если
 потребуется более сильная защита от перегрузки; SQLite внутрь MeshCoreSharp не добавлять.
+
+D4 добавляет owned command leases и `IDurableOutgoingWrites`. Admission закрывается
+до отмены/teardown; Disconnect останавливает RX, затем session ждёт owned workflows,
+observers и cleanup statuses. После этого сохраняются прежние library event/receive/
+ingest barriers. Неудачные outgoing writes остаются в tracker; factory не создаёт
+следующую session/client до их Flush. Desktop shutdown включает outgoing Flush/Retry,
+поэтому persistence error не разрешает молчаливый выход. Retry не передаёт эфир.
+Контракт caller и проверенные гонки — [D4](../plan/d4-session-commands.md).

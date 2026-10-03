@@ -27,6 +27,20 @@ public interface ICompanionClient : IAsyncDisposable
     Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default);
     Task DrainMessagesAsync(CancellationToken cancellationToken = default);
+    Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default) =>
+        Task.FromException<TextMessageSendResult>(new NotSupportedException("Text sending is not implemented by this adapter."));
+    Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default) =>
+        Task.FromException<ChannelMessageSendResult>(new NotSupportedException("Channel sending is not implemented by this adapter."));
+    Task AddOrUpdateContactAsync(ContactConfiguration contact, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Contact mutation is not implemented by this adapter."));
+    Task RemoveContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Contact mutation is not implemented by this adapter."));
+    Task SetChannelAsync(byte slot, string name, ReadOnlyMemory<byte> secret, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Channel mutation is not implemented by this adapter."));
+    Task ClearChannelAsync(byte slot, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Channel mutation is not implemented by this adapter."));
+    Task SendAdvertisementAsync(AdvertisementMode mode, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Advertisement sending is not implemented by this adapter."));
     Task DisconnectAsync(CancellationToken cancellationToken = default);
     Task FlushEventsAsync(CancellationToken cancellationToken = default);
 }

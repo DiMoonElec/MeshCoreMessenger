@@ -13,6 +13,9 @@ public interface IConnectionAttempt : IAsyncDisposable
 
     event EventHandler<ConnectionAttemptProgressEventArgs>? ProgressChanged;
 
+    void OpenCommandAdmission() { }
+    void CloseCommandAdmission() { }
+
     Task StartAsync(CancellationToken cancellationToken = default);
     Task StopAsync(string reason, CancellationToken cancellationToken = default);
 }

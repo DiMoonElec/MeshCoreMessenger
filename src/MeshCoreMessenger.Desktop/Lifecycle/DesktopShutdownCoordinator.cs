@@ -28,7 +28,8 @@ internal sealed class DesktopShutdownCoordinator(
     IDurableReadStateWrites readStates,
     IDurableDraftWrites drafts,
     IDurableDesktopPreferences preferences,
-    ILogger<DesktopShutdownCoordinator> logger) : IDesktopShutdownCoordinator
+    ILogger<DesktopShutdownCoordinator> logger,
+    IDurableOutgoingWrites? outgoing = null) : IDesktopShutdownCoordinator
 {
     private readonly object _gate = new();
     private Task? _attempt;
@@ -123,6 +124,8 @@ internal sealed class DesktopShutdownCoordinator(
                     await ingress.RetryAsync(CancellationToken.None).ConfigureAwait(false);
                 }
 
+                if (outgoing?.IsPaused == true) await outgoing.RetryAsync(CancellationToken.None).ConfigureAwait(false);
+
                 if (sessionCompletions.IsPaused)
                 {
                     await sessionCompletions.RetryAsync(CancellationToken.None).ConfigureAwait(false);
@@ -146,6 +149,7 @@ internal sealed class DesktopShutdownCoordinator(
 
             await ingress.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await sessionCompletions.FlushAsync(CancellationToken.None).ConfigureAwait(false);
+            if (outgoing is not null) await outgoing.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await readStates.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await drafts.FlushAsync(CancellationToken.None).ConfigureAwait(false);
             await preferences.FlushAsync(CancellationToken.None).ConfigureAwait(false);

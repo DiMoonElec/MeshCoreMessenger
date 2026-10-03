@@ -85,6 +85,21 @@ internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionC
     public Task DrainMessagesAsync(CancellationToken cancellationToken = default) =>
         client.DrainMessagesAsync(cancellationToken);
 
+    public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default) =>
+        client.SendTextAsync(recipientPublicKey, text, cancellationToken);
+    public Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default) =>
+        client.SendChannelTextAsync(slot, text, cancellationToken);
+    public Task AddOrUpdateContactAsync(ContactConfiguration contact, CancellationToken cancellationToken = default) =>
+        client.AddOrUpdateContactAsync(contact, cancellationToken);
+    public Task RemoveContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
+        client.RemoveContactAsync(publicKey, cancellationToken);
+    public Task SetChannelAsync(byte slot, string name, ReadOnlyMemory<byte> secret, CancellationToken cancellationToken = default) =>
+        client.SetChannelAsync(slot, name, secret, cancellationToken);
+    public Task ClearChannelAsync(byte slot, CancellationToken cancellationToken = default) =>
+        client.ClearChannelAsync(slot, cancellationToken);
+    public Task SendAdvertisementAsync(AdvertisementMode mode, CancellationToken cancellationToken = default) =>
+        client.SendAdvertisementAsync(mode, cancellationToken);
+
     public Task DisconnectAsync(CancellationToken cancellationToken = default) =>
         client.DisconnectAsync(cancellationToken);
 

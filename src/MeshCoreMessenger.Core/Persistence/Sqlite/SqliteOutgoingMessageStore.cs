@@ -139,13 +139,7 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
         var attempt = attempts.SingleOrDefault(item => item.Id == transition.AttemptId);
         if (attempt is null || attempt.SessionId != transition.SessionId) throw new InvalidOperationException("Attempt ownership mismatch.");
         if (attempt.State != transition.ExpectedState) return null;
-        var allowed = attempt.State switch
-        {
-            SendAttemptState.Prepared => transition.State is SendAttemptState.Sending or SendAttemptState.Failed,
-            SendAttemptState.Sending => transition.State is SendAttemptState.Accepted or SendAttemptState.Failed or SendAttemptState.Unknown,
-            SendAttemptState.Accepted when attempt.AckExpectation == AckExpectation.Expected => transition.State is SendAttemptState.Delivered or SendAttemptState.Unconfirmed or SendAttemptState.Unknown,
-            _ => false,
-        };
+        var allowed = SendAttemptTransitions.Allows(attempt.State, attempt.AckExpectation, transition.State);
         if (!allowed) throw new InvalidOperationException("Attempt transition would violate delivery ordering or change a terminal state.");
         if (transition.AtUtc < attempt.StartedUtc || transition.AtUtc < attempt.AcceptedUtc)
             throw new ArgumentException("Transition precedes recorded attempt time.", nameof(transition));
@@ -178,6 +172,29 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
         transaction.Commit();
         return new(transition.NodeId, conversationId, transition.MessageId, false);
     }
+
+    public Task<StoredOutgoingMessage> GetAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
+        reader.ExecuteAsync(connection =>
+        {
+            using var command = Command(connection, null, """
+                SELECT m.ConversationId,m.SessionId,c.Kind,c.ContactPublicKey,ch.KeyFingerprint,
+                       b.Id,b.Slot,b.Generation,m.Text,m.TransmissionText
+                FROM Messages m JOIN Conversations c ON c.Id=m.ConversationId
+                LEFT JOIN Channels ch ON ch.Id=c.ChannelId
+                LEFT JOIN ChannelBindings b ON b.Id=m.ChannelBindingId
+                WHERE m.Id=$message AND c.NodeId=$node AND m.Direction=1;
+                """, ("$message", messageId), ("$node", nodeId));
+            using var row = command.ExecuteReader();
+            if (!row.Read()) throw new KeyNotFoundException("Outgoing message does not belong to the node.");
+            var kind = (ConversationKind)row.GetInt32(2);
+            if (kind is not (ConversationKind.Contact or ConversationKind.Channel) || row.IsDBNull(9))
+                throw new InvalidOperationException("Legacy outgoing message has no complete transmission capture.");
+            var recipient = kind == ConversationKind.Contact
+                ? new OutgoingRecipient(kind, (byte[])row.GetValue(3))
+                : new OutgoingRecipient(kind, (byte[])row.GetValue(4), Guid.Parse(row.GetString(5)), checked((byte)row.GetInt32(6)), row.GetInt32(7));
+            return new StoredOutgoingMessage(messageId, nodeId, Guid.Parse(row.GetString(0)),
+                row.IsDBNull(1) ? null : Guid.Parse(row.GetString(1)), recipient, row.GetString(8), row.GetString(9));
+        }, cancellationToken);
 
     public Task<IReadOnlyList<OutgoingAttemptSnapshot>> GetAttemptsAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
         reader.ExecuteAsync<IReadOnlyList<OutgoingAttemptSnapshot>>(connection => ReadAttempts(connection, null, nodeId, messageId), cancellationToken);

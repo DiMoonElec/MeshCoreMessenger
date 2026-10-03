@@ -36,7 +36,13 @@ text processor-заглушка, живой счётчик и read-only readines
 [D3](d3-outgoing-storage.md) реализован: atomic prepare/operation ID, CAS Sending,
 сохранение TransmissionText/ACK metadata, миграция v3 с backup, startup/restore
 recovery без TX, отдельные post-commit notifications и latest-attempt projection.
-Ручная приёмка D3 ожидается; следующий подэтап — D4. D4–D18 не начаты.
+Ручная приёмка D3 ожидается.
+[D4](d4-session-commands.md) реализован и автоматически проверен: Online admission/
+immutable leases, typed adapters, owned workflows/observers, outgoing status Retry/Flush,
+проверки перед invocation и teardown/next-session/shutdown commit barriers.
+Runtime Send/mutations/advert не подключены. Следующий подэтап — D5; D5–D18 не начаты.
+D4 Debug/Release: библиотека 96/96, Core 180/180, Desktop 267/267.
+Ручная аппаратная проверка D4 не требуется.
 D3 Debug/Release: библиотека 96/96, Core 159/159, Desktop 265/265.
 Первый Release Desktop runner завис; диагностический повтор прошёл, детали в D3.
  Для будущей доработки зафиксировано обрезание лишних символов

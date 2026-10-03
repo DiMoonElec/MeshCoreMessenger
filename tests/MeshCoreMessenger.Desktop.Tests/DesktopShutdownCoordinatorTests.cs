@@ -372,6 +372,78 @@ public sealed class DesktopShutdownCoordinatorTests
                 CancellationToken)).Text);
     }
 
+    [Fact]
+    public async Task OutgoingFailureRefusesExitAndRetryOnlyFlushesRetainedWrites()
+    {
+        var order = new List<string>();
+        var connections = new FakeConnections(order);
+        var outgoing = new FakeOutgoingWrites(order) { FailNext = true };
+        var coordinator = CreateCoordinator(new FakeUi(order), connections, new FakeIngress(order), new FakeSessionCompletions(order), outgoing: outgoing);
+        await Assert.ThrowsAsync<DesktopShutdownException>(() => coordinator.ShutdownAsync(CancellationToken));
+        Assert.False(coordinator.IsCompleted);
+        Assert.True(outgoing.IsPaused);
+        Assert.Equal(1, outgoing.PendingCount);
+        await coordinator.ShutdownAsync(CancellationToken);
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(0, outgoing.PendingCount);
+        Assert.Equal(1, connections.ShutdownCount);
+        Assert.Contains("outgoing-retry", order);
+        Assert.Equal(2, outgoing.FlushCount);
+    }
+
+    [Fact]
+    public async Task ShutdownWaitsForOutgoingFlushAndCallerCancellationDoesNotAbandonIt()
+    {
+        var order = new List<string>();
+        var gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var outgoing = new FakeOutgoingWrites(order) { Gate = gate };
+        var coordinator = CreateCoordinator(new FakeUi(order), new FakeConnections(order), new FakeIngress(order), new FakeSessionCompletions(order), outgoing: outgoing);
+        using var caller = new CancellationTokenSource();
+        var first = coordinator.ShutdownAsync(caller.Token);
+        await outgoing.Started.Task.WaitAsync(CancellationToken);
+        caller.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => first);
+        Assert.False(coordinator.IsCompleted);
+        gate.SetResult();
+        await coordinator.ShutdownAsync(CancellationToken);
+        Assert.True(coordinator.IsCompleted);
+        Assert.Equal(1, outgoing.FlushCount);
+    }
+
+    private sealed class FakeOutgoingWrites(List<string> order) : IDurableOutgoingWrites
+    {
+        public bool IsPaused { get; private set; }
+        public int PendingCount { get; private set; } = 1;
+        public bool FailNext { get; set; }
+        public int FlushCount { get; private set; }
+        public TaskCompletionSource? Gate { get; init; }
+        public TaskCompletionSource Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public event EventHandler? Paused { add { } remove { } }
+        public void ReportFailure(Exception exception) => IsPaused = true;
+        public Task<bool> SaveAsync(OutgoingAttemptTransition transition, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task RetryAsync(CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            order.Add("outgoing-retry");
+            IsPaused = false;
+            return Task.CompletedTask;
+        }
+        public async Task FlushAsync(CancellationToken cancellationToken = default)
+        {
+            FlushCount++;
+            order.Add("outgoing-flush");
+            Started.TrySetResult();
+            if (Gate is not null) await Gate.Task.WaitAsync(cancellationToken);
+            if (FailNext)
+            {
+                FailNext = false;
+                IsPaused = true;
+                throw new OutgoingPersistenceException(new IOException("injected"));
+            }
+            PendingCount = 0;
+        }
+    }
+
     private static DesktopShutdownCoordinator CreateCoordinator(
         IDesktopUiLifetime ui,
         IDesktopConnectionLifecycle connections,
@@ -379,7 +451,8 @@ public sealed class DesktopShutdownCoordinatorTests
         IDurableSessionCompletion sessionCompletions,
         IDurableReadStateWrites? readStates = null,
         IDurableDraftWrites? drafts = null,
-        IDurableDesktopPreferences? preferences = null) =>
+        IDurableDesktopPreferences? preferences = null,
+        IDurableOutgoingWrites? outgoing = null) =>
         new(
             ui,
             connections,
@@ -388,7 +461,7 @@ public sealed class DesktopShutdownCoordinatorTests
             readStates ?? new FakeReadStateWrites(order: ingress is FakeIngress fake ? fake.Order : []),
             drafts ?? new FakeDraftWrites(order: ingress is FakeIngress draftFake ? draftFake.Order : []),
             preferences ?? new FakeDesktopPreferences(order: ingress is FakeIngress preferenceFake ? preferenceFake.Order : []),
-            NullLogger<DesktopShutdownCoordinator>.Instance);
+            NullLogger<DesktopShutdownCoordinator>.Instance, outgoing);
 
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 

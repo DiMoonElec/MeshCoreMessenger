@@ -7,5 +7,6 @@ public interface IOutgoingMessageStore
     event EventHandler<OutgoingMessageCommit>? MessageCommitted;
     Task<PreparedOutgoingMessage> PrepareAsync(PrepareOutgoingMessage message, CancellationToken cancellationToken = default);
     Task<bool> TransitionAsync(OutgoingAttemptTransition transition, CancellationToken cancellationToken = default);
+    Task<StoredOutgoingMessage> GetAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OutgoingAttemptSnapshot>> GetAttemptsAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
 }

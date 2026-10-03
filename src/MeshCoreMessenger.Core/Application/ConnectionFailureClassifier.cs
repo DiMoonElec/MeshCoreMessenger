@@ -26,6 +26,7 @@ public sealed class ConnectionFailureClassifier : IConnectionFailureClassifier
         return current switch
         {
             ConnectionAttemptPersistenceException => ConnectionFailureDisposition.NeedsAttention,
+            OutgoingPersistenceException => ConnectionFailureDisposition.NeedsAttention,
             ReceiveIngestException => ConnectionFailureDisposition.NeedsAttention,
             SessionCompletionPersistenceException => ConnectionFailureDisposition.NeedsAttention,
             DatabaseStorageException => ConnectionFailureDisposition.NeedsAttention,

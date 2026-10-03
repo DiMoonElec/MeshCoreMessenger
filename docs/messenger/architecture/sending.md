@@ -55,3 +55,12 @@ LocalStorage, с SQLite backup перед upgrade; неопределённые 
 без отправки. Legacy private Accepted без явной expectation трактуется консервативно.
 History DTO получает последнюю попытку одним bounded SQL join; исходящие уведомления
 отдельны от incoming/unread. Детали и проверки — [D3](../plan/d3-outgoing-storage.md).
+
+D4: будущий MessageService получает scoped `SessionCommandLease` через Core gateway.
+После Prepare он связывает реальный attempt через BindOutgoingAsync, сохраняет Sending
+и вызывает typed text API один раз. Lease читает захваченный TransmissionText из store,
+проверяет session/recipient и текущую binding перед вызовом. Весь workflow принятия
+результата/записи и ACK observer регистрируется через RunAsync/ObserveAsync; UI не
+владеет этими задачами. При закрытии lease неопределённость сохраняется под прежним
+owner; failed status writes удерживаются для Retry/Flush без повторения TX.
+D4 даёт только инфраструктуру; runtime Send остаётся выключенным до D5/D6.

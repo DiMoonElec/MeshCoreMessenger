@@ -20,6 +20,7 @@ public sealed class CompanionSession : IAsyncDisposable
         new UnboundedChannelOptions { SingleReader = false, SingleWriter = false });
     private volatile CompanionSessionState _state = CompanionSessionState.Created;
     private int _closed;
+    private SessionCommandScope? _commands;
     private int _disposed;
 
     internal CompanionSession(
@@ -59,6 +60,13 @@ public sealed class CompanionSession : IAsyncDisposable
     public ChannelReader<CompanionSessionEvent> Events => _events.Reader;
 
     internal event EventHandler<CompanionSessionLifecycleEventArgs>? LifecycleChanged;
+
+    internal SessionCommandScope OpenCommands(SessionCommandGateway gateway)
+    {
+        EnsureIdentified();
+        if (_commands is not null) throw new InvalidOperationException("Command admission has already been opened for this session.");
+        return _commands = gateway.Open(new(LocalNodeId!.Value, SessionId, Generation, LocalNode!.Name), _client);
+    }
 
     internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
     {
@@ -215,11 +223,21 @@ public sealed class CompanionSession : IAsyncDisposable
             return;
         }
 
+        _commands?.Close();
         SetState(CompanionSessionState.Stopping);
         Exception? cleanupError = null;
         try
         {
             await _client.DisconnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            cleanupError = exception;
+        }
+
+        try
+        {
+            if (_commands is not null) await _commands.DrainAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception exception)
         {

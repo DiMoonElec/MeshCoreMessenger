@@ -10,18 +10,21 @@ public sealed class ConnectionAttemptFactory(
     ICompanionSessionFactory sessions,
     DirectoryService directories,
     IDirectoryStore directoryStore,
-    MessageIngestor ingestor) : IConnectionAttemptFactory
+    MessageIngestor ingestor,
+    SessionCommandGateway? commands = null,
+    IDurableOutgoingWrites? outgoing = null) : IConnectionAttemptFactory
 {
     public async Task<IConnectionAttempt> CreateAsync(
         ConnectionProfile profile,
         long generation,
         CancellationToken cancellationToken = default)
     {
+        if (outgoing is not null) await outgoing.FlushAsync(cancellationToken).ConfigureAwait(false);
         var session = await sessions.CreateAsync(profile, generation, cancellationToken).ConfigureAwait(false);
         try
         {
             var coordinator = new ReceiveCoordinator(directories, directoryStore, ingestor);
-            return new ConnectionAttempt(session, coordinator);
+            return new ConnectionAttempt(session, coordinator, commands, outgoing);
         }
         catch
         {
@@ -39,11 +42,17 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
         new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly SemaphoreSlim _stopGate = new(1, 1);
     private readonly CancellationTokenSource _observeStop = new();
+    private readonly SessionCommandGateway? _commands;
+    private readonly IDurableOutgoingWrites? _outgoing;
+    private SessionCommandScope? _commandScope;
     private int _stopped;
     private int _disposed;
 
-    public ConnectionAttempt(CompanionSession session, ReceiveCoordinator coordinator)
+    public ConnectionAttempt(CompanionSession session, ReceiveCoordinator coordinator, SessionCommandGateway? commands = null, IDurableOutgoingWrites? outgoing = null)
     {
+        _commands = commands;
+        _outgoing = outgoing;
+        if (_outgoing is not null) _outgoing.Paused += OnOutgoingPaused;
         _session = session;
         _coordinator = coordinator;
         _session.LifecycleChanged += OnLifecycleChanged;
@@ -58,6 +67,22 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
 
     public event EventHandler<ConnectionAttemptProgressEventArgs>? ProgressChanged;
 
+    public void OpenCommandAdmission()
+    {
+        if (_commands is not null) _commandScope = _session.OpenCommands(_commands);
+    }
+
+    public void CloseCommandAdmission()
+    {
+        if (_commandScope is not null) _commands!.Close(_commandScope);
+    }
+
+    private void OnOutgoingPaused(object? sender, EventArgs args)
+    {
+        CloseCommandAdmission();
+        _completion.TrySetResult(new(new OutgoingPersistenceException(new InvalidOperationException("Outgoing status writes paused."))));
+    }
+
     public async Task StartAsync(CancellationToken cancellationToken = default)
     {
         await _session.StartAsync(cancellationToken).ConfigureAwait(false);
@@ -68,6 +93,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
     public async Task StopAsync(string reason, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(reason);
+        CloseCommandAdmission();
         await _stopGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -108,6 +134,12 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
                     exception);
             }
 
+            try
+            {
+                if (_outgoing is not null) await _outgoing.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception exception) { cleanupError = exception; }
+
             _session.LifecycleChanged -= OnLifecycleChanged;
             if (cleanupError is not null)
             {
@@ -134,6 +166,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
         finally
         {
             _observeStop.Cancel();
+            if (_outgoing is not null) _outgoing.Paused -= OnOutgoingPaused;
             _session.LifecycleChanged -= OnLifecycleChanged;
             await _coordinator.DisposeAsync().ConfigureAwait(false);
             await _session.DisposeAsync().ConfigureAwait(false);
@@ -147,6 +180,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
         try
         {
             var exception = await _coordinator.Failure.WaitAsync(_observeStop.Token).ConfigureAwait(false);
+            CloseCommandAdmission();
             _completion.TrySetResult(new ConnectionAttemptCompletion(exception));
         }
         catch (OperationCanceledException) when (_observeStop.IsCancellationRequested)
@@ -168,6 +202,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
 
         if (args.ConnectionState == MeshCoreConnectionState.Faulted)
         {
+            CloseCommandAdmission();
             _completion.TrySetResult(new ConnectionAttemptCompletion(
                 new MeshCoreTransportException("The Companion connection was lost.")));
         }
