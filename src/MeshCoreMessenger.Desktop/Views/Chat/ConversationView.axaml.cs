@@ -22,7 +22,10 @@ public sealed partial class ConversationView : UserControl
     private bool _wasVisible;
     private bool _pendingScroll;
     private bool _viewportPosted;
+    private EventHandler? _layoutCompletion;
+    private long _scrollRevision;
     private (Guid? Node, string? Chat, long Sequence, double Y)? _anchor;
+    private (Guid? Node, string? Chat, long Sequence, double Y)? _changingAnchor;
     private Guid? _contextNode;
     private string? _contextChat;
 
@@ -75,11 +78,12 @@ public sealed partial class ConversationView : UserControl
     private void UnbindOwner()
     {
         _revision++;
-        _pendingScroll = false;
+        CancelScroll();
         if (_history is not null)
         {
             _history.ReportVisibleRange(null, null, false, false);
             _history.ScrollRequested -= OnScrollRequested;
+            _history.ViewportChanging -= OnViewportChanging;
             _history.Messages.CollectionChanged -= OnMessagesChanged;
         }
         if (_owner is not null)
@@ -102,6 +106,7 @@ public sealed partial class ConversationView : UserControl
         _contextNode = owner.ViewedNode?.Id;
         _contextChat = owner.SelectedConversation?.StableKey;
         _history.ScrollRequested += OnScrollRequested;
+        _history.ViewportChanging += OnViewportChanging;
         _history.Messages.CollectionChanged += OnMessagesChanged;
         owner.PropertyChanged += OnOwnerChanged;
         owner.Navigation.PropertyChanged += OnNavigationChanged;
@@ -130,7 +135,7 @@ public sealed partial class ConversationView : UserControl
         _contextChat = chat;
         _revision++;
         _anchor = null;
-        _pendingScroll = false;
+        CancelScroll();
         _history?.ReportVisibleRange(null, null, false, false);
         UpdateMessageVisibility();
     }
@@ -151,13 +156,14 @@ public sealed partial class ConversationView : UserControl
         if (visible != _wasVisible)
         {
             _revision++;
-            _pendingScroll = false;
+            CancelScroll();
             _wasVisible = visible;
             if (visible)
             {
                 var sequence = _anchor is { } anchor && anchor.Node == _owner?.ViewedNode?.Id &&
                     anchor.Chat == _owner?.Navigation.SelectedConversation?.StableKey ? anchor.Sequence : (long?)null;
-                OnScrollRequested(_history, new HistoryScrollRequestEventArgs(sequence, sequence is null));
+                OnScrollRequested(_history, new HistoryScrollRequestEventArgs(
+                    sequence is null ? HistoryScrollIntent.ToEnd : HistoryScrollIntent.PreserveViewport, sequence));
             }
             else
                 _history?.ReportVisibleRange(null, null, false, false);
@@ -178,31 +184,112 @@ public sealed partial class ConversationView : UserControl
         if (!_attached || !IsEffectivelyVisible || _history is null || !ReferenceEquals(sender, _history))
             return;
         var revision = _revision;
-        var savedAnchor = _anchor;
+        var savedAnchor = _changingAnchor ?? _anchor;
+        CancelScroll();
+        var scrollRevision = _scrollRevision;
         _pendingScroll = true;
-        Dispatcher.UIThread.Post(() =>
+        var sequence = args.Intent == HistoryScrollIntent.PreserveViewport ? savedAnchor?.Sequence : args.AnchorSequence;
+        var item = args.Intent == HistoryScrollIntent.ToEnd ? _history.Messages.LastOrDefault() :
+            _history.Messages.FirstOrDefault(message => message.LocalSequence == sequence);
+        // Let the virtualizing panel apply collection indices before asking it
+        // to realize an anchor. ScrollIntoView before that layout uses stale indices.
+        AfterLayout(RealizeAnchor);
+        HistoryList.InvalidateMeasure();
+
+        void RealizeAnchor()
         {
-            if (!CanApplyScroll(revision))
+            if (!CanApplyScroll(revision) || scrollRevision != _scrollRevision) return;
+            if (item is not null) HistoryList.ScrollIntoView(item);
+            if (!CanApplyScroll(revision) || scrollRevision != _scrollRevision) return;
+            // ScrollIntoView may run nested layout/BringIntoView passes itself.
+            // Subscribe only after it returns, so its final adjustment cannot
+            // overwrite our pixel offset restoration.
+            var container = item is null ? null : HistoryList.ContainerFromIndex(HistoryList.Items.IndexOf(item));
+            // Variable-height virtualization may need another measure before the
+            // requested element joins the indexed realized range. Wait for that
+            // condition, not for an arbitrary amount of wall-clock time.
+            AfterLayout(item is not null && !ReferenceEquals(container?.DataContext, item) ? RealizeAnchor : RestoreAnchor);
+            HistoryList.InvalidateMeasure();
+        }
+
+        void RestoreAnchor()
+        {
+            if (!CanApplyScroll(revision) || scrollRevision != _scrollRevision)
                 return;
-            var item = args.ScrollToEnd ? _history!.Messages.LastOrDefault() :
-                _history!.Messages.FirstOrDefault(message => message.LocalSequence == args.AnchorSequence);
-            if (item is not null)
-                HistoryList.ScrollIntoView(item);
-            Dispatcher.UIThread.Post(() =>
+            if (item is not null && args.Intent == HistoryScrollIntent.PreserveViewport && savedAnchor is { } anchor)
             {
-                if (!CanApplyScroll(revision))
-                    return;
-                if (item is not null && !args.ScrollToEnd && savedAnchor is { } anchor && anchor.Sequence == item.LocalSequence)
+                var container = HistoryList.ContainerFromIndex(HistoryList.Items.IndexOf(item));
+                var viewer = GetScrollViewer();
+                if (!ReferenceEquals(container?.DataContext, item))
                 {
-                    var container = HistoryList.ContainerFromIndex(HistoryList.Items.IndexOf(item));
-                    var viewer = GetScrollViewer();
-                    if (container?.TranslatePoint(default, HistoryList) is { } origin && viewer is not null)
-                        viewer.Offset = new Vector(viewer.Offset.X, viewer.Offset.Y + origin.Y - anchor.Y);
+                    AfterLayout(RealizeAnchor);
+                    HistoryList.InvalidateMeasure();
+                    return;
                 }
-                _pendingScroll = false;
-                QueueViewport();
-            }, DispatcherPriority.Loaded);
-        }, DispatcherPriority.Loaded);
+                if (container?.TranslatePoint(default, HistoryList) is { } origin && viewer is not null)
+                {
+                    var offset = new Vector(viewer.Offset.X, viewer.Offset.Y + origin.Y - anchor.Y);
+                    if (offset != viewer.Offset)
+                    {
+                        AfterLayout(CompleteScroll);
+                        viewer.Offset = offset;
+                        HistoryList.InvalidateMeasure();
+                        return;
+                    }
+                }
+            }
+            CompleteScroll();
+        }
+
+        void CompleteScroll()
+        {
+            if (!CanApplyScroll(revision) || scrollRevision != _scrollRevision) return;
+            _pendingScroll = false;
+            QueueViewport();
+        }
+    }
+
+    private void AfterLayout(Action action)
+    {
+        EventHandler? handler = null;
+        handler = (_, _) =>
+        {
+            HistoryList.LayoutUpdated -= handler;
+            if (_layoutCompletion == handler) _layoutCompletion = null;
+            action();
+        };
+        _layoutCompletion = handler;
+        HistoryList.LayoutUpdated += handler;
+    }
+
+    private void CancelScroll()
+    {
+        _scrollRevision++;
+        if (_layoutCompletion is not null) HistoryList.LayoutUpdated -= _layoutCompletion;
+        _layoutCompletion = null;
+        _changingAnchor = null;
+        _pendingScroll = false;
+    }
+
+    private void OnViewportChanging(object? sender, EventArgs args)
+    {
+        if (!_attached || !IsEffectivelyVisible || _owner?.IsVisible != true) return;
+        var anchor = CaptureAnchor() ?? _anchor;
+        CancelScroll();
+        _changingAnchor = anchor;
+        _pendingScroll = true;
+    }
+
+    private (Guid? Node, string? Chat, long Sequence, double Y)? CaptureAnchor()
+    {
+        var first = HistoryList.GetRealizedContainers()
+            .Select(container => (Message: container.DataContext as HistoryMessageListItem,
+                Origin: container.TranslatePoint(default, HistoryList), Height: container.Bounds.Height))
+            .Where(item => item.Message is not null && item.Message.ConversationId == _owner?.SelectedConversation?.Id && item.Origin is { } point &&
+                point.Y + item.Height > 0 && point.Y < HistoryList.Bounds.Height)
+            .OrderBy(item => item.Message!.LocalSequence).FirstOrDefault();
+        return first.Message is not null && first.Origin is { } origin
+            ? (_owner?.ViewedNode?.Id, _owner?.SelectedConversation?.StableKey, first.Message.LocalSequence, origin.Y) : null;
     }
 
     private bool CanApplyScroll(long revision) => _owner?.IsVisible == true &&

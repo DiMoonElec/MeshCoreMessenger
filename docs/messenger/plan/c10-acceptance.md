@@ -7,6 +7,13 @@
 **03.10.2026: автоматическая приёмка выполнена; финальная ручная приёмка C10
 ожидается. Stage D не начат.** [Отчёт и ручной сценарий](../../testing/stage-c-acceptance.md).
 
+Ручная проверка подтвердила плавность и поиск вне текущего окна, но обнаружила
+скачок при подгрузке. [Измерение и исправление viewport](../../testing/history-viewport-preservation.md):
+отдельные scroll intents, блокировка промежуточного read reporting, одноразовые
+layout callbacks; Light/Dark и три сценария дают 0 DIP / 0 unread advances.
+Пользователь подтвердил повторную ручную проверку 03.10.2026: подгрузка
+вперёд/назад без рывков.
+
 Добавлен Desktop-тест с настоящей SQLite и 100 000 сообщений: полный двунаправленный
 scroll, bounded DTO, поиск/переход, фактическое чтение, offline restore → fake Online
 A/B/A, изоляция late B commit, два draft owner, ошибка shutdown/retry и новый startup.

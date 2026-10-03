@@ -57,7 +57,35 @@ public sealed class HistoryWindowViewModelTests
 
         Assert.Equal(151, request?.AnchorSequence);
         Assert.False(request?.ScrollToEnd);
+        Assert.Equal(HistoryScrollIntent.PreserveViewport, request?.Intent);
         Assert.Equal((51, 250), Range(model));
+        await model.StopAsync();
+    }
+
+    [Fact]
+    public async Task PageMutationIsBracketedBeforeCollectionChangesAndUsesPreserveIntent()
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader();
+        reader.Seed(NodeA, conversation, 1_000);
+        var model = Create(reader);
+        await model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult: false);
+        var changing = false;
+        var prepares = 0;
+        var mutations = 0;
+        var intents = new List<HistoryScrollIntent>();
+        model.ViewportChanging += (_, _) => { changing = true; prepares++; };
+        model.Messages.CollectionChanged += (_, _) => { Assert.True(changing); mutations++; };
+        model.ScrollRequested += (_, args) => { Assert.True(changing); changing = false; intents.Add(args.Intent); };
+        for (var index = 0; index < 6; index++) await model.LoadOlderAsync(CancellationToken);
+        await model.LoadNewerAsync(CancellationToken);
+        Assert.Equal(500, model.Messages.Count);
+        Assert.Equal(7, prepares);
+        Assert.True(mutations > 0);
+        Assert.All(intents, intent => Assert.Equal(HistoryScrollIntent.PreserveViewport, intent));
+        await model.JumpToLatestAsync(CancellationToken);
+        Assert.Equal(HistoryScrollIntent.ToEnd, intents[^1]);
+        Assert.False(changing);
         await model.StopAsync();
     }
 
@@ -309,6 +337,7 @@ public sealed class HistoryWindowViewModelTests
 
         Assert.Equal(50, request?.AnchorSequence);
         Assert.False(request?.ScrollToEnd);
+        Assert.Equal(HistoryScrollIntent.ToMessage, request?.Intent);
         Assert.Contains(model.Messages, item => item.LocalSequence == 50);
         Assert.InRange(model.Messages.Count, 1, HistoryWindowViewModel.PageSize);
         Assert.Empty(readStates.Advances);
@@ -484,6 +513,7 @@ public sealed class HistoryWindowViewModelTests
         Assert.Contains(model.Messages, item => item.LocalSequence == result.Position.LocalSequence);
         Assert.True(model.Messages.Single(item => item.LocalSequence == result.Position.LocalSequence).IsSearchMatch);
         Assert.Equal(result.Position.LocalSequence, request?.AnchorSequence);
+        Assert.Equal(HistoryScrollIntent.ToMessage, request?.Intent);
         Assert.Empty(readStates.Advances);
         await model.StopAsync();
     }

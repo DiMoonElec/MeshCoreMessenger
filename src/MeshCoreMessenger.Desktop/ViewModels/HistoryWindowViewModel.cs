@@ -9,10 +9,13 @@ using MeshCoreMessenger.Desktop.Lifecycle;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
-public sealed class HistoryScrollRequestEventArgs(long? anchorSequence, bool scrollToEnd) : EventArgs
+public enum HistoryScrollIntent { ToMessage, ToEnd, PreserveViewport }
+
+public sealed class HistoryScrollRequestEventArgs(HistoryScrollIntent intent, long? anchorSequence = null) : EventArgs
 {
+    public HistoryScrollIntent Intent { get; } = intent;
     public long? AnchorSequence { get; } = anchorSequence;
-    public bool ScrollToEnd { get; } = scrollToEnd;
+    public bool ScrollToEnd => Intent == HistoryScrollIntent.ToEnd;
 }
 
 /// <summary>Owns one bounded, node-scoped message viewport.</summary>
@@ -88,6 +91,8 @@ public sealed class HistoryWindowViewModel : ObservableObject
     }
 
     public event EventHandler<HistoryScrollRequestEventArgs>? ScrollRequested;
+    /// <summary>UI must capture its anchor and suppress intermediate viewport reports before mutations.</summary>
+    public event EventHandler? ViewportChanging;
     public event Action<ConversationReadState>? ReadStateChanged;
 
     public ObservableCollection<HistoryMessageListItem> Messages { get; } = [];
@@ -279,7 +284,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
                         ApplyReplacement(page, requestScrollToEnd: false);
                         ScrollRequested?.Invoke(
                             this,
-                            new HistoryScrollRequestEventArgs(position.LocalSequence, scrollToEnd: false));
+                            new HistoryScrollRequestEventArgs(HistoryScrollIntent.ToMessage, position.LocalSequence));
                     }
                 },
                 linked.Token);
@@ -461,7 +466,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
                     opened = true;
                     ScrollRequested?.Invoke(
                         this,
-                        new HistoryScrollRequestEventArgs(position.LocalSequence, scrollToEnd: false));
+                        new HistoryScrollRequestEventArgs(HistoryScrollIntent.ToMessage, position.LocalSequence));
                 },
                 linked.Token);
         }
@@ -569,6 +574,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
 
     private void ApplyReplacement(HistoryMessagePage page, bool requestScrollToEnd)
     {
+        if (page.Items.Count > 0) ViewportChanging?.Invoke(this, EventArgs.Empty);
         Messages.Clear();
         foreach (var message in page.Items)
         {
@@ -584,7 +590,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         RaiseStateProperties();
         if (requestScrollToEnd)
         {
-            ScrollRequested?.Invoke(this, new HistoryScrollRequestEventArgs(null, scrollToEnd: true));
+            ScrollRequested?.Invoke(this, new HistoryScrollRequestEventArgs(HistoryScrollIntent.ToEnd));
         }
     }
 
@@ -593,6 +599,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         var anchorSequence = Messages.FirstOrDefault()?.LocalSequence;
         var existing = Messages.Select(item => item.Id).ToHashSet();
         var additions = page.Items.Where(item => existing.Add(item.Id)).ToArray();
+        if (additions.Length > 0) ViewportChanging?.Invoke(this, EventArgs.Empty);
         for (var index = additions.Length - 1; index >= 0; index--)
         {
             Messages.Insert(0, CreateListItem(additions[index]));
@@ -616,7 +623,7 @@ public sealed class HistoryWindowViewModel : ObservableObject
         {
             ScrollRequested?.Invoke(
                 this,
-                new HistoryScrollRequestEventArgs(anchorSequence, scrollToEnd: false));
+                new HistoryScrollRequestEventArgs(HistoryScrollIntent.PreserveViewport, anchorSequence));
         }
     }
 
@@ -624,12 +631,11 @@ public sealed class HistoryWindowViewModel : ObservableObject
     {
         var anchorSequence = Messages.LastOrDefault()?.LocalSequence;
         var existing = Messages.Select(item => item.Id).ToHashSet();
-        foreach (var message in page.Items)
+        var additions = page.Items.Where(item => existing.Add(item.Id)).ToArray();
+        if (additions.Length > 0 || autoScrollToEnd) ViewportChanging?.Invoke(this, EventArgs.Empty);
+        foreach (var message in additions)
         {
-            if (existing.Add(message.Id))
-            {
-                Messages.Add(CreateListItem(message));
-            }
+            Messages.Add(CreateListItem(message));
         }
 
         _hasLater = page.HasLater;
@@ -653,13 +659,13 @@ public sealed class HistoryWindowViewModel : ObservableObject
         RaiseStateProperties();
         if (autoScrollToEnd)
         {
-            ScrollRequested?.Invoke(this, new HistoryScrollRequestEventArgs(null, scrollToEnd: true));
+            ScrollRequested?.Invoke(this, new HistoryScrollRequestEventArgs(HistoryScrollIntent.ToEnd));
         }
-        else if (anchorSequence is not null && page.Items.Count > 0)
+        else if (anchorSequence is not null && additions.Length > 0)
         {
             ScrollRequested?.Invoke(
                 this,
-                new HistoryScrollRequestEventArgs(anchorSequence, scrollToEnd: false));
+                new HistoryScrollRequestEventArgs(HistoryScrollIntent.PreserveViewport, anchorSequence));
         }
     }
 
