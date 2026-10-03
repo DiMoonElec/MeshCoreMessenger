@@ -8,12 +8,33 @@
   </UserControl.Styles>
   <Grid Classes="conversation" RowDefinitions="Auto,*,Auto">
     <Border Classes="conversation-header">
-      <Grid ColumnDefinitions="Auto,*">
+      <Grid ColumnDefinitions="Auto,*,Auto">
         <Button Content="‹" Command="{Binding Navigation.BackCommand}" IsVisible="{Binding Navigation.CanNavigateBack}" ToolTip.Tip="Назад к чатам" />
         <StackPanel Grid.Column="1" Classes="header-text">
           <TextBlock Classes="chat-title" Text="{Binding Navigation.SelectedTitle}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Navigation.SelectedTitle}" />
           <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
+        <Button x:Name="ConversationMenuButton" Grid.Column="2" Classes="conversation-menu"
+                IsVisible="{Binding Navigation.HasSelection}" ToolTip.Tip="Меню переписки"
+                AutomationProperties.Name="Меню переписки">
+          <!-- Use the PNG alpha mask, just like the navigation rail icons. -->
+          <Border Width="24" Height="24" Background="{DynamicResource SystemControlForegroundBaseHighBrush}">
+            <Border.OpacityMask>
+              <ImageBrush Source="avares://MeshCoreMessenger.Desktop/Assets/Icons/chat_menu.png" />
+            </Border.OpacityMask>
+          </Border>
+          <Button.Flyout>
+            <MenuFlyout Placement="BottomEdgeAlignedRight">
+              <!-- UI placeholders: no commands or device/storage side effects yet. -->
+              <MenuItem Header="Подробности (тест)" />
+              <MenuItem Header="Поиск (тест)" />
+              <MenuItem Header="Поделиться (тест)" />
+              <MenuItem Header="Задать маршрут (тест)" />
+              <MenuItem Header="Сбросить маршрут (тест)" />
+              <MenuItem Header="Удалить историю сообщений (тест)" />
+            </MenuFlyout>
+          </Button.Flyout>
+        </Button>
       </Grid>
     </Border>
     <Grid Grid.Row="1" RowDefinitions="Auto,*,Auto">

@@ -11,6 +11,17 @@
     <Setter Property="Background" Value="{DynamicResource ChatSurfaceBrush}" />
     <Setter Property="Padding" Value="{StaticResource ChatPanePadding}" />
   </Style>
+  <Style Selector="Button.conversation-menu">
+    <Setter Property="Width" Value="40" />
+    <Setter Property="Height" Value="40" />
+    <Setter Property="Padding" Value="8" />
+    <Setter Property="VerticalAlignment" Value="Center" />
+    <Setter Property="HorizontalContentAlignment" Value="Center" />
+    <Setter Property="VerticalContentAlignment" Value="Center" />
+    <Setter Property="Background" Value="Transparent" />
+    <Setter Property="BorderThickness" Value="0" />
+    <Setter Property="CornerRadius" Value="20" />
+  </Style>
   <Style Selector="StackPanel.header-text">
     <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
   </Style>
