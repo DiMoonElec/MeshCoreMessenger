@@ -9,7 +9,8 @@ public sealed record DirectoryContactSnapshot(
     byte[] OutPath,
     DateTimeOffset LastAdvertUtc,
     double Latitude,
-    double Longitude);
+    double Longitude,
+    byte? OutPathLength = null);
 
 /// <summary>One non-empty Companion channel slot. KeyFingerprint is SHA-256, never the secret.</summary>
 public sealed record DirectoryChannelSnapshot(

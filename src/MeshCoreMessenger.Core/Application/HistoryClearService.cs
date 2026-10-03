@@ -16,7 +16,8 @@ public sealed class HistoryClearService(IHistoryClearStore store, ConversationOp
     {
         if (reads.IsPaused || outgoing.IsPaused) return "Сначала восстановите сохранение локальных данных.";
         var status = await store.GetStatusAsync(nodeId, conversationId, cancellationToken).ConfigureAwait(false);
-        if (status.HasPendingSend || operations.IsBusy(nodeId, status.Kind, status.Identity)) return "Отправка или ожидание подтверждения ещё не завершены.";
+        if (status.HasPendingSend) return "Отправка или ожидание подтверждения ещё не завершены.";
+        if (operations.IsBusy(nodeId, status.Kind, status.Identity)) return "В переписке выполняется другая операция. Дождитесь завершения.";
         return status.MessageCount == 0 ? "Переписка уже пуста." : null;
     }
     public async Task<HistoryClearResult> ClearAsync(Guid nodeId, Guid conversationId, CancellationToken cancellationToken = default)

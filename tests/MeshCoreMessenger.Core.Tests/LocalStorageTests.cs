@@ -269,6 +269,7 @@ public sealed class LocalStorageTests
         Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(verification, "PRAGMA user_version;"));
         Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(verification, "SELECT COUNT(*) FROM SchemaMigrations;"));
         Assert.Equal("preserve", ScalarString(verification, "SELECT Text FROM Messages WHERE Id = 'existing';"));
+        Assert.Equal(1, ScalarInt(verification, "SELECT COUNT(*) FROM Contacts WHERE OutPathLength IS NULL AND RouteObservedUtc IS NULL;"));
         using var columns = verification.CreateCommand();
         columns.CommandText = "SELECT COUNT(*) FROM pragma_table_info('Messages') WHERE name IN ('TextType', 'PathLength', 'BinaryDataType', 'OriginalSenderPrefix');";
         Assert.Equal(4, Convert.ToInt32(columns.ExecuteScalar()));

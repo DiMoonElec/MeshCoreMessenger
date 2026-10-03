@@ -2,7 +2,7 @@ using MeshCoreMessenger.Core.Domain;
 
 namespace MeshCoreMessenger.Core.Application;
 
-/// <summary>Serializes clear admission against the entire send/ACK lifetime, including before Prepare.</summary>
+/// <summary>Serializes exclusive mutations against the entire send/ACK lifetime, including before Prepare.</summary>
 public sealed class ConversationOperationGuard
 {
     private readonly object _gate = new();
@@ -12,15 +12,16 @@ public sealed class ConversationOperationGuard
         lock (_gate) return _active.ContainsKey(Key(node, kind, identity));
     }
     public IDisposable BeginSend(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity) => Begin(node, kind, identity, false);
-    public IDisposable BeginClear(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity) => Begin(node, kind, identity, true);
-    private IDisposable Begin(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity, bool clear)
+    public IDisposable BeginClear(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity) => BeginExclusive(node, kind, identity);
+    public IDisposable BeginExclusive(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity) => Begin(node, kind, identity, true);
+    private IDisposable Begin(Guid node, ConversationKind kind, ReadOnlyMemory<byte> identity, bool exclusive)
     {
         var key = Key(node, kind, identity);
         lock (_gate)
         {
             _active.TryGetValue(key, out var count);
-            if (count < 0 || clear && count != 0) throw new InvalidOperationException("В переписке выполняется отправка или очистка. Дождитесь завершения.");
-            _active[key] = clear ? -1 : count + 1;
+            if (count < 0 || exclusive && count != 0) throw new InvalidOperationException("В переписке выполняется отправка, очистка или изменение маршрута. Дождитесь завершения.");
+            _active[key] = exclusive ? -1 : count + 1;
         }
         return new Release(() =>
         {

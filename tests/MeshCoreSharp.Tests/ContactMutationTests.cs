@@ -13,6 +13,7 @@ internal static class ContactMutationTests
     [
         ("Contact mutation wire encoding and model conversion", Encoding),
         ("Contact mutation validation", Validation),
+        ("Route reset full key, push, rejection, timeout and cancellation", ResetRouting),
         ("Contact add/update handles interleaved push", AddRouting),
         ("Contact removal, errors, cancellation and recovery", RemoveAndRecovery),
         ("NEW_ADVERT can be stored without manual wire fields", AdvertisementOverload),
@@ -89,6 +90,37 @@ internal static class ContactMutationTests
         await Throws<ArgumentOutOfRangeException>(() => Task.FromResult(CompanionCommands.AddOrUpdateContact(valid with { AdvertisementLongitude = double.NaN })));
         await Throws<ArgumentException>(() => Task.FromResult(CompanionCommands.RemoveContact(new byte[31])));
         Check(CompanionCommands.AddOrUpdateContact(valid with { OutPathLength = 0xFF }).Length == 144);
+    }
+
+    private static async Task ResetRouting()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        await Throws<ArgumentException>(() => client.ResetPathAsync(new byte[6]));
+        Check(!transport.Sent.Reader.TryRead(out _));
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Throws<OperationCanceledException>(() => client.ResetPathAsync(new byte[32], cancelled.Token));
+        Check(!transport.Sent.Reader.TryRead(out _));
+        var key = Enumerable.Range(0, 32).Select(value => (byte)value).ToArray();
+        var captured = key.ToArray();
+        var reset = client.ResetPathAsync(key);
+        Array.Fill(key, (byte)0xAA);
+        var frame = await Sent(transport);
+        Check(frame.Length == 33 && frame[0] == (byte)CommandType.ResetPath && frame.AsSpan(1).SequenceEqual(captured));
+        var push = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.AdvertisementReceived += (_, _) => push.TrySetResult();
+        transport.Emit(Fixtures.Advertisement(0x42));
+        await push.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        Check(!reset.IsCompleted);
+        transport.Emit([0]); await reset;
+        var rejected = client.ResetPathAsync(captured); await Sent(transport); transport.Emit([1, 2]);
+        var error = await Throws<MeshCoreCommandException>(() => rejected);
+        Check(error.Command == CommandType.ResetPath && error.ErrorCode == MeshCoreErrorCode.NotFound);
+        var timeout = client.ResetPathAsync(captured); await Sent(transport);
+        await Throws<MeshCoreTimeoutException>(() => timeout);
+        Check(!transport.Sent.Reader.TryRead(out _)); // No retry/replay.
+        var recovered = client.ResetPathAsync(captured); await Sent(transport); transport.Emit([0]); await recovered;
     }
 
     private static async Task AddRouting()

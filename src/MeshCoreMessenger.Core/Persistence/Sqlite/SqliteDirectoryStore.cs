@@ -15,6 +15,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         CancellationToken cancellationToken = default)
     {
         ValidateSnapshot(nodeId, sessionId, contacts, channels);
+        observedUtc = observedUtc.ToUniversalTime();
         var contactsCopy = contacts.Select(Clone).ToArray();
         var channelsCopy = channels.OrderBy(channel => channel.Slot).Select(Clone).ToArray();
         return writer.ExecuteAsync(connection =>
@@ -76,11 +77,12 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
                         null));
                 }
 
+                var currentContacts = ReadCurrentContacts(connection, transaction, nodeId);
                 transaction.Commit();
                 return new DirectorySnapshotResult(
                     nodeId,
                     sessionId,
-                    contactsCopy.Select(contact => ToRecord(nodeId, contact, observedUtc)).ToArray(),
+                    currentContacts,
                     stableBindings.OrderBy(binding => binding.Slot).ToArray(),
                     pending.OrderBy(transition => transition.Slot).ToArray());
             }
@@ -89,6 +91,37 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
                 transaction.Rollback();
                 throw;
             }
+        }, cancellationToken);
+    }
+
+    public Task UpdateContactRouteAsync(Guid nodeId, Guid sessionId, ReadOnlyMemory<byte> publicKey,
+        ReadOnlyMemory<byte> outPath, byte outPathLength, DateTimeOffset observedUtc, CancellationToken cancellationToken = default)
+    {
+        ValidateId(nodeId, nameof(nodeId));
+        ValidateId(sessionId, nameof(sessionId));
+        if (publicKey.Length != 32 || outPath.Length != 64) throw new ArgumentException("A complete contact key and path are required.");
+        if (!ValidRouteDescriptor(outPathLength)) throw new ArgumentOutOfRangeException(nameof(outPathLength));
+        var key = publicKey.ToArray(); var path = outPath.ToArray();
+        return writer.ExecuteAsync(connection =>
+        {
+            using var transaction = connection.BeginTransaction();
+            using var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                UPDATE Contacts SET OutPath = $path, OutPathLength = $length, RouteObservedUtc = $utc
+                WHERE NodeId = $node AND PublicKey = $key AND PresentOnNode = 1
+                  AND (RouteObservedUtc IS NULL OR RouteObservedUtc <= $utc)
+                  AND EXISTS (SELECT 1 FROM Sessions WHERE Id = $session AND NodeId = $node AND EndedUtc IS NULL);
+                """;
+            command.Parameters.AddWithValue("$node", nodeId.ToString("D"));
+            command.Parameters.AddWithValue("$session", sessionId.ToString("D"));
+            command.Parameters.Add("$key", SqliteType.Blob).Value = key;
+            command.Parameters.Add("$path", SqliteType.Blob).Value = path;
+            command.Parameters.AddWithValue("$length", outPathLength);
+            command.Parameters.AddWithValue("$utc", observedUtc.ToUniversalTime().ToString("O"));
+            if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Contact/session changed or a newer route has already been observed.");
+            transaction.Commit();
+            return true;
         }, cancellationToken);
     }
 
@@ -194,7 +227,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT NodeId, PublicKey, PublicKeyPrefix, DisplayName, ContactType, Flags, OutPath,
-                       AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc
+                       AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc, OutPathLength
                 FROM Contacts
                 WHERE NodeId = $nodeId AND PublicKeyPrefix = $prefix AND PresentOnNode = 1
                 ORDER BY PublicKey;
@@ -256,16 +289,18 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             command.CommandText = """
                 INSERT INTO Contacts (
                     NodeId, PublicKey, PublicKeyPrefix, DisplayName, ContactType, Flags, OutPath,
-                    AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc)
+                    AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc, OutPathLength, RouteObservedUtc)
                 VALUES (
                     $nodeId, $publicKey, $publicKeyPrefix, $displayName, $contactType, $flags, $outPath,
-                    NULL, 1, $lastAdvertUtc, $latitude, $longitude, $updatedUtc)
+                    NULL, 1, $lastAdvertUtc, $latitude, $longitude, $updatedUtc, $outPathLength, $updatedUtc)
                 ON CONFLICT(NodeId, PublicKey) DO UPDATE SET
                     PublicKeyPrefix = excluded.PublicKeyPrefix,
                     DisplayName = excluded.DisplayName,
                     ContactType = excluded.ContactType,
                     Flags = excluded.Flags,
-                    OutPath = excluded.OutPath,
+                    OutPath = CASE WHEN Contacts.RouteObservedUtc IS NULL OR excluded.RouteObservedUtc >= Contacts.RouteObservedUtc THEN excluded.OutPath ELSE Contacts.OutPath END,
+                    OutPathLength = CASE WHEN Contacts.RouteObservedUtc IS NULL OR excluded.RouteObservedUtc >= Contacts.RouteObservedUtc THEN excluded.OutPathLength ELSE Contacts.OutPathLength END,
+                    RouteObservedUtc = CASE WHEN Contacts.RouteObservedUtc IS NULL OR excluded.RouteObservedUtc >= Contacts.RouteObservedUtc THEN excluded.RouteObservedUtc ELSE Contacts.RouteObservedUtc END,
                     PresentOnNode = 1,
                     LastAdvertUtc = excluded.LastAdvertUtc,
                     Latitude = excluded.Latitude,
@@ -279,6 +314,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             command.Parameters.AddWithValue("$contactType", contact.ContactType);
             command.Parameters.AddWithValue("$flags", contact.Flags);
             command.Parameters.Add("$outPath", SqliteType.Blob).Value = contact.OutPath;
+            command.Parameters.AddWithValue("$outPathLength", (object?)contact.OutPathLength ?? DBNull.Value);
             command.Parameters.AddWithValue("$lastAdvertUtc", contact.LastAdvertUtc.ToString("O"));
             command.Parameters.AddWithValue("$latitude", contact.Latitude);
             command.Parameters.AddWithValue("$longitude", contact.Longitude);
@@ -480,7 +516,8 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         result.IsDBNull(9) ? null : ParseUtc(result.GetString(9)),
         result.IsDBNull(10) ? null : result.GetDouble(10),
         result.IsDBNull(11) ? null : result.GetDouble(11),
-        ParseUtc(result.GetString(12)));
+        ParseUtc(result.GetString(12)),
+        result.IsDBNull(13) ? null : result.GetByte(13));
 
     private static ChannelRecord ReadChannel(SqliteDataReader result) => new(
         Guid.Parse(result.GetString(0)),
@@ -501,20 +538,21 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         result.IsDBNull(6) ? null : ParseUtc(result.GetString(6)),
         result.IsDBNull(7) ? null : Guid.Parse(result.GetString(7)));
 
-    private static ContactRecord ToRecord(Guid nodeId, DirectoryContactSnapshot contact, DateTimeOffset observedUtc) => new(
-        nodeId,
-        contact.PublicKey.ToArray(),
-        contact.PublicKey[..6],
-        contact.DisplayName,
-        contact.ContactType,
-        contact.Flags,
-        contact.OutPath.ToArray(),
-        null,
-        true,
-        contact.LastAdvertUtc,
-        contact.Latitude,
-        contact.Longitude,
-        observedUtc);
+    private static IReadOnlyList<ContactRecord> ReadCurrentContacts(SqliteConnection connection, SqliteTransaction transaction, Guid nodeId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT NodeId, PublicKey, PublicKeyPrefix, DisplayName, ContactType, Flags, OutPath,
+                   AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc, OutPathLength
+            FROM Contacts WHERE NodeId = $node AND PresentOnNode = 1 ORDER BY PublicKey;
+            """;
+        command.Parameters.AddWithValue("$node", nodeId.ToString("D"));
+        using var result = command.ExecuteReader();
+        var contacts = new List<ContactRecord>();
+        while (result.Read()) contacts.Add(ReadContact(result));
+        return contacts;
+    }
 
     private static DirectoryContactSnapshot Clone(DirectoryContactSnapshot contact) => new(
         contact.PublicKey.ToArray(),
@@ -524,7 +562,8 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         contact.OutPath.ToArray(),
         contact.LastAdvertUtc,
         contact.Latitude,
-        contact.Longitude);
+        contact.Longitude,
+        contact.OutPathLength);
 
     private static DirectoryChannelSnapshot Clone(DirectoryChannelSnapshot channel) => new(
         channel.Slot,
@@ -555,7 +594,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             throw new ArgumentException("Directory snapshots must not contain null items.");
         }
 
-        if (contacts.Any(contact => contact.PublicKey.Length != 32 || contact.OutPath.Length != 64 ||
+        if (contacts.Any(contact => contact.PublicKey.Length != 32 || contact.OutPath.Length != 64 || !ValidRouteDescriptor(contact.OutPathLength) ||
                 string.IsNullOrWhiteSpace(contact.DisplayName)) ||
             contacts.GroupBy(contact => Convert.ToHexString(contact.PublicKey)).Any(group => group.Count() != 1))
         {
@@ -568,6 +607,9 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             throw new ArgumentException("Channels must have unique slots, names, and 32-byte fingerprints.", nameof(channels));
         }
     }
+
+    private static bool ValidRouteDescriptor(byte? value) => value is null || value == byte.MaxValue ||
+        (value.Value >> 6) != 3 && (value.Value & 0x3F) * ((value.Value >> 6) + 1) <= 64;
 
     private static void ValidateId(Guid id, string parameterName)
     {

@@ -33,6 +33,8 @@ public interface ICompanionClient : IAsyncDisposable
         Task.FromException<ChannelMessageSendResult>(new NotSupportedException("Channel sending is not implemented by this adapter."));
     Task AddOrUpdateContactAsync(ContactConfiguration contact, CancellationToken cancellationToken = default) =>
         Task.FromException(new NotSupportedException("Contact mutation is not implemented by this adapter."));
+    Task ResetPathAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Route reset is not implemented by this adapter."));
     Task RemoveContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
         Task.FromException(new NotSupportedException("Contact mutation is not implemented by this adapter."));
     Task SetChannelAsync(byte slot, string name, ReadOnlyMemory<byte> secret, CancellationToken cancellationToken = default) =>

@@ -33,9 +33,12 @@ public sealed class ConversationMenuViewModel
     private HistoryClearViewModel _historyClear;
     private readonly RelayCommand _clear;
     private readonly ConversationMenuItemViewModel _clearItem;
+    private readonly ContactRouteResetViewModel _routeReset;
+    private readonly ConversationMenuItemViewModel? _routeItem;
 
-    internal ConversationMenuViewModel(MessengerNavigationTab kind, HistoryClearViewModel historyClear)
+    internal ConversationMenuViewModel(MessengerNavigationTab kind, HistoryClearViewModel historyClear, ContactRouteResetViewModel? routeReset = null)
     {
+        _routeReset = routeReset ?? new ContactRouteResetViewModel();
         _historyClear = historyClear;
         _clear = new RelayCommand(RequestHistoryClear, () => _historyClear.CanClear);
         _clearItem = new(ConversationMenuAction.ClearHistory, "Удалить историю сообщений", _clear);
@@ -48,7 +51,14 @@ public sealed class ConversationMenuViewModel
         if (kind == MessengerNavigationTab.Personal)
         {
             items.Add(Placeholder(ConversationMenuAction.SetRoute, "Задать маршрут (тест)"));
-            items.Add(Placeholder(ConversationMenuAction.ResetRoute, "Сбросить маршрут (тест)"));
+            _routeItem = new(ConversationMenuAction.ResetRoute, "Сбросить маршрут", _routeReset.Command);
+            items.Add(_routeItem);
+            _routeReset.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(ContactRouteResetViewModel.AvailabilityMessage))
+                    _routeItem.AvailabilityMessage = _routeReset.AvailabilityMessage;
+            };
+            _routeItem.AvailabilityMessage = _routeReset.AvailabilityMessage;
         }
         items.Add(_clearItem);
         Items = items.AsReadOnly();
@@ -58,7 +68,7 @@ public sealed class ConversationMenuViewModel
 
     public IReadOnlyList<ConversationMenuItemViewModel> Items { get; }
     public event EventHandler<HistoryClearRequestedEventArgs>? HistoryClearRequested;
-    public Task RefreshAsync() => _historyClear.RefreshAsync();
+    public Task RefreshAsync() => Task.WhenAll(_historyClear.RefreshAsync(), _routeItem is null ? Task.CompletedTask : _routeReset.RefreshAsync());
 
     internal void SetHistoryClear(HistoryClearViewModel historyClear)
     {

@@ -28,7 +28,8 @@ public sealed record ContactRecord(
     DateTimeOffset? LastAdvertUtc,
     double? Latitude,
     double? Longitude,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    byte? OutPathLength = null);
 
 public sealed record ChannelRecord(
     Guid Id,

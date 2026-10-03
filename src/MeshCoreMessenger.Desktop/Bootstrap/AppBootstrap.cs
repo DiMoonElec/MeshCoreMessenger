@@ -70,6 +70,7 @@ public static class AppBootstrap
         services.AddSingleton<IDurableOutgoingWrites, OutgoingAttemptWriteTracker>();
         services.AddSingleton<ConversationOperationGuard>();
         services.AddSingleton<IHistoryClearService, HistoryClearService>();
+        services.AddSingleton<IContactRouteService, ContactRouteService>();
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<SessionCommandGateway>();
         services.AddSingleton<ISessionCommandGateway>(provider => provider.GetRequiredService<SessionCommandGateway>());

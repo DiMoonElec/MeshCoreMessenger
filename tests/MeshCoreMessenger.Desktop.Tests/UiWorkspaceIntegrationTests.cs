@@ -301,7 +301,7 @@ public sealed partial class UiWorkspaceIntegrationTests
         }
         public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null,
             ISendReadinessReader? sendReadiness = null, IMessageService? messageService = null,
-            Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null)
+            Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null, IContactRouteService? contactRoutes = null)
         {
             FailingDraftStore = new FaultingDraftStore(Storage.Drafts);
             Drafts = new DraftWriteTracker(FailingDraftStore, TimeProvider.System);
@@ -315,7 +315,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                 dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), logger ?? NullLogger<MainWindowViewModel>.Instance,
                 sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory),
                 messageService: messageService, outgoingMessages: Storage.OutgoingMessages,
-                historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)));
+                historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)), contactRoutes: contactRoutes);
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));

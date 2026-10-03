@@ -11,8 +11,13 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private Task? _serverTask;
     private NetworkStream? _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
-    public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck);
+    public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck, byte RouteDescriptor = byte.MaxValue);
     public ConcurrentQueue<PrivateTransmission> PrivateTransmissions { get; } = new();
+    public ConcurrentDictionary<byte, byte> ContactRoutes { get; } = new(new[] { new KeyValuePair<byte, byte>(0xA1, 0xFF), new KeyValuePair<byte, byte>(0xB2, 0xFF) });
+    public ConcurrentQueue<byte[]> RouteResets { get; } = new();
+    public bool RejectRouteReset { get; set; }
+    public bool RejectContactsReadback { get; set; }
+    public Func<Task>? BeforeContactsResponse { get; set; }
     public bool RejectPrivateSend { get; set; }
     public bool AutoAcknowledgePrivate { get; set; } = true;
     public Func<int, uint> PrivateAckTag { get; set; } = number => 0x10000000u + (uint)number;
@@ -73,6 +78,8 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
             if (type == CommandType.GetContacts)
             {
+                if (BeforeContactsResponse is not null) await BeforeContactsResponse();
+                if (RejectContactsReadback) { await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Error, (byte)MeshCoreErrorCode.BadState]); continue; }
                 await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactStart, 2));
                 await WriteFrameAsync(stream, 0x3E, BuildContact("Alice", 0xA1));
                 await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
@@ -81,11 +88,25 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 continue;
             }
 
+            if (type == CommandType.ResetPath)
+            {
+                var key = command.AsSpan(1).ToArray();
+                RouteResets.Enqueue(key);
+                if (command.Length != 33 || !ContactRoutes.ContainsKey(key[0]) || key.Any(value => value != key[0]) || RejectRouteReset)
+                    await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound]);
+                else
+                {
+                    ContactRoutes[key[0]] = 0xFF;
+                    await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]);
+                }
+                continue;
+            }
+
             if (type == CommandType.SendTextMessage)
             {
                 var tag = PrivateAckTag(PrivateTransmissions.Count + 1);
                 PrivateTransmissions.Enqueue(new(BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3)),
-                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag));
+                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag, ContactRoutes[command[7]]));
                 if (BeforePrivateResponse is not null) await BeforePrivateResponse();
                 var sentResponse = new byte[10];
                 sentResponse[0] = (byte)PacketType.MessageSent;
@@ -220,13 +241,14 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return frame;
     }
 
-    private static byte[] BuildContact(string name, byte key)
+    private byte[] BuildContact(string name, byte key)
     {
         var frame = new byte[148];
         frame[0] = (byte)PacketType.Contact;
         frame.AsSpan(1, 32).Fill(key);
         frame[33] = 1; // chat
-        frame[35] = 0xFF; // unknown path
+        frame[35] = ContactRoutes[key];
+        frame.AsSpan(36, 64).Fill(0x11); // RESET_PATH keeps stale path bytes, as firmware does.
         WriteFixed(frame.AsSpan(100, 32), name);
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(132), 1_700_000_000);
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(144), 1_700_000_123);

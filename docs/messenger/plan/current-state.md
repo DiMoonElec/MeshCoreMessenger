@@ -140,3 +140,10 @@ Public/Private × Light/Dark × 420/960 прошёл после успешног
 пунктов, Private содержит заглушки. Очистка переведена на command binding с прежним
 подтверждением. [Реализация и проверки](../../testing/conversation-menu-initialization.md):
 Desktop 294/294 и native 8/8. Сам механизм ResetPath не реализован.
+
+Второй этап ручного сброса маршрута ЛС реализован 04.10.2026: приватный пункт меню
+→ owned Core workflow → ResetPathAsync → полный contact readback → точечная запись
+route descriptor (SQLite v4). Send/ACK и reset координируются общим guard; история
+и drafts сохраняются. [Проверки и ограничения](../../testing/private-route-reset.md):
+Library 97/97, Core 253/253, Desktop 305/305; native reset 4/4, clear 8/8.
+Пользователь подтвердил работоспособность сброса маршрута 04.10.2026.

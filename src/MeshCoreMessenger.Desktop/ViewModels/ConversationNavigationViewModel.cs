@@ -889,9 +889,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             var location = contact.Latitude is { } latitude && contact.Longitude is { } longitude
                 ? $"координаты: {latitude:F5}, {longitude:F5}"
                 : "координаты: неизвестны";
-            var route = contact.OutPath is { Length: > 0 } outPath
-                ? $"маршрут: {Convert.ToHexString(outPath).ToLowerInvariant()}"
-                : "маршрут: неизвестен";
+            var route = "маршрут: " + ContactRouteFormatter.Format(contact.OutPathLength, contact.OutPath);
             return $"{SelectedConversation.TypeLabel} · {presence} · {advert} · {location} · {route}";
         }
 

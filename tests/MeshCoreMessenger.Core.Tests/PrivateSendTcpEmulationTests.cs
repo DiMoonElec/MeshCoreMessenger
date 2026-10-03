@@ -118,11 +118,13 @@ public sealed partial class SessionCommandGatewayTests
         public required MessageService Sender { get; init; }
         public required ConversationOperationGuard Operations { get; init; }
         public required HistoryClearService Clear { get; init; }
+        public required ContactRouteService Routes { get; init; }
         public required DraftWriteTracker Drafts { get; init; }
         public required Guid Node { get; init; }
-        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000)
+        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000, byte initialRoute = 0xFF)
         {
             var server = new FakeCompanionServer { AutoAcknowledgePrivate = autoAck };
+            server.ContactRoutes[0xA1] = initialRoute;
             server.Start();
             var paths = new Fixture.Paths(Path.Combine(Path.GetTempPath(), "MeshCore-D6-TCP", Guid.NewGuid().ToString("N")));
             var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
@@ -153,7 +155,7 @@ public sealed partial class SessionCommandGatewayTests
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
                 storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations);
             return new() { Server = server, Paths = paths, Storage = storage, Ingress = ingress, Supervisor = supervisor,
-                Sender = sender, Operations = operations, Clear = clear, Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
+                Sender = sender, Operations = operations, Clear = clear, Routes = new(gateway, storage.ConversationDirectory, storage.Directories, operations, time), Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
         }
         public async Task<PrivateSendOutcome> Send(string text, byte peer, long revision)
         {

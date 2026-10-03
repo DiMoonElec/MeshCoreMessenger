@@ -8,7 +8,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class DirectoryServiceTests
+public sealed partial class DirectoryServiceTests
 {
     [Fact]
     public async Task AppliesCompleteSnapshotAndRepeatedSnapshotKeepsBindingsStable()

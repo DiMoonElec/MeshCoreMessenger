@@ -47,12 +47,14 @@ public sealed partial class UiWorkspaceIntegrationTests
                             .Select(property => property.GetValue(flyout)).OfType<Popup>().Single();
                         var menuItems = popup.Child!.GetLogicalDescendants().OfType<MenuItem>().ToArray();
                         if (menuItems.Length != (privateChat ? 6 : 4) ||
-                            menuItems.Any(i => Equals(i.Header, "Сбросить маршрут (тест)")) != privateChat)
+                            menuItems.Any(i => Equals(i.Header, "Сбросить маршрут")) != privateChat)
                             throw new InvalidOperationException("Public/Private menu composition failed.");
+                        if (privateChat && menuItems.Single(i => Equals(i.Header, "Сбросить маршрут")).IsEffectivelyEnabled)
+                            throw new InvalidOperationException("Offline route reset must be disabled.");
                         var item = menuItems.Single(i => Equals(i.Header, "Удалить историю сообщений"));
                         if (!ReferenceEquals(item.Command, workspace.Menu.Items.Single(i => i.Action == ConversationMenuAction.ClearHistory).Command))
                             throw new InvalidOperationException("Menu command binding failed.");
-                        if (!item.IsEnabled) throw new InvalidOperationException("Clear menu binding failed.");
+                        if (!item.IsEffectivelyEnabled) throw new InvalidOperationException("Clear menu binding failed.");
                         item.Command!.Execute(item.CommandParameter);
                         await UntilAsync(() => window.OwnedWindows.OfType<HistoryClearDialog>().Any());
                         var dialog = window.OwnedWindows.OfType<HistoryClearDialog>().Single();

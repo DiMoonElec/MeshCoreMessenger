@@ -69,7 +69,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ILogger<MainWindowViewModel> logger,
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
-        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null)
+        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null)
     {
         _outgoingMessages = outgoingMessages;
         if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
@@ -90,6 +90,19 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             workspace.HistoryClear = new(() => workspace.ViewedNode is { } node && workspace.SelectedConversation is { Id: { } id } conversation
                 ? new HistoryClearTarget(node.Id, id, node.HeaderLabel, conversation.Title) : null,
                 historyClear, ApplyHistoryClearAsync, Track, _lifetimeCancellation.Token);
+        Chats.Private.RouteReset.Configure(() =>
+        {
+            var snapshot = _supervisor.Snapshot;
+            var workspace = Chats.Private;
+            if (snapshot.State != ConnectionSupervisorState.Online || snapshot.SessionId is not { } session ||
+                workspace.ViewedNode?.Id != snapshot.NodeId || workspace.SelectedConversation is not { Kind: ConversationKind.Contact } contact ||
+                contact.Entry.Identity.Length != 32) return null;
+            return new ContactRouteResetRequest(contact.NodeId, session, snapshot.Generation, contact.Entry.Identity);
+        }, contactRoutes, async result =>
+        {
+            await Chats.RefreshAsync(_lifetimeCancellation.Token);
+            await Devices.RefreshAsync(_lifetimeCancellation.Token);
+        }, Track, _lifetimeCancellation.Token);
         _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
             new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
@@ -623,6 +636,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
         OnPropertyChanged(nameof(Title));
         foreach (var context in _composerContexts) context.Refresh();
+        Chats.Private.RouteReset.Invalidate();
     }
 
     private static bool SnapshotCanExposeNode(ConnectionSupervisorSnapshot snapshot) =>

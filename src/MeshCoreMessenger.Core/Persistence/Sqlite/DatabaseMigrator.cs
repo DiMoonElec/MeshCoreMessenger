@@ -4,13 +4,14 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private static readonly Migration[] Migrations =
     [
         new(1, "Initial local storage", InitialSchemaSql),
         new(2, "Incoming message metadata", IncomingMessageMetadataSql),
         new(3, "Durable outgoing messages", OutgoingMessagesSql),
+        new(4, "Contact route descriptors", ContactRoutesSql),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
@@ -265,6 +266,11 @@ internal static class DatabaseMigrator
             UpdatedUtc TEXT NOT NULL,
             FOREIGN KEY (ConversationId) REFERENCES Conversations(Id) ON DELETE CASCADE
         );
+        """;
+
+    private const string ContactRoutesSql = """
+        ALTER TABLE Contacts ADD COLUMN OutPathLength INTEGER CHECK (OutPathLength IS NULL OR OutPathLength BETWEEN 0 AND 255);
+        ALTER TABLE Contacts ADD COLUMN RouteObservedUtc TEXT;
         """;
 
     private const string OutgoingMessagesSql = """

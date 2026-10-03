@@ -41,7 +41,10 @@ Remaining operations:
 - send channel data;
 - get contact by key;
 - share/export/import contact;
-- reset path;
 - radio/tuning/basic configuration calls.
 
 Each operation should have typed command encoding, expected packet set, and regression tests.
+
+04.10.2026: ручной `ResetPathAsync(fullPublicKey)` реализован для Messenger.
+97 library regression tests и loopback TCP application tests passed; отдельная
+аппаратная проверка этой команды ожидается. [Отчёт](../../testing/private-route-reset.md).

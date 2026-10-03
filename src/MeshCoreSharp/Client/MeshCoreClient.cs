@@ -235,6 +235,15 @@ public sealed class MeshCoreClient : IAsyncDisposable
         return AddOrUpdateContactAsync(advertisement.DiscoveredContact, cancellationToken);
     }
 
+    /// <summary>Clears the stored route for a contact. Future sends use flood until a route is learned again.</summary>
+    public async Task ResetPathAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.ResetPath,
+            CompanionCommands.ResetPath(publicKey.Span), nameof(ResetPathAsync),
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
     /// <summary>Removes a Companion contact using its complete 32-byte public key.</summary>
     public async Task RemoveContactAsync(ReadOnlyMemory<byte> publicKey,
         CancellationToken cancellationToken = default)

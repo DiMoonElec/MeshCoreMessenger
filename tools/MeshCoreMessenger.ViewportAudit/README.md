@@ -69,3 +69,15 @@ dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --start
 All modes check CoreVideo display-link availability before Avalonia startup and
 report managed startup failures to stderr with exit code 1. See
 [display/screen-lock investigation](../../docs/testing/viewport-audit-startup.md).
+
+
+Private route reset audit (production menu, simulated route service, temporary SQLite):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --route-reset-only
+```
+
+Checks Light/Dark × 420/960: command once, post-commit flood metadata, unchanged
+history/draft. Screenshots: `$TMPDIR/meshcore-route-reset/`. Core tests separately
+use production route service/library over loopback TCP. See
+[verification report](../../docs/testing/private-route-reset.md).

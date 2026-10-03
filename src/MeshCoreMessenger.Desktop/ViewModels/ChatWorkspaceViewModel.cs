@@ -16,13 +16,18 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
         IOutgoingTextProcessor? textProcessor = null)
     {
         Navigation = navigation;
-        Menu = new ConversationMenuViewModel(kind, _historyClear);
+        Menu = new ConversationMenuViewModel(kind, _historyClear, RouteReset);
+        navigation.PropertyChanged += (_, args) =>
+        {
+            if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedConversation)) RouteReset.Invalidate();
+        };
         Composer = new ComposerViewModel(navigation.Draft, textProcessor);
         _select = select;
     }
 
     public ConversationNavigationViewModel Navigation { get; }
     public ComposerViewModel Composer { get; }
+    public ContactRouteResetViewModel RouteReset { get; } = new();
     public ConversationMenuViewModel Menu { get; }
     public HistoryClearViewModel HistoryClear
     {
@@ -39,7 +44,11 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
         get => _viewedNode;
         internal set
         {
-            if (SetProperty(ref _viewedNode, value)) OnPropertyChanged(nameof(ViewedNodePublicKeyHex));
+            if (SetProperty(ref _viewedNode, value))
+            {
+                OnPropertyChanged(nameof(ViewedNodePublicKeyHex));
+                RouteReset.Invalidate();
+            }
         }
     }
     public string? ViewedNodePublicKeyHex => ViewedNode?.PublicKeyHex;

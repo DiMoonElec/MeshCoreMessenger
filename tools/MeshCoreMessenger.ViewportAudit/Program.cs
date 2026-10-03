@@ -16,7 +16,8 @@ try
     {
         try
         {
-            if (args.Contains("--history-clear-only")) await UiWorkspaceIntegrationTests.NativeHistoryClearAudit.RunAsync();
+            if (args.Contains("--route-reset-only")) await UiWorkspaceIntegrationTests.NativeContactRouteAudit.RunAsync();
+            else if (args.Contains("--history-clear-only")) await UiWorkspaceIntegrationTests.NativeHistoryClearAudit.RunAsync();
             else if (args.Contains("--private-send-only")) await UiWorkspaceIntegrationTests.NativePrivateSendAudit.RunAsync();
             else if (args.Contains("--switch-only")) await UiWorkspaceIntegrationTests.NativeSwitchAudit.RunAsync();
             else if (args.Contains("--send-only")) await UiWorkspaceIntegrationTests.NativeSendAudit.RunAsync();

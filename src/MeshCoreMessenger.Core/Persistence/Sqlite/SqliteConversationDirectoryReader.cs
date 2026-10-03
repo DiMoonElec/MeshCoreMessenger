@@ -106,7 +106,7 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
             using var command = connection.CreateCommand();
             command.CommandText = """
                 SELECT NodeId, PublicKey, DisplayName, ContactType, Flags, OutPath,
-                       AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc
+                       AdvertPayload, PresentOnNode, LastAdvertUtc, Latitude, Longitude, UpdatedUtc, OutPathLength
                 FROM Contacts
                 WHERE NodeId = $nodeId AND PublicKey = $publicKey;
                 """;
@@ -130,7 +130,8 @@ internal sealed class SqliteConversationDirectoryReader(DatabaseReader reader) :
                 result.IsDBNull(8) ? null : ParseTimestamp(result.GetString(8)),
                 result.IsDBNull(9) ? null : result.GetDouble(9),
                 result.IsDBNull(10) ? null : result.GetDouble(10),
-                ParseTimestamp(result.GetString(11)));
+                ParseTimestamp(result.GetString(11)),
+                result.IsDBNull(12) ? null : result.GetByte(12));
         }, cancellationToken);
     }
 

@@ -19,6 +19,7 @@ public sealed class DirectoryService(IDirectoryStore directories, TimeProvider t
 
         // Do not persist contacts until channel enumeration has also completed. An exception from
         // either command leaves the previous snapshot untouched.
+        var observedUtc = timeProvider.GetUtcNow();
         var contacts = await session.GetContactsAsync(cancellationToken).ConfigureAwait(false);
         var channels = await session.GetChannelsAsync(cancellationToken).ConfigureAwait(false);
         var contactSnapshot = contacts.Select(ToSnapshot).ToArray();
@@ -31,7 +32,7 @@ public sealed class DirectoryService(IDirectoryStore directories, TimeProvider t
             session.SessionId,
             contactSnapshot,
             channelSnapshot,
-            timeProvider.GetUtcNow(),
+            observedUtc,
             cancellationToken).ConfigureAwait(false);
     }
 
@@ -62,7 +63,8 @@ public sealed class DirectoryService(IDirectoryStore directories, TimeProvider t
             contact.OutPath.ToArray(),
             DateTimeOffset.FromUnixTimeSeconds(contact.LastAdvertTimestamp),
             contact.AdvertisementLatitude,
-            contact.AdvertisementLongitude);
+            contact.AdvertisementLongitude,
+            contact.OutPathLength);
     }
 
     private static DirectoryChannelSnapshot ToSnapshot(ChannelInfo channel)

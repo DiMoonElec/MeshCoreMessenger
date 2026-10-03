@@ -137,6 +137,11 @@ public sealed class SessionCommandLease : IAsyncDisposable
             throw new InvalidOperationException("Contact configuration does not match the captured target.");
         return InvokeVoidAsync((client, token) => client.AddOrUpdateContactAsync(captured, token));
     }
+    public Task ResetPathAsync()
+    {
+        if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Route reset requires a contact target.");
+        return InvokeVoidAsync((client, token) => client.ResetPathAsync(contact.PublicKey, token));
+    }
     public Task RemoveContactAsync()
     {
         if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Removing a contact requires a contact target.");

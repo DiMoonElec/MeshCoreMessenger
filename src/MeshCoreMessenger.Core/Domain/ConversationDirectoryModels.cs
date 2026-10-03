@@ -59,7 +59,8 @@ public sealed record ContactDetailsProjection(
     DateTimeOffset? LastAdvertUtc,
     double? Latitude,
     double? Longitude,
-    DateTimeOffset UpdatedUtc);
+    DateTimeOffset UpdatedUtc,
+    byte? OutPathLength = null);
 
 /// <summary>Committed channel metadata without the channel secret.</summary>
 public sealed record ChannelDetailsProjection(

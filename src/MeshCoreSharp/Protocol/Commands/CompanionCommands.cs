@@ -58,6 +58,16 @@ internal static class CompanionCommands
         return Validate(writer.ToArray());
     }
 
+    public static byte[] ResetPath(ReadOnlySpan<byte> publicKey)
+    {
+        if (publicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException($"Contact public key must be exactly {ProtocolLimits.PublicKeySize} bytes.", nameof(publicKey));
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.ResetPath);
+        writer.WriteBytes(publicKey);
+        return Validate(writer.ToArray());
+    }
+
     public static byte[] RemoveContact(ReadOnlySpan<byte> publicKey)
     {
         if (publicKey.Length != ProtocolLimits.PublicKeySize)

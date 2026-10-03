@@ -24,3 +24,12 @@ always 64 bytes even when only a prefix is meaningful.
 return `OK/ERROR`; add can report `TABLE_FULL`, and removal reports `NOT_FOUND` when
 the key is absent. Neither command performs an RF transmission. Contact persistence
 is scheduled lazily by firmware, while its in-memory list changes before `OK`.
+
+
+`RESET_PATH (13)` принимает `0D | public key (32)` и возвращает OK/ERROR
+(NOT_FOUND при отсутствующем контакте). Реализован `MeshCoreClient.ResetPathAsync`.
+Firmware устанавливает encoded out_path_len в FF, оставляет байты пути и lastmod,
+назначает lazy contact persistence. RF передачи и PATH_UPDATED push обработчик
+сброса не выполняет. Следующая отправка использует flood, пока нода снова не
+выучит маршрут. Приложение перечитывает контакт явно; библиотека не делает
+implicit readback или retries. [Проверки](../../testing/private-route-reset.md).

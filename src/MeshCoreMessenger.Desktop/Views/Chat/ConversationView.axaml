@@ -67,6 +67,7 @@
         <StackPanel Classes="history-tools">
           <Button Content="{Binding Navigation.History.PendingNewMessagesLabel}" Command="{Binding Navigation.History.JumpToLatestCommand}" IsVisible="{Binding Navigation.History.HasPendingNewMessages}" />
           <TextBlock Classes="chat-error" Text="{Binding HistoryClear.ErrorMessage}" TextWrapping="Wrap" IsVisible="{Binding HistoryClear.HasError}" />
+          <TextBlock Classes="chat-meta" Text="{Binding RouteReset.StatusMessage}" IsVisible="{Binding RouteReset.HasStatus}" TextWrapping="Wrap" />
           <TextBlock Classes="chat-error" Text="{Binding Navigation.History.ReadErrorMessage}" IsVisible="{Binding Navigation.History.HasReadError}" />
         </StackPanel>
         <Button x:Name="JumpToLatestButton" Grid.Column="1" Classes="history-jump" Command="{Binding Navigation.History.JumpToLatestCommand}"

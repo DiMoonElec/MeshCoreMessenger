@@ -191,7 +191,9 @@ public sealed partial class OutgoingMessageStoreTests
                 DROP TABLE AttemptsForDowngrade;
                 CREATE INDEX IX_SendAttempts_Message_StartedUtc ON SendAttempts(MessageId,StartedUtc);
                 ALTER TABLE Messages DROP COLUMN TransmissionText;
-                DELETE FROM SchemaMigrations WHERE Version=3;
+                ALTER TABLE Contacts DROP COLUMN OutPathLength;
+                ALTER TABLE Contacts DROP COLUMN RouteObservedUtc;
+                DELETE FROM SchemaMigrations WHERE Version>=3;
                 PRAGMA user_version=2;
                 """;
             command.ExecuteNonQuery();
@@ -234,7 +236,9 @@ public sealed partial class OutgoingMessageStoreTests
             using var command = connection.CreateCommand();
             command.CommandText = """
                 ALTER TABLE Messages DROP COLUMN TransmissionText;
-                DELETE FROM SchemaMigrations WHERE Version=3;
+                ALTER TABLE Contacts DROP COLUMN OutPathLength;
+                ALTER TABLE Contacts DROP COLUMN RouteObservedUtc;
+                DELETE FROM SchemaMigrations WHERE Version>=3;
                 PRAGMA user_version=2;
                 CREATE TABLE SendAttempts_v3 (Collision TEXT);
                 """;

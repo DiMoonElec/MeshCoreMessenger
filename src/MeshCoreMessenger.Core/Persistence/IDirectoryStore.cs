@@ -12,6 +12,11 @@ public interface IDirectoryStore
         DateTimeOffset observedUtc,
         CancellationToken cancellationToken = default);
 
+    Task UpdateContactRouteAsync(Guid nodeId, Guid sessionId, ReadOnlyMemory<byte> publicKey,
+        ReadOnlyMemory<byte> outPath, byte outPathLength, DateTimeOffset observedUtc,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Contact route updates are not implemented by this store."));
+
     Task CommitPendingChannelTransitionsAsync(
         IReadOnlyList<PendingChannelTransition> transitions,
         DateTimeOffset observedUtc,
