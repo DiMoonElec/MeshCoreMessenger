@@ -47,6 +47,7 @@
       <SolidColorBrush x:Key="ChatSelectedBrush" Color="#D7EAFB" />
       <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />
       <SolidColorBrush x:Key="ChatErrorBrush" Color="#B3261E" />
+      <SolidColorBrush x:Key="ApplicationErrorBackgroundBrush" Color="#FCE8E6" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
@@ -64,6 +65,7 @@
       <SolidColorBrush x:Key="ChatSelectedBrush" Color="#244A69" />
       <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />
       <SolidColorBrush x:Key="ChatErrorBrush" Color="#FFB4AB" />
+      <SolidColorBrush x:Key="ApplicationErrorBackgroundBrush" Color="#44272B" />
     </ResourceDictionary>
   </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

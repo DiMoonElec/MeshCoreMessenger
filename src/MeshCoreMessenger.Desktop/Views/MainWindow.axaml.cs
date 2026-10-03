@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
@@ -41,6 +42,7 @@ public sealed partial class MainWindow : Window
         ShellHost.RegisterContent(ShellSection.Settings, _settings);
         ShellHost.RegisterContent(ShellSection.Devices, _devices);
         DataContextChanged += OnWindowDataContextChanged;
+        KeyDown += OnWorkspaceKeyDown;
         SizeChanged += (_, _) => CaptureWindowPlacement();
         PositionChanged += (_, _) => CaptureWindowPlacement();
         PropertyChanged += (_, eventArgs) =>
@@ -131,6 +133,18 @@ public sealed partial class MainWindow : Window
         {
             application.RequestedThemeVariant = App.ToThemeVariant(theme);
         }
+    }
+
+    private void OnWorkspaceKeyDown(object? sender, KeyEventArgs args)
+    {
+        if (args.Handled || DataContext is not MainWindowViewModel owner) return;
+        if (owner.IsChatWorkspaceVisible) { _chats.HandleShortcut(args); return; }
+        if (owner.Shell.SelectedItem.Section != ShellSection.Settings) return;
+        var action = DesktopShortcutRouter.Route(new DesktopShortcutContext(args.Key, args.KeyModifiers,
+            FocusManager?.GetFocusedElement() is TextBox, false, false, true, false, false, false));
+        if (action != DesktopShortcutAction.CloseSettings) return;
+        owner.Shell.ReturnFromSettingsCommand.Execute(null);
+        args.Handled = true;
     }
 
     private void ApplySavedWindowPlacement()

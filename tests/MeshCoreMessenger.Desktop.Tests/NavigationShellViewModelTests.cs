@@ -5,6 +5,24 @@ namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class NavigationShellViewModelTests
 {
+    [Theory]
+    [InlineData(ShellSection.PublicChats)]
+    [InlineData(ShellSection.PrivateChats)]
+    [InlineData(ShellSection.Devices)]
+    [InlineData(ShellSection.Connection)]
+    public void SettingsReturnsToPreviousScreenWithoutChangingSelectionTwice(ShellSection previous)
+    {
+        var shell = new NavigationShellViewModel();
+        shell.SelectSection(previous);
+        Assert.False(shell.ReturnFromSettingsCommand.CanExecute(null));
+        shell.SelectSection(ShellSection.Settings);
+        shell.SelectSection(ShellSection.Settings);
+        Assert.True(shell.ReturnFromSettingsCommand.CanExecute(null));
+        shell.ReturnFromSettingsCommand.Execute(null);
+        Assert.Equal(previous, shell.SelectedItem.Section);
+        Assert.False(shell.ReturnFromSettingsCommand.CanExecute(null));
+    }
+
     [Fact]
     public void NavigationGroupsHaveRequiredOrderAndDefaultSelection()
     {

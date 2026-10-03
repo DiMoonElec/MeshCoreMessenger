@@ -16,6 +16,7 @@ public enum ShellSection
 public sealed class NavigationShellViewModel : ObservableObject
 {
     private NavigationShellItem _selectedItem;
+    private ShellSection _settingsReturnSection = ShellSection.PublicChats;
 
     public NavigationShellViewModel()
     {
@@ -32,6 +33,8 @@ public sealed class NavigationShellViewModel : ObservableObject
         ];
         _selectedItem = TopItems[0];
         _selectedItem.IsSelected = true;
+        ReturnFromSettingsCommand = new RelayCommand(() => SelectSection(_settingsReturnSection),
+            () => SelectedItem.Section == ShellSection.Settings);
     }
 
     public IReadOnlyList<NavigationShellItem> TopItems { get; }
@@ -48,6 +51,7 @@ public sealed class NavigationShellViewModel : ObservableObject
     }
 
     public bool IsChatSelected => SelectedItem.Section is ShellSection.PublicChats or ShellSection.PrivateChats;
+    public IRelayCommand ReturnFromSettingsCommand { get; }
 
     public void SelectSection(ShellSection section) => Select(TopItems.Concat(BottomItems).Single(item => item.Section == section));
 
@@ -58,9 +62,11 @@ public sealed class NavigationShellViewModel : ObservableObject
             return;
         }
 
+        if (item.Section == ShellSection.Settings) _settingsReturnSection = SelectedItem.Section;
         SelectedItem.IsSelected = false;
         item.IsSelected = true;
         SelectedItem = item;
+        ReturnFromSettingsCommand.NotifyCanExecuteChanged();
     }
 }
 

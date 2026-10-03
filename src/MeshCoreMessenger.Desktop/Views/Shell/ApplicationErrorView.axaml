@@ -1,0 +1,10 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Shell.ApplicationErrorView" x:DataType="vm:MainWindowViewModel">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ApplicationErrorStyles.axaml" />
+  </UserControl.Styles>
+  <Border Classes="application-error">
+    <TextBlock Text="{Binding ErrorMessage}" TextWrapping="Wrap" />
+  </Border>
+</UserControl>

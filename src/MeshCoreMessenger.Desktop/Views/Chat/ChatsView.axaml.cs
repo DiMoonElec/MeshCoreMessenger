@@ -16,7 +16,9 @@ public sealed partial class ChatsView : UserControl
         KeyDown += OnKeyDown;
     }
 
-    private void OnKeyDown(object? sender, KeyEventArgs args)
+    private void OnKeyDown(object? sender, KeyEventArgs args) => HandleShortcut(args);
+
+    internal void HandleShortcut(KeyEventArgs args)
     {
         if (!IsEffectivelyVisible || DataContext is not MainWindowViewModel owner)
             return;

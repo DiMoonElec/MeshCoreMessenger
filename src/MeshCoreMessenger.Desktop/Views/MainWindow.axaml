@@ -12,5 +12,8 @@
       <Binding Path="#RootWindow.DataDirectoryTitleSuffix" />
     </MultiBinding>
   </Window.Title>
-  <shell:NavigationShellView x:Name="ShellHost" DataContext="{Binding Shell}" />
+  <Grid RowDefinitions="Auto,*">
+    <shell:ApplicationErrorView IsVisible="{Binding HasError}" />
+    <shell:NavigationShellView Grid.Row="1" x:Name="ShellHost" DataContext="{Binding Shell}" />
+  </Grid>
 </Window>
