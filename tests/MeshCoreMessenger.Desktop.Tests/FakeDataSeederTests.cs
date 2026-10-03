@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using MeshCoreMessenger.Core.Application;
@@ -9,6 +10,7 @@ using MeshCoreMessenger.Desktop.DevFixtures;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
+using MeshCoreSharp.Protocol;
 using Xunit;
 
 namespace MeshCoreMessenger.Desktop.Tests;
@@ -26,9 +28,9 @@ public sealed class FakeDataSeederTests
         await FakeDataSeeder.EnsureEmptyDatabaseAsync(temporary.Paths, CancellationToken);
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
         var result = await SeedAsync(storage, temporary.Paths);
-        Assert.Equal(5113, result.MessageCount);
+        Assert.Equal(5125, result.MessageCount);
         Assert.Equal(5, result.ChannelCount);
-        Assert.Equal(11, result.ContactCount);
+        Assert.Equal(12, result.ContactCount);
         var node = Assert.Single(await storage.Nodes.GetAllAsync(10, CancellationToken));
         Assert.Equal(result.NodeId, node.Id);
         Assert.Equal(node.Id.ToString("D"), await storage.Settings.GetAsync(MainWindowViewModel.ViewedNodeSettingKey, CancellationToken));
@@ -56,25 +58,38 @@ public sealed class FakeDataSeederTests
         Assert.Equal(20, messages.Count);
         Assert.All(messages, message => Assert.Equal(MessageDirection.Incoming, message.Direction));
         Assert.Contains(messages, message => message.Text!.Contains('\n'));
-        Assert.Contains(messages, message => message.Text!.Length > 8000);
-        Assert.Contains(messages, message => message.Text!.Length >= 2048 && !message.Text.Contains(' '));
+        Assert.All(messages, message => AssertRealisticText(message.Text!));
+        Assert.Contains(messages, message => Encoding.UTF8.GetByteCount(message.Text!) == ProtocolLimits.MaxTextBytes);
         Assert.Contains(messages, message => message.Text!.Contains("https://"));
         Assert.Contains(messages, message => message.ReceivedUtc.Date == Now.Date);
         Assert.Contains(messages, message => message.ReceivedUtc.Date == Now.AddDays(-1).Date);
         Assert.Contains(messages, message => message.ReceivedUtc.Month == Now.AddMonths(-1).Month);
         Assert.Contains(messages, message => message.ReceivedUtc.Month == Now.AddMonths(-2).Month);
-        Assert.Equal(5000, await CountMessagesAsync(storage, node.Id, channels.Single(channel => channel.DisplayName == "#fixture-5000").ConversationId!.Value));
+        Assert.Equal(5000, await CountMessagesAsync(storage, node.Id, channels.Single(channel => channel.DisplayName == "#fixture-5000").ConversationId!.Value, realisticText: true));
+        Assert.Equal(3, await CountMessagesAsync(storage, node.Id, channels.Single(channel => channel.DisplayName!.Length > 200).ConversationId!.Value, realisticText: true));
         var unread = channels.Single(channel => channel.DisplayName == "#fixture-unread");
         Assert.Equal(10, unread.UnreadCount);
-        Assert.Equal(30, await CountMessagesAsync(storage, node.Id, unread.ConversationId!.Value));
+        Assert.Equal(30, await CountMessagesAsync(storage, node.Id, unread.ConversationId!.Value, realisticText: true));
         Assert.All(channels.Where(channel => channel != unread), channel => Assert.Equal(0, channel.UnreadCount));
 
         var people = (await storage.ConversationDirectory.GetPageAsync(node.Id, ConversationDirectorySection.ChatContacts, null, 100, CancellationToken)).Items;
-        Assert.Equal(5, people.Count);
+        Assert.Equal(6, people.Count);
         Assert.Contains(people, person => person.DisplayName!.Length > 100);
         Assert.Contains(people, person => person.DisplayName!.Contains("🐈"));
-        foreach (var person in people)
-            Assert.Equal(12, await CountMessagesAsync(storage, node.Id, person.ConversationId!.Value));
+        foreach (var person in people.Where(person => person.DisplayName != FakeDataSeeder.StressChatName))
+        {
+            var privateMessages = await storage.History.GetMessagesAsync(node.Id, person.ConversationId!.Value, null, 100, CancellationToken);
+            Assert.Equal(12, privateMessages.Count);
+            Assert.All(privateMessages, message => AssertRealisticText(message.Text!));
+            Assert.Contains(privateMessages, message => message.Text == new string('W', ProtocolLimits.MaxTextBytes));
+            Assert.Contains(privateMessages, message => message.Text!.Contains("👋"));
+        }
+        var stress = people.Single(person => person.DisplayName == FakeDataSeeder.StressChatName);
+        var stressMessages = await storage.History.GetMessagesAsync(node.Id, stress.ConversationId!.Value, null, 100, CancellationToken);
+        Assert.Equal(12, stressMessages.Count);
+        Assert.Equal(10080, stressMessages.Max(message => message.Text!.Length));
+        Assert.Contains(stressMessages, message => message.Text!.Length == 2048 && !message.Text.Contains(' '));
+        Assert.Equal(0, stress.UnreadCount);
 
         var devices = (await storage.ConversationDirectory.GetPageAsync(node.Id, ConversationDirectorySection.ServiceContacts, null, 100, CancellationToken)).Items;
         Assert.Equal(6, devices.Count);
@@ -235,23 +250,31 @@ public sealed class FakeDataSeederTests
         using var temporary = new TemporaryDirectory();
         await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
         var result = await new FakeDataSeeder().SeedAsync(storage, temporary.Paths, true, Now, CancellationToken);
-        Assert.Equal(105113, result.MessageCount);
+        Assert.Equal(105125, result.MessageCount);
         var channels = await storage.ConversationDirectory.GetPageAsync(result.NodeId, ConversationDirectorySection.Channels, null, 100, CancellationToken);
         Assert.Equal(6, channels.Items.Count);
         var large = channels.Items.Single(channel => channel.DisplayName == "#fixture-100000");
-        Assert.Equal(100000, await CountMessagesAsync(storage, result.NodeId, large.ConversationId!.Value));
+        Assert.Equal(100000, await CountMessagesAsync(storage, result.NodeId, large.ConversationId!.Value, realisticText: true));
     }
 
     private static Task<FakeDataSeedResult> SeedAsync(LocalStorage storage, DesktopAppPaths paths) =>
         new FakeDataSeeder().SeedAsync(storage, paths, false, Now, CancellationToken);
 
-    private static async Task<int> CountMessagesAsync(LocalStorage storage, Guid nodeId, Guid conversationId)
+    private static void AssertRealisticText(string text)
+    {
+        var bytes = new UTF8Encoding(false, true).GetBytes(text);
+        Assert.InRange(bytes.Length, 1, ProtocolLimits.MaxTextBytes);
+        Assert.Equal(text, Encoding.UTF8.GetString(bytes));
+    }
+
+    private static async Task<int> CountMessagesAsync(LocalStorage storage, Guid nodeId, Guid conversationId, bool realisticText = false)
     {
         var count = 0;
         HistoryMessagePosition? before = null;
         while (true)
         {
             var page = await storage.History.GetMessagesBeforeAsync(nodeId, conversationId, before, 100, CancellationToken);
+            if (realisticText) Assert.All(page.Items, message => AssertRealisticText(message.Text!));
             count += page.Items.Count;
             if (!page.HasEarlier)
                 return count;

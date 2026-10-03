@@ -6,6 +6,7 @@ using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreSharp.Models;
+using MeshCoreSharp.Protocol;
 
 namespace MeshCoreMessenger.Desktop.DevFixtures;
 
@@ -14,6 +15,7 @@ internal sealed class FakeDataSeeder
 {
     public const string ProfileName = "[ТЕСТ] Fixture — не подключать";
     public const string SessionEndReason = "FixtureCompleted";
+    public const string StressChatName = "[СТРЕСС] длинные сообщения";
 
     // Read-only preflight before OpenAsync: a refusal must not migrate an existing database.
     public static async Task EnsureEmptyDatabaseAsync(IAppPaths paths, CancellationToken cancellationToken = default)
@@ -117,7 +119,13 @@ internal sealed class FakeDataSeeder
             for (var index = 0; index < count; index++)
             {
                 var received = MessageTime(now, index, count);
-                var text = binding.Slot == 1 ? ExampleText(index) : $"Участник {index % 4 + 1}: Сообщение {index + 1:D6} — {channelNames[binding.Slot]}";
+                var senderPrefix = $"Участник {index % 4 + 1}: ";
+                // A channel's sender prefix shares the wire budget. Long channel names
+                // belong to the directory, not to an oversized synthetic message body.
+                var body = binding.Slot == 1
+                    ? ExampleText(index, ProtocolLimits.MaxTextBytes - Encoding.UTF8.GetByteCount(senderPrefix))
+                    : $"Сообщение {index + 1:D6} — канал {binding.Slot}";
+                var text = senderPrefix + body;
                 var stored = await storage.IncomingMessages.StoreAsync(new IncomingMessageEnvelope(
                     Guid.NewGuid(), sessionId, node.Id,
                     new ChannelMessage(binding.Slot, 2, MessageTextType.Plain, received, text, -5),
@@ -132,13 +140,15 @@ internal sealed class FakeDataSeeder
 
         foreach (var contact in contacts.Where(contact => contact.ContactType == 1))
         {
+            var isStress = contact.PublicKey.AsSpan().SequenceEqual(Key("stress-long-messages"));
             StoredIncomingMessage? last = null;
             for (var index = 0; index < 12; index++)
             {
                 var received = MessageTime(now, index, 12);
                 last = await storage.IncomingMessages.StoreAsync(new IncomingMessageEnvelope(
                     Guid.NewGuid(), sessionId, node.Id,
-                    new ContactMessage(contact.PublicKey[..6], 1, MessageTextType.Plain, received, ExampleText(index), ReadOnlyMemory<byte>.Empty, -4),
+                    new ContactMessage(contact.PublicKey[..6], 1, MessageTextType.Plain, received,
+                        isStress ? StressText(index) : ExampleText(index, ProtocolLimits.MaxTextBytes), ReadOnlyMemory<byte>.Empty, -4),
                     received, null, null), cancellationToken).ConfigureAwait(false);
                 messageCount++;
             }
@@ -164,7 +174,9 @@ internal sealed class FakeDataSeeder
         return names.Select((name, index) => new DirectoryContactSnapshot(
             Key($"contact-{index}"), name, index < 5 ? 1 : 2 + (index - 5) / 2, 0, new byte[64],
             now.AddHours(-index * 13), index is 5 or 8 or 9 ? 55.75 + index * 0.001 : 0,
-            index is 5 or 8 or 9 ? 37.61 + index * 0.001 : 0)).ToArray();
+            index is 5 or 8 or 9 ? 37.61 + index * 0.001 : 0))
+            .Append(new DirectoryContactSnapshot(Key("stress-long-messages"), StressChatName, 1, 0, new byte[64], now, 0, 0))
+            .ToArray();
     }
 
     private static DateTimeOffset MessageTime(DateTimeOffset now, int index, int count)
@@ -180,7 +192,28 @@ internal sealed class FakeDataSeeder
         };
     }
 
-    private static string ExampleText(int index) => (index % 7) switch
+    private static string ExampleText(int index, int maxUtf8Bytes)
+    {
+        var text = (index % 7) switch
+        {
+            2 => "Длинная строка для проверки переноса. Кириллица занимает больше одного байта UTF-8.",
+            3 => new string('W', maxUtf8Bytes),
+            _ => StressText(index),
+        };
+        var result = new StringBuilder();
+        var bytes = 0;
+        // Truncate only fixture text, at a Unicode scalar boundary (including emoji).
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (bytes + rune.Utf8SequenceLength > maxUtf8Bytes) break;
+            result.Append(rune.ToString());
+            bytes += rune.Utf8SequenceLength;
+        }
+        return result.ToString();
+    }
+
+    // Deliberately exceeds wire limits; isolated from ordinary visual fixtures.
+    private static string StressText(int index) => (index % 7) switch
     {
         0 => "Привет! Это тестовое сообщение 👋",
         1 => "Несколько строк:\nПервая строка\nВторая строка\n\nПоследний абзац.",
