@@ -75,3 +75,13 @@ Accepted+NotExpected после OK, Failed после явного ERROR либ�
 неопределённости. Separate outgoing notifications обновляют пузырёк/preview
 после commit без увеличения unread; статус не создаёт новый пузырёк.
 Private send и manual retry ещё не подключены. [Проверки D5](../plan/d5-channel-send.md).
+
+
+D6: тот же MessageService подключает личную отправку текущему однозначному Chat.
+После MSG_SENT commit сохраняются wire timestamp и ExpectedAck ноды; Delivery observer
+принадлежит immutable lease/attempt, не выбранному чату. Single-flight принятия команды
+освобождается после Accepted; разные ACK ожидания сосуществуют и сопоставляются
+библиотекой по protocol tag. Приложение дополнительно проверяет tag Confirmed результата
+перед Delivered и сохраняет RTT. Observer/cleanup завершаются через D4 session barrier;
+ошибки записи повторяются только в SQLite. Подробности и доказательства —
+[D6](../plan/d6-private-send.md).

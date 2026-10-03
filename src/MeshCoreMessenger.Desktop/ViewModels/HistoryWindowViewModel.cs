@@ -175,7 +175,6 @@ public sealed class HistoryWindowViewModel : ObservableObject
         CancellationToken cancellationToken = default,
         bool dispatchResult = true)
     {
-        ResetSearch();
         var version = Interlocked.Increment(ref _contextVersion);
         _nodeId = nodeId;
         _conversationId = conversationId;
@@ -186,6 +185,13 @@ public sealed class HistoryWindowViewModel : ObservableObject
         _unreadCount = 0;
         _firstUnreadPosition = null;
         using var linked = CreateLinkedCancellation(cancellationToken);
+        // A committed first message can materialize a conversation and reopen it
+        // from the projection worker. Resetting search also notifies bound commands.
+        await ApplyAsync(() =>
+        {
+            if (IsCurrent(nodeId, conversationId, version)) ResetSearch();
+        }, dispatchResult, linked.Token);
+        if (!IsCurrent(nodeId, conversationId, version)) return;
         var pageTask = conversationId is { } id
             ? _history.GetMessagesBeforeAsync(nodeId, id, null, PageSize, linked.Token)
             : Task.FromResult(EmptyPage);

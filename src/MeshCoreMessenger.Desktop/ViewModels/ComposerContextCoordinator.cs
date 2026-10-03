@@ -43,8 +43,18 @@ internal sealed class ComposerContextCoordinator
     {
         var snapshot = _workspace.Composer.SendCapture ?? throw new InvalidOperationException("No send target.");
         var request = snapshot with { Draft = _workspace.Composer.Draft!.Capture(), Options = _workspace.Composer.Options };
-        await _messages!.SendChannelAsync(request, capture => _dispatcher.InvokeAsync(
-            () => _workspace.Composer.Draft!.AcceptTransfer(capture), CancellationToken.None), _stop.Token);
+        Task Transferred(DraftCapture capture) => _dispatcher.InvokeAsync(
+            () => _workspace.Composer.Draft!.AcceptTransfer(capture), CancellationToken.None);
+        switch (request)
+        {
+            case ChannelSendRequest channel:
+                await _messages!.SendChannelAsync(channel, Transferred, _stop.Token);
+                break;
+            case PrivateSendRequest personal:
+                await _messages!.SendPrivateAsync(personal, Transferred, _stop.Token);
+                break;
+            default: throw new InvalidOperationException("Unsupported send target.");
+        }
     }
 
     private void OnComposerChanged(object? sender, PropertyChangedEventArgs args)
@@ -131,6 +141,8 @@ internal sealed class ComposerContextCoordinator
                 if (!IsCurrent(revision)) return;
                 _workspace.Composer.Readiness = readiness;
                 if (targets.Count > 0) _workspace.Composer.SetSendContext(node!.Value, connection.SessionId!.Value, connection.Generation, targets);
+                else if (_messages is not null && readiness == SendReadiness.Ready && recipient?.Kind == ConversationKind.Contact)
+                    _workspace.Composer.SetPrivateSendContext(node!.Value, connection.SessionId!.Value, connection.Generation, recipient.Identity);
             }
             if (dispatchResult) await _dispatcher.InvokeAsync(Apply, _stop.Token);
             else Apply();

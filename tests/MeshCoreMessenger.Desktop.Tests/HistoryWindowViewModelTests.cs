@@ -209,6 +209,46 @@ public sealed class HistoryWindowViewModelTests
         Assert.Equal(initial, model.Messages.Select(item => item.Id));
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task ReopeningMaterializedConversationDispatchesSearchResetAndPreservesInlineStartup(bool dispatchResult)
+    {
+        var conversation = Guid.NewGuid();
+        var reader = new FakeHistoryReader(); reader.Seed(NodeA, conversation, 1);
+        var dispatcher = new SearchResetAuditDispatcher();
+        var model = Create(reader, dispatcher);
+        await model.OpenAsync(NodeA, null, CancellationToken, dispatchResult: false);
+        Assert.Equal(0, dispatcher.Calls);
+        var notifications = 0;
+        model.LoadMoreSearchResultsCommand.CanExecuteChanged += (_, _) =>
+        {
+            Assert.Equal(dispatchResult, dispatcher.IsDispatching);
+            notifications++;
+        };
+        await Task.Run(() => model.OpenAsync(NodeA, conversation, CancellationToken, dispatchResult), CancellationToken);
+        Assert.True(notifications > 0);
+        Assert.Single(model.Messages);
+        Assert.Equal(dispatchResult ? 2 : 0, dispatcher.Calls);
+        await model.StopAsync();
+    }
+
+    private sealed class SearchResetAuditDispatcher : IUiDispatcher
+    {
+        private readonly AsyncLocal<bool> _dispatching = new();
+        public bool IsDispatching => _dispatching.Value;
+        public int Calls { get; private set; }
+        public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            var previous = _dispatching.Value; _dispatching.Value = true;
+            try { action(); }
+            finally { _dispatching.Value = previous; }
+            return Task.CompletedTask;
+        }
+    }
+
     [Fact]
     public async Task CollectionChangesFromAsyncReadsAreDispatched()
     {
@@ -221,7 +261,10 @@ public sealed class HistoryWindowViewModelTests
         var open = model.OpenAsync(NodeA, conversation, CancellationToken);
         await WaitUntilAsync(() => dispatcher.PendingCount == 1);
         Assert.Empty(model.Messages);
-        dispatcher.RunNext();
+        dispatcher.RunNext(); // Search reset/command notifications.
+        await WaitUntilAsync(() => dispatcher.PendingCount == 1);
+        Assert.Empty(model.Messages);
+        dispatcher.RunNext(); // Loaded history publication.
         await open;
         Assert.Equal(100, model.Messages.Count);
 

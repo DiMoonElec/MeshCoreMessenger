@@ -53,7 +53,18 @@ send audit Light/Dark 420/960 пройден. Аппаратная нода не
 потока. Native ChatsView/ListBox A → B → A проверен в Light/Dark без incoming,
 добавлены dispatcher/startup регрессии. Пользователь повторил аппаратный сценарий
 и подтвердил: баг исправлен.
-Следующий подэтап — D6; D6–D18 не начаты.
+[D6](d6-private-send.md) реализован: private Chat send, 160-byte processor capture,
+MSG_SENT/tag commit до terminal status, session-owned ACK observers и UI wiring.
+Две pending отправки сопоставляются по protocol expected_ack, в том числе в обратном
+порядке; повторный/посторонний ACK не меняет чужую attempt. Debug/Release:
+библиотека 96/96, Core 230/230, Desktop 281/281; восемь TCP-emulator сценариев.
+После пользовательской проверки исправлен ResetSearch при фоновом OpenAsync:
+search-command notifications теперь проходят через UI dispatcher, inline startup сохранён.
+Desktop 284/284 Debug/Release; native first-private-send audit Light/Dark × 420/960
+пройден, прежняя ошибка запуска RenderTimer больше не воспроизвелась. Пользователь
+подтвердил 03.10.2026: открытие новой переписки ЛС больше не вызывает ошибку.
+Автоматических/ручных повторов D6 нет.
+Следующий подэтап — D7; D7–D18 не начаты.
 D4 Debug/Release: библиотека 96/96, Core 180/180, Desktop 267/267.
 Ручная аппаратная проверка D4 не требуется.
 D3 Debug/Release: библиотека 96/96, Core 159/159, Desktop 265/265.

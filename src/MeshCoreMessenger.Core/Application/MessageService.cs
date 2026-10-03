@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreSharp.Exceptions;
@@ -5,14 +6,23 @@ using MeshCoreSharp.Models;
 
 namespace MeshCoreMessenger.Core.Application;
 
-public sealed record ChannelSendRequest(Guid NodeId, Guid SessionId, long Generation,
+public abstract record TextSendRequest(Guid NodeId, Guid SessionId, long Generation,
     OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options);
+public sealed record ChannelSendRequest(Guid NodeId, Guid SessionId, long Generation,
+    OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options)
+    : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
+public sealed record PrivateSendRequest(Guid NodeId, Guid SessionId, long Generation,
+    OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options)
+    : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
+public sealed record PrivateSendOutcome(Guid MessageId, SendAttemptState State);
 public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
 
 public interface IMessageService
 {
     Task<IReadOnlyList<OutgoingRecipient>> GetChannelTargetsAsync(Guid nodeId, ReadOnlyMemory<byte> fingerprint,
         CancellationToken cancellationToken = default);
+    Task<PrivateSendOutcome> SendPrivateAsync(PrivateSendRequest request,
+        Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default);
     Task<ChannelSendOutcome> SendChannelAsync(ChannelSendRequest request,
         Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default);
 }
@@ -40,22 +50,37 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
         return targets;
     }
 
-    public async Task<ChannelSendOutcome> SendChannelAsync(ChannelSendRequest request,
+    public Task<ChannelSendOutcome> SendChannelAsync(ChannelSendRequest request,
+        Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default) =>
+        SendAsync(request, isChannel: true, transferred, cancellationToken);
+
+    public async Task<PrivateSendOutcome> SendPrivateAsync(PrivateSendRequest request,
         Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default)
+    {
+        var outcome = await SendAsync(request, isChannel: false, transferred, cancellationToken).ConfigureAwait(false);
+        return new(outcome.MessageId, outcome.State);
+    }
+
+    private async Task<ChannelSendOutcome> SendAsync(TextSendRequest request, bool isChannel,
+        Func<DraftCapture, Task>? transferred, CancellationToken cancellationToken)
     {
         if (!await _singleFlight.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("An outgoing send is already in progress.");
+        SessionCommandLease? lease = null;
+        var observing = false;
         try
         {
             var recipient = request.Recipient with { Identity = request.Recipient.Identity.ToArray() };
             var capture = request.Draft with { Target = request.Draft.Target with { Identity = request.Draft.Target.Identity.ToArray() } };
-            if (capture.Target.NodeId != request.NodeId || capture.Target.Kind != ConversationKind.Channel ||
+            var kind = isChannel ? ConversationKind.Channel : ConversationKind.Contact;
+            if (recipient.Kind != kind || capture.Target.NodeId != request.NodeId || capture.Target.Kind != kind ||
                 !capture.Target.Identity.AsSpan().SequenceEqual(recipient.Identity.Span))
-                throw new InvalidOperationException("Draft and channel ownership differ.");
-            await using var lease = gateway.Acquire(request.NodeId, new ChannelCommandTarget(recipient), cancellationToken);
+                throw new InvalidOperationException("Draft and recipient ownership differ.");
+            lease = gateway.Acquire(request.NodeId, isChannel
+                ? new ChannelCommandTarget(recipient) : new ContactCommandTarget(recipient.Identity), cancellationToken);
             if (lease.Owner.SessionId != request.SessionId || lease.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
-            var processed = processor.Process(capture.Text, new(true, lease.Owner.SenderName), request.Options);
+            var processed = processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName), request.Options);
             if (!processed.Validation.IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
                 throw new ArgumentException("Message text is empty or invalid.");
             return await lease.RunAsync(async (owned, token) =>
@@ -64,7 +89,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
                 var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
                 var conversation = capture.Target.ConversationId ?? draft?.ConversationId
-                    ?? throw new InvalidOperationException("The channel conversation has not been materialized.");
+                    ?? throw new InvalidOperationException("The conversation has not been materialized.");
                 var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                     conversation, recipient, processed.OriginalText, processed.TransmissionText,
                     processed.Validation.MaxUtf8Bytes!.Value, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
@@ -73,8 +98,17 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                     await transferred(capture).ConfigureAwait(false);
                 if (!await owned.TransitionAsync(SendAttemptState.Prepared, SendAttemptState.Sending).ConfigureAwait(false))
                     throw new InvalidOperationException("Sending was not committed.");
-                ChannelMessageSendResult result;
-                try { result = await owned.SendChannelTextAsync().ConfigureAwait(false); }
+                ChannelMessageSendResult? channelResult = null;
+                TextMessageSendResult? privateResult = null;
+                try
+                {
+                    if (isChannel) channelResult = await owned.SendChannelTextAsync().ConfigureAwait(false);
+                    else
+                    {
+                        privateResult = await owned.SendTextAsync().ConfigureAwait(false);
+                        ObserveFailure(privateResult.Delivery);
+                    }
+                }
                 catch (OutgoingPersistenceException) { throw; }
                 catch (Exception error)
                 {
@@ -83,12 +117,72 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                         throw new InvalidOperationException("Outgoing status changed before the result was committed.", error);
                     return new ChannelSendOutcome(prepared.MessageId, state);
                 }
+                var tag = privateResult?.Accepted.ExpectedAck ?? 0;
+                byte[]? expectedAck = null;
+                if (tag != 0)
+                {
+                    expectedAck = new byte[sizeof(uint)];
+                    BinaryPrimitives.WriteUInt32LittleEndian(expectedAck, tag);
+                }
                 if (!await owned.TransitionAsync(SendAttemptState.Sending, SendAttemptState.Accepted,
-                    AckExpectation.NotExpected, result.Timestamp).ConfigureAwait(false))
+                    tag == 0 ? AckExpectation.NotExpected : AckExpectation.Expected,
+                    privateResult?.Timestamp ?? channelResult!.Timestamp, expectedAck).ConfigureAwait(false))
                     throw new InvalidOperationException("Outgoing status changed before acceptance was committed.");
+                if (privateResult is not null && tag != 0)
+                {
+                    // Register before returning to the UI. Delivery may already be complete;
+                    // its terminal write can only follow the committed Accepted write above.
+                    _ = owned.ObserveAsync((observer, observerToken) => RecordDeliveryAsync(observer, privateResult, observerToken));
+                    observing = true;
+                }
                 return new ChannelSendOutcome(prepared.MessageId, SendAttemptState.Accepted);
             }).ConfigureAwait(false);
         }
-        finally { _singleFlight.Release(); }
+        finally
+        {
+            try
+            {
+                if (lease is not null)
+                {
+                    var completion = lease.DisposeAsync().AsTask();
+                    // FinishAsync waits for registered observers; the session owns this lease
+                    // until completion, including shutdown and durable-write failure barriers.
+                    if (observing) ObserveFailure(completion);
+                    else await completion.ConfigureAwait(false);
+                }
+            }
+            finally { _singleFlight.Release(); }
+        }
     }
+
+    private static async Task RecordDeliveryAsync(SessionCommandLease lease, TextMessageSendResult sent, CancellationToken token)
+    {
+        SendAttemptState state;
+        int? roundTrip = null;
+        string? errorCode = null;
+        try
+        {
+            var delivery = await sent.Delivery.WaitAsync(token).ConfigureAwait(false);
+            state = delivery.Status switch
+            {
+                MessageDeliveryStatus.Confirmed when delivery.Acknowledgement?.Ack == sent.Accepted.ExpectedAck => SendAttemptState.Delivered,
+                MessageDeliveryStatus.TimedOut => SendAttemptState.Unconfirmed,
+                _ => SendAttemptState.Unknown,
+            };
+            if (state == SendAttemptState.Delivered)
+                roundTrip = checked((int)delivery.Acknowledgement!.RoundTripTimeMilliseconds);
+            if (state == SendAttemptState.Unknown) errorCode = "UnexpectedDeliveryResult";
+        }
+        catch (Exception error)
+        {
+            state = SendAttemptState.Unknown;
+            errorCode = error.GetType().Name;
+        }
+        if (!await lease.TransitionAsync(SendAttemptState.Accepted, state,
+            roundTripMilliseconds: roundTrip, errorCode: errorCode).ConfigureAwait(false))
+            throw new InvalidOperationException("Delivery status changed before its result was committed.");
+    }
+
+    private static void ObserveFailure(Task task) => _ = task.ContinueWith(completed => { _ = completed.Exception; },
+        CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
 }

@@ -1,4 +1,5 @@
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -8,6 +9,24 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
 {
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private Task? _serverTask;
+    private NetworkStream? _stream;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck);
+    public ConcurrentQueue<PrivateTransmission> PrivateTransmissions { get; } = new();
+    public bool RejectPrivateSend { get; set; }
+    public bool AutoAcknowledgePrivate { get; set; } = true;
+    public Func<int, uint> PrivateAckTag { get; set; } = number => 0x10000000u + (uint)number;
+    public uint PrivateSuggestedTimeoutMilliseconds { get; set; } = 100;
+    public Func<Task>? BeforePrivateResponse { get; set; }
+
+    public Task SendAcknowledgementAsync(uint tag, uint roundTripMilliseconds = 25)
+    {
+        var frame = new byte[9];
+        frame[0] = (byte)PacketType.Ack;
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(1), tag);
+        BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(5), roundTripMilliseconds);
+        return WriteFrameAsync(_stream ?? throw new InvalidOperationException("Emulator not connected."), 0x3E, frame);
+    }
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
     public int ChannelSendCount { get; private set; }
@@ -27,6 +46,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     {
         using var client = await _listener.AcceptTcpClientAsync();
         await using var stream = client.GetStream();
+        _stream = stream;
 
         var messages = new Queue<byte[]>(
         [
@@ -58,6 +78,22 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
                 await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
                 await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
+                continue;
+            }
+
+            if (type == CommandType.SendTextMessage)
+            {
+                var tag = PrivateAckTag(PrivateTransmissions.Count + 1);
+                PrivateTransmissions.Enqueue(new(BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3)),
+                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag));
+                if (BeforePrivateResponse is not null) await BeforePrivateResponse();
+                var sentResponse = new byte[10];
+                sentResponse[0] = (byte)PacketType.MessageSent;
+                BinaryPrimitives.WriteUInt32LittleEndian(sentResponse.AsSpan(2), tag);
+                BinaryPrimitives.WriteUInt32LittleEndian(sentResponse.AsSpan(6), PrivateSuggestedTimeoutMilliseconds);
+                await WriteFrameAsync(stream, 0x3E, RejectPrivateSend
+                    ? [(byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound] : sentResponse);
+                if (!RejectPrivateSend && AutoAcknowledgePrivate && tag != 0) await SendAcknowledgementAsync(tag);
                 continue;
             }
 
@@ -217,14 +253,19 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return payload;
     }
 
-    private static async Task WriteFrameAsync(NetworkStream stream, byte marker, byte[] payload)
+    private async Task WriteFrameAsync(NetworkStream stream, byte marker, byte[] payload)
     {
         var frame = new byte[3 + payload.Length];
         frame[0] = marker;
         BinaryPrimitives.WriteUInt16LittleEndian(frame.AsSpan(1, 2), checked((ushort)payload.Length));
         payload.CopyTo(frame.AsSpan(3));
-        await stream.WriteAsync(frame);
-        await stream.FlushAsync();
+        await _writeGate.WaitAsync();
+        try
+        {
+            await stream.WriteAsync(frame);
+            await stream.FlushAsync();
+        }
+        finally { _writeGate.Release(); }
     }
 
     private static async Task ReadExactlyAsync(NetworkStream stream, Memory<byte> buffer)

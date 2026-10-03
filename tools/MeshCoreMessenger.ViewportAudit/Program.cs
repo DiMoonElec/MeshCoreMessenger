@@ -11,7 +11,8 @@ Dispatcher.UIThread.Post(async () =>
 {
     try
     {
-        if (args.Contains("--switch-only")) await UiWorkspaceIntegrationTests.NativeSwitchAudit.RunAsync();
+        if (args.Contains("--private-send-only")) await UiWorkspaceIntegrationTests.NativePrivateSendAudit.RunAsync();
+        else if (args.Contains("--switch-only")) await UiWorkspaceIntegrationTests.NativeSwitchAudit.RunAsync();
         else if (args.Contains("--send-only")) await UiWorkspaceIntegrationTests.NativeSendAudit.RunAsync();
         else await UiWorkspaceIntegrationTests.NativeAudit.RunAsync(!args.Contains("--measure-only"));
     }

@@ -492,6 +492,7 @@ public sealed partial class SessionCommandGatewayTests
         public bool Disposed { get; private set; }
         public string? SentText { get; private set; }
         public Func<Task>? ChannelSendAction { get; set; }
+        public Func<CancellationToken, Task<TextMessageSendResult>>? PrivateSendAction { get; set; }
         public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
         public void Fail()
         {
@@ -558,7 +559,7 @@ public sealed partial class SessionCommandGatewayTests
         public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> key, string text, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx); SentText = text;
-            return Task.FromResult(new TextMessageSendResult(42, new(false, 1, 1000), Task.FromResult(new MessageDeliveryResult(MessageDeliveryStatus.NotExpected, null))));
+            return PrivateSendAction?.Invoke(cancellationToken) ?? Task.FromResult(new TextMessageSendResult(42, new(false, 0, 1000), Task.FromResult(new MessageDeliveryResult(MessageDeliveryStatus.NotExpected, null))));
         }
         public async Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default)
         {

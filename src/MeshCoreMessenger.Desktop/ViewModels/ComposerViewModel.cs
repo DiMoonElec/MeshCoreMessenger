@@ -51,9 +51,9 @@ public sealed class ComposerViewModel : ObservableObject
         get => _selectedSlot;
         set { if (SetProperty(ref _selectedSlot, value)) InvalidateSend(); }
     }
-    internal ChannelSendRequest? SendCapture { get; private set; }
+    internal TextSendRequest? SendCapture { get; private set; }
     public IAsyncRelayCommand SendCommand { get; }
-    public string SendTooltip => Context.IsChannel ? "Отправить в канал (Enter). Новая строка: Shift+Enter." : "Личная отправка будет подключена в D6.";
+    public string SendTooltip => Context.IsChannel ? "Отправить в канал (Enter). Новая строка: Shift+Enter." : "Отправить личное сообщение (Enter). Новая строка: Shift+Enter.";
     public bool CanSend => !_stopped && !_sending && _send is not null && SendCapture is not null &&
         IsReadyForSend && !string.IsNullOrWhiteSpace(Text);
     internal void ConfigureSend(Func<Task> send) { _send = send; InvalidateSend(); }
@@ -66,13 +66,19 @@ public sealed class ComposerViewModel : ObservableObject
         if (ChannelSlots.Count == 1) _selectedSlot = ChannelSlots[0];
         else if (_selectedSlot is not null && !ChannelSlots.Contains(_selectedSlot.Value)) _selectedSlot = null;
         var target = targets.SingleOrDefault(t => t.Slot == _selectedSlot);
-        SendCapture = target is null || Draft?.CanEdit != true ? null : new(nodeId, sessionId, generation, target, Draft.Capture(), Options);
+        SendCapture = target is null || Draft?.CanEdit != true ? null : new ChannelSendRequest(nodeId, sessionId, generation, target, Draft.Capture(), Options);
         if (slotsChanged)
         {
             OnPropertyChanged(nameof(ChannelSlots));
             OnPropertyChanged(nameof(HasSlotChoice));
         }
         if (previousSlot != _selectedSlot) OnPropertyChanged(nameof(SelectedSlot));
+        InvalidateSend();
+    }
+    internal void SetPrivateSendContext(Guid nodeId, Guid sessionId, long generation, ReadOnlyMemory<byte> publicKey)
+    {
+        SendCapture = Draft?.CanEdit != true ? null : new PrivateSendRequest(nodeId, sessionId, generation,
+            new(ConversationKind.Contact, publicKey.ToArray()), Draft.Capture(), Options);
         InvalidateSend();
     }
     internal void ResetSendContext(bool clearSlots = false)
