@@ -111,7 +111,7 @@ internal static class CompanionCommands
     {
         if (publicKey.Length != ProtocolLimits.PublicKeySize)
             throw new ArgumentException("A full 32-byte recipient public key is required.", nameof(publicKey));
-        var bytes = EncodeText(text, ProtocolLimits.MaxTextBytes);
+        var bytes = TextMessageValidator.EncodeText(text, ProtocolLimits.MaxTextBytes);
         var writer = new PacketWriter();
         writer.WriteByte((byte)CommandType.SendTextMessage);
         writer.WriteByte(0); // Plain text.
@@ -124,9 +124,7 @@ internal static class CompanionCommands
 
     public static byte[] SendChannelText(byte channelIndex, string senderName, string text, uint timestamp)
     {
-        ArgumentNullException.ThrowIfNull(senderName);
-        var prefixBytes = System.Text.Encoding.UTF8.GetByteCount(senderName) + 2; // "name: " inserted by firmware.
-        var bytes = EncodeText(text, ProtocolLimits.MaxTextBytes - prefixBytes);
+        var bytes = TextMessageValidator.EncodeText(text, TextMessageValidator.GetChannelTextLimit(senderName));
         var writer = new PacketWriter();
         writer.WriteByte((byte)CommandType.SendChannelTextMessage);
         writer.WriteByte(0);
@@ -134,16 +132,6 @@ internal static class CompanionCommands
         writer.WriteUInt32LittleEndian(timestamp);
         writer.WriteBytes(bytes);
         return Validate(writer.ToArray());
-    }
-
-    private static byte[] EncodeText(string text, int maxBytes)
-    {
-        ArgumentException.ThrowIfNullOrEmpty(text);
-        if (text.Contains('\0')) throw new ArgumentException("Text must not contain NUL.", nameof(text));
-        var bytes = new System.Text.UTF8Encoding(false, true).GetBytes(text);
-        if (bytes.Length > maxBytes)
-            throw new ArgumentOutOfRangeException(nameof(text), $"Text exceeds the {maxBytes}-byte UTF-8 limit.");
-        return bytes;
     }
 
     private static int EncodeCoordinate(double value, double minimum, double maximum, string parameterName)

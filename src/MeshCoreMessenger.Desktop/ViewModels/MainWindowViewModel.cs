@@ -24,6 +24,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly IMessageCommitNotifications _commitNotifications;
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger<MainWindowViewModel> _logger;
+    private readonly ComposerContextCoordinator[] _composerContexts;
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _projectionRefreshSignal = new(0);
     private readonly SemaphoreSlim _viewSelectionPersistence = new(1, 1);
@@ -63,7 +64,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IUiDispatcher dispatcher,
         ISearchDelay searchDelay,
         IDraftDelay draftDelay,
-        ILogger<MainWindowViewModel> logger)
+        ILogger<MainWindowViewModel> logger,
+        IOutgoingTextProcessor? textProcessor = null,
+        ISendReadinessReader? sendReadiness = null)
     {
         _nodes = nodes;
         _settings = settings;
@@ -77,7 +80,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         Devices = new DevicesWorkspaceViewModel(directory, dispatcher, searchDelay, logger);
         Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
             directory, history, readStates, readWrites, drafts, settings, dispatcher, searchDelay, draftDelay, logger, tab),
-            (navigation, item, token) => Track(SelectConversationCoreAsync(navigation, item, token)), settings, dispatcher);
+            (navigation, item, token) => Track(SelectConversationCoreAsync(navigation, item, token)), settings, dispatcher, textProcessor);
+        _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger),
+            new(Chats.Private, supervisor, sendReadiness, dispatcher, logger)];
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
@@ -287,6 +292,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                     dispatchResult: false);
                 Status = Navigation.Status;
             }
+            await Task.WhenAll(_composerContexts.Select(context => context.InitializeAsync()));
         }
         catch (OperationCanceledException)
         {
@@ -348,6 +354,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
         _projectionRefreshSignal.Release();
+        await Task.WhenAll(_composerContexts.Select(context => context.StopAsync())).ConfigureAwait(false);
         await Chats.StopAsync().ConfigureAwait(false);
         await Profiles.StopAsync().ConfigureAwait(false);
         await Devices.StopAsync().ConfigureAwait(false);
@@ -605,6 +612,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             ActiveNode = UpsertKnownNode(node);
         }
         OnPropertyChanged(nameof(Title));
+        foreach (var context in _composerContexts) context.Refresh();
     }
 
     private static bool SnapshotCanExposeNode(ConnectionSupervisorSnapshot snapshot) =>

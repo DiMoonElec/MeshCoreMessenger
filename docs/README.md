@@ -46,7 +46,7 @@ checkpoints описывают результаты на свою дату, а �
 | Library framing | [Layers](library/architecture/layers.md), [runtime](library/architecture/runtime-pipeline.md), [frame formats](library/protocol/framing.md), [приоритет источников](library/protocol/sources.md) |
 | Routing/concurrency/timeouts | [Immediate transactions](library/architecture/immediate-transactions.md), [matching](library/architecture/packet-matching.md), [gates](library/architecture/concurrency.md), [timeouts/errors](library/architecture/api-and-errors.md), соответствующая protocol-команда |
 | Приём/отправка сообщений | [Message pump](library/architecture/message-pump.md), [incoming wire](library/protocol/incoming-messages.md), [send/ACK wire](library/protocol/outgoing-messages.md); application send scope — [Stage D](messenger/plan/stage-d.md) |
-| Реализация Stage D | [Порядок D1–D18](messenger/plan/stage-d.md), [исходное состояние/контракты](messenger/plan/stage-d-start.md), затем только файл выбранного подэтапа и его зависимости; старт — [D1 UI отправки](messenger/plan/d1-send-ui.md) |
+| Реализация Stage D | [Порядок D1–D18](messenger/plan/stage-d.md), [исходное состояние/контракты](messenger/plan/stage-d-start.md), затем только файл выбранного подэтапа и его зависимости; актуальный статус — в current-state |
 | Приёмка | [C10](messenger/plan/c10-acceptance.md), [матрица](messenger/plan/test-matrix.md), [Stage E](messenger/plan/stage-e.md), нужный отчёт testing |
 
 ## Изменение и проверка документов

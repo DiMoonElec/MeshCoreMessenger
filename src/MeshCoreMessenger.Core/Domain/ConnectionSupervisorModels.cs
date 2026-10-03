@@ -23,6 +23,8 @@ public sealed record ConnectionSupervisorSnapshot(
 {
     /// <summary>Immutable configuration owned by this connection/retry cycle, not the edited database row.</summary>
     public ConnectionProfile? UsedProfile { get; init; }
+    /// <summary>Actual SelfInfo name of this Online session; null outside Online.</summary>
+    public string? SenderName { get; init; }
 }
 
 public sealed class ConnectionSupervisorStateChangedEventArgs(

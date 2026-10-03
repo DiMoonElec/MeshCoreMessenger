@@ -9,6 +9,7 @@
 - [data-directories](messenger/architecture/data-directories.md) — выбор папки данных и несколько независимых экземпляров.
 - [identity](messenger/architecture/identity.md) — Identity ноды/контакта/канала и версии slot bindings.
 - [sending](messenger/architecture/sending.md) — Исходящие сообщения и честные статусы доставки.
+- [text-processing](messenger/architecture/text-processing.md) — Подготовка текста, UTF-8 бюджет и API будущей оптимизации.
 - [node-scoped-ui](messenger/architecture/node-scoped-ui.md) — Active/viewed node, directory projections и bounded history.
 - [ui-and-local-writes](messenger/architecture/ui-and-local-writes.md) — Компоновка, unread, search, drafts и UI preferences.
 - [diagnostics](messenger/architecture/diagnostics.md) — Пакеты, диагностика и границы дешифровки.

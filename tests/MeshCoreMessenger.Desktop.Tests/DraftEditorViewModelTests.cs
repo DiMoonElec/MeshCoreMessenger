@@ -136,7 +136,8 @@ public sealed class DraftEditorViewModelTests
         Assert.True(composer.CanEdit);
         Assert.False(composer.CanSend);
         Assert.Contains("Черновик не сохранён", composer.StatusLine);
-        Assert.Null(composer.ByteCounter); // no invented production byte budget before D2
+        Assert.Equal(System.Text.Encoding.UTF8.GetByteCount(text), composer.ProcessedText.Validation.Utf8ByteCount);
+        Assert.Contains("Превышен лимит", composer.StatusLine);
         await editor.OpenAsync(Item(NodeA, "other", ConversationDirectorySection.ChatContacts, 2),
             CancellationToken, dispatchResult: false);
         Assert.Equal(string.Empty, composer.Text);

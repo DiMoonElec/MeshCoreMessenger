@@ -8,6 +8,7 @@ using Avalonia.Threading;
 using Avalonia.VisualTree;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views.Chat;
+using MeshCoreMessenger.Core.Application;
 
 namespace MeshCoreMessenger.SendUiPreview;
 
@@ -57,6 +58,30 @@ internal static class PreviewAudit
                 }
                 var composer = window.GetVisualDescendants().OfType<ComposerView>().Single();
                 Require(!composer.GetVisualDescendants().OfType<Button>().Single().IsEnabled, "Preview enabled real send.");
+                var preview = (PreviewViewModel)window.DataContext!;
+                var editor = composer.FindControl<TextBox>("MessageInput")!;
+                var editorModel = (ComposerViewModel)composer.DataContext!;
+                var originalText = editorModel.Text;
+                preview.ClearExplanation.Execute(null);
+                editor.Text = "Я👋";
+                Require(editorModel.ProcessedText.Validation.Utf8ByteCount == 6, "Live input did not update the processor byte count.");
+                foreach (var level in Enum.GetValues<TextOptimizationLevel>())
+                {
+                    preview.OptimizationLevel = level;
+                    Require(editorModel.ProcessedText.TransmissionText == "Я👋" && editorModel.ProcessedText.Validation.Utf8ByteCount == 6,
+                        "Placeholder changed text or its byte count.");
+                }
+                preview.SenderName = "🐈";
+                Require(preview.PublicComposer.ProcessedText.Validation.MaxUtf8Bytes == 154, "Demo session name did not change channel budget.");
+                editor.Text = new string('я', 80);
+                Require(editorModel.ProcessedText.Validation.Utf8ByteCount == 160, "UTF-8 boundary was counted as characters.");
+                Require(editorModel.IsReadyForSend == (tab == 1), "Public/private budgets were mixed.");
+                preview.OfflineExplanation.Execute(null);
+                Require(preview.PublicComposer.ProcessedText.Validation.MaxUtf8Bytes is null, "Offline reused a stale sender name.");
+                editor.Text = originalText;
+                await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Render);
+                var statusLine = composer.GetVisualDescendants().OfType<TextBlock>().Single(c => c.Classes.Contains("composer-status"));
+                Require(statusLine.Text == editorModel.StatusLine, "Composer status binding failed.");
                 using var image = new RenderTargetBitmap(new PixelSize((int)window.Bounds.Width, (int)window.Bounds.Height));
                 image.Render(window);
                 image.Save(Path.Combine(output, $"{theme}-{width}-{tab}.png"), PngBitmapEncoderOptions.Default);
@@ -90,7 +115,7 @@ internal static class PreviewAudit
             Require(!retryMessage.RetryVisible, "Retry remained visible after the business presentation disabled it.");
             menu.Close();
             Require(sink.Errors.Count == 0, string.Join("\n", sink.Errors));
-            Console.WriteLine($"PASS resources/bindings, retry cancel/confirm and same bubble. Screenshots: {output}");
+            Console.WriteLine($"PASS live UTF-8 input, name/level changes, offline budget, bindings, retry cancel/confirm and same bubble. Screenshots: {output}");
         }
         finally { Logger.Sink = previousSink; }
     }

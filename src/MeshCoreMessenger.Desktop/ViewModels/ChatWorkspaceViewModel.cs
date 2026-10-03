@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using MeshCoreMessenger.Core.Application;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
@@ -10,10 +11,11 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
     private readonly Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> _select;
 
     internal ChatWorkspaceViewModel(ConversationNavigationViewModel navigation,
-        Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> select)
+        Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> select,
+        IOutgoingTextProcessor? textProcessor = null)
     {
         Navigation = navigation;
-        Composer = new ComposerViewModel(navigation.Draft);
+        Composer = new ComposerViewModel(navigation.Draft, textProcessor);
         _select = select;
     }
 

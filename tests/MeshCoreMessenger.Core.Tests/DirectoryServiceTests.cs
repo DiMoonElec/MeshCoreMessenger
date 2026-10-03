@@ -183,6 +183,49 @@ public sealed class DirectoryServiceTests
         await session.DisposeAsync();
     }
 
+    [Fact]
+    public async Task SendReadinessRejectsOtherNodeOfflineMissingAndCollidingChatPrefixes()
+    {
+        await using var context = await StorageContext.CreateAsync();
+        var reader = new SendReadinessReader(context.Storage.Directories, context.Storage.ConversationDirectory);
+        var chat = Contact(1, "Alice");
+        var connection = new ConnectionSupervisorSnapshot(ConnectionSupervisorState.Online, 1, context.Profile.Id,
+            context.Session.Id, context.Node.Id, null, null) { SenderName = "Actual name" };
+        var recipient = new SendRecipient(ConversationKind.Contact, chat.PublicKey);
+        await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [chat], [], context.Now, CancellationToken);
+        Assert.Equal(SendReadiness.Ready, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+        Assert.Equal(SendReadiness.WrongNode, await reader.ReadAsync(connection, Guid.NewGuid(), recipient, CancellationToken));
+        Assert.Equal(SendReadiness.Offline, await reader.ReadAsync(connection with { State = ConnectionSupervisorState.Offline }, context.Node.Id, recipient, CancellationToken));
+        Assert.Equal(SendReadiness.Synchronizing, await reader.ReadAsync(connection with { State = ConnectionSupervisorState.Synchronizing }, context.Node.Id, recipient, CancellationToken));
+        var collisionKey = chat.PublicKey.ToArray();
+        collisionKey[^1]++;
+        var repeater = chat with { PublicKey = collisionKey, ContactType = (int)AdvertisementType.Repeater };
+        await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [chat, repeater], [], context.Now, CancellationToken);
+        Assert.Equal(SendReadiness.AmbiguousPrefix, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+        await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [], [], context.Now, CancellationToken);
+        Assert.Equal(SendReadiness.ContactMissing, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+    }
+
+    [Fact]
+    public async Task SendReadinessRequiresExplicitSlotForDuplicateFingerprintAndChecksActualBinding()
+    {
+        await using var context = await StorageContext.CreateAsync();
+        var reader = new SendReadinessReader(context.Storage.Directories, context.Storage.ConversationDirectory);
+        var channel = Channel(3, "Shared", Secret(10), ChannelAccessKind.Unknown);
+        var connection = new ConnectionSupervisorSnapshot(ConnectionSupervisorState.Online, 1, context.Profile.Id,
+            context.Session.Id, context.Node.Id, null, null);
+        await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [], [channel], context.Now, CancellationToken);
+        var recipient = new SendRecipient(ConversationKind.Channel, channel.KeyFingerprint);
+        Assert.Equal(SendReadiness.Ready, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+        await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [], [channel, channel with { Slot = 4 }], context.Now, CancellationToken);
+        Assert.Equal(SendReadiness.ChooseSlot, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+        Assert.Equal(SendReadiness.Ready, await reader.ReadAsync(connection, context.Node.Id, recipient with { ChannelSlot = 4 }, CancellationToken));
+        Assert.Equal(SendReadiness.StaleBinding, await reader.ReadAsync(connection, context.Node.Id, recipient with { ChannelSlot = 7 }, CancellationToken));
+        var removed = await context.Storage.Directories.ApplySnapshotAsync(context.Node.Id, context.Session.Id, [], [], context.Now, CancellationToken);
+        await context.Storage.Directories.CommitPendingChannelTransitionsAsync(removed.PendingChannelTransitions, context.Now, CancellationToken);
+        Assert.Equal(SendReadiness.ChannelMissing, await reader.ReadAsync(connection, context.Node.Id, recipient, CancellationToken));
+    }
+
     private static DirectoryContactSnapshot Contact(byte seed, string name) => new(
         Key(seed), name, 1, 3, Enumerable.Repeat(seed, 64).ToArray(),
         DateTimeOffset.FromUnixTimeSeconds(1_700_000_000 + seed), 55.75, 37.62);

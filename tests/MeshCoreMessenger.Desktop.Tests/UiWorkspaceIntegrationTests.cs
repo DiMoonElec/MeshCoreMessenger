@@ -291,7 +291,8 @@ public sealed partial class UiWorkspaceIntegrationTests
             await w.Root.LoadAsync(Token);
             return w;
         }
-        public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null)
+        public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null,
+            ISendReadinessReader? sendReadiness = null)
         {
             FailingDraftStore = new FaultingDraftStore(Storage.Drafts);
             Drafts = new DraftWriteTracker(FailingDraftStore, TimeProvider.System);
@@ -302,7 +303,8 @@ public sealed partial class UiWorkspaceIntegrationTests
                 Supervisor, new EmptyPorts(), NullLogger<ConnectionProfilesViewModel>.Instance);
             return new MainWindowViewModel(Storage.ConversationDirectory, Storage.History, readStore, Reads,
                 Drafts, Storage.Nodes, Storage.Settings, Preferences, profiles, Supervisor, Notifications,
-                dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), NullLogger<MainWindowViewModel>.Instance);
+                dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), NullLogger<MainWindowViewModel>.Instance,
+                sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory));
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));

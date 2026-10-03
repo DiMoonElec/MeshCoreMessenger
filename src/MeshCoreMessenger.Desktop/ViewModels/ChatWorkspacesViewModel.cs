@@ -20,12 +20,12 @@ public sealed class ChatWorkspacesViewModel : ObservableObject
 
     internal ChatWorkspacesViewModel(Func<MessengerNavigationTab, ConversationNavigationViewModel> create,
         Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> select,
-        ISettingsStore settings, IUiDispatcher dispatcher)
+        ISettingsStore settings, IUiDispatcher dispatcher, IOutgoingTextProcessor? textProcessor = null)
     {
         _settings = settings;
         _dispatcher = dispatcher;
-        Public = new(create(MessengerNavigationTab.Channels), select);
-        Private = new(create(MessengerNavigationTab.Personal), select);
+        Public = new(create(MessengerNavigationTab.Channels), select, textProcessor);
+        Private = new(create(MessengerNavigationTab.Personal), select, textProcessor);
         _active = Public;
         foreach (var workspace in All) workspace.Navigation.PropertyChanged += OnNavigationChanged;
     }

@@ -798,9 +798,13 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             sessionId,
             nodeId,
             reason,
-            nextAttemptUtc) { UsedProfile = _active?.Profile ?? _profile };
+            nextAttemptUtc)
+        {
+            UsedProfile = _active?.Profile ?? _profile,
+            SenderName = state == ConnectionSupervisorState.Online ? _active?.Attempt?.LocalNodeName : null,
+        };
         // Metadata must not introduce additional StateChanged publication points.
-        if (current with { UsedProfile = null } == previous with { UsedProfile = null })
+        if (current with { UsedProfile = null, SenderName = null } == previous with { UsedProfile = null, SenderName = null })
         {
             return;
         }

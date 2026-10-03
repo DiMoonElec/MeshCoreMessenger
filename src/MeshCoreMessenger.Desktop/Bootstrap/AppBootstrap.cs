@@ -43,6 +43,8 @@ public static class AppBootstrap
         services.AddSingleton<ISearchDelay, SystemSearchDelay>();
         services.AddSingleton<IDraftDelay, SystemDraftDelay>();
         services.AddSingleton<DesktopPreferences>();
+        services.AddSingleton<IOutgoingTextProcessor, PassthroughOutgoingTextProcessor>();
+        services.AddSingleton<ISendReadinessReader, SendReadinessReader>();
         services.AddSingleton<IDurableDesktopPreferences>(provider =>
             provider.GetRequiredService<DesktopPreferences>());
         services.AddSingleton<IConnectionProfileManager, ConnectionProfileManager>();

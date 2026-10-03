@@ -3,6 +3,7 @@ using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Desktop.Presentation;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
+using MeshCoreMessenger.Core.Application;
 
 namespace MeshCoreMessenger.Desktop.Tests;
 
@@ -13,10 +14,10 @@ public sealed class SendPresentationTests
     {
         var composer = new ComposerViewModel
         {
-            ByteCounter = "42 / 160 байт", Availability = "offline", PreviewExplanation = "Черновик не сохранён",
+            Text = new string('x', 42), Readiness = SendReadiness.Offline, PreviewExplanation = "Черновик не сохранён",
         };
         Assert.Equal("42 / 160 байт - offline • Черновик не сохранён", composer.StatusLine);
-        composer.Availability = string.Empty;
+        composer.Readiness = SendReadiness.Ready;
         composer.PreviewExplanation = string.Empty;
         Assert.Equal("42 / 160 байт", composer.StatusLine);
         composer.Text = "👋";

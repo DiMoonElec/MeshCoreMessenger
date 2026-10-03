@@ -10,6 +10,27 @@ namespace MeshCoreMessenger.Core.Tests;
 public sealed class ConnectionSupervisorTests
 {
     [Fact]
+    public async Task SenderNameBelongsToOnlineSessionAndIsClearedBeforeNextConnection()
+    {
+        var context = CreateContext();
+        await using var supervisor = context.CreateSupervisor();
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online);
+        Assert.Equal(" Actual node 🐈 ", supervisor.Snapshot.SenderName);
+        await supervisor.DisconnectAsync(CancellationToken);
+        Assert.Null(supervisor.Snapshot.SenderName);
+        context.Factory.EnqueueStart((attempt, _) =>
+        {
+            attempt.LocalNodeName = "Другой узел";
+            attempt.NodeIdValue = Guid.NewGuid();
+            return Task.CompletedTask;
+        });
+        await supervisor.ConnectNowAsync(CancellationToken);
+        await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, 2);
+        Assert.Equal("Другой узел", supervisor.Snapshot.SenderName);
+    }
+
+    [Fact]
     public async Task SnapshotKeepsUsedSettingsUntilFreshExplicitConnection()
     {
         var context = CreateContext();
@@ -715,6 +736,7 @@ public sealed class ConnectionSupervisorTests
         public Guid? SessionId { get; } = Guid.NewGuid();
         public Guid? NodeId => NodeIdValue;
         public Guid? NodeIdValue { get; set; }
+        public string? LocalNodeName { get; set; } = " Actual node 🐈 ";
         public Task<ConnectionAttemptCompletion> Completion => _completion.Task;
         public bool Stopped => Volatile.Read(ref _stopped) != 0;
         public TaskCompletionSource? StopGate { get; set; }

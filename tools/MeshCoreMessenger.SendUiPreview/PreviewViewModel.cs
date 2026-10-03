@@ -1,24 +1,28 @@
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.ComponentModel;
+using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Desktop.Presentation;
 using MeshCoreMessenger.Desktop.ViewModels;
 
 namespace MeshCoreMessenger.SendUiPreview;
 
-public sealed class PreviewViewModel
+public sealed class PreviewViewModel : ObservableObject
 {
     private static readonly DateTimeOffset Time = new(2026, 10, 3, 14, 36, 0, TimeSpan.Zero);
+    private string _senderName = "Наша нода 🐈";
+    private TextOptimizationLevel _optimizationLevel;
     public PreviewViewModel()
     {
         PublicComposer = new ComposerViewModel { Text = "Канал: @[Очень длинное имя ноды 🐈] привет 👋",
-            ByteCounter = "42 / 146 байт", Availability = "offline", PreviewExplanation = "Черновик не сохранён" };
-        PrivateComposer = new ComposerViewModel { Text = "Личный независимый черновик 👋", ByteCounter = "42 / 160 байт",
-            Availability = "offline", PreviewExplanation = "Черновик не сохранён" };
+            Context = new(true), Readiness = SendReadiness.Offline, PreviewExplanation = "Черновик не сохранён" };
+        PrivateComposer = new ComposerViewModel { Text = "Личный независимый черновик 👋",
+            Readiness = SendReadiness.Offline, PreviewExplanation = "Черновик не сохранён" };
         PublicMessages = CreateMessages(channel: true);
         PrivateMessages = CreateMessages(channel: false);
-        ClearExplanation = new RelayCommand(() => SetExplanations(string.Empty, string.Empty));
-        OfflineExplanation = new RelayCommand(() => SetExplanations("offline", "Черновик не сохранён"));
-        ErrorExplanation = new RelayCommand(() => SetExplanations("Превышен лимит", "Не удалось сохранить черновик"));
+        ClearExplanation = new RelayCommand(() => SetExplanations(SendReadiness.Ready, string.Empty));
+        OfflineExplanation = new RelayCommand(() => SetExplanations(SendReadiness.Offline, "Черновик не сохранён"));
+        ErrorExplanation = new RelayCommand(() => SetExplanations(SendReadiness.AmbiguousPrefix, "Не удалось сохранить черновик"));
     }
     public ComposerViewModel PublicComposer { get; }
     public ComposerViewModel PrivateComposer { get; }
@@ -28,13 +32,34 @@ public sealed class PreviewViewModel
     public RelayCommand OfflineExplanation { get; }
     public RelayCommand ErrorExplanation { get; }
 
-    private void SetExplanations(string availability, string explanation)
+    public string SenderName
+    {
+        get => _senderName;
+        set
+        {
+            if (SetProperty(ref _senderName, value))
+                PublicComposer.Context = new(true, PublicComposer.Readiness == SendReadiness.Ready ? value : null);
+        }
+    }
+    public IReadOnlyList<TextOptimizationLevel> OptimizationLevels { get; } = Enum.GetValues<TextOptimizationLevel>();
+    public TextOptimizationLevel OptimizationLevel
+    {
+        get => _optimizationLevel;
+        set
+        {
+            if (!SetProperty(ref _optimizationLevel, value)) return;
+            PublicComposer.Options = PrivateComposer.Options = new(value);
+        }
+    }
+
+    private void SetExplanations(SendReadiness readiness, string explanation)
     {
         foreach (var composer in new[] { PublicComposer, PrivateComposer })
         {
-            composer.Availability = availability;
+            composer.Readiness = readiness;
             composer.PreviewExplanation = explanation;
         }
+        PublicComposer.Context = new(true, readiness == SendReadiness.Ready ? SenderName : null);
     }
 
     private static IReadOnlyList<HistoryMessageListItem> CreateMessages(bool channel)

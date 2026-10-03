@@ -53,6 +53,7 @@ internal sealed class ConnectionAttempt : IConnectionAttempt
     public long Generation => _session.Generation;
     public Guid? SessionId => _session.SessionId;
     public Guid? NodeId => _session.LocalNodeId;
+    public string? LocalNodeName => _session.LocalNode?.Name;
     public Task<ConnectionAttemptCompletion> Completion => _completion.Task;
 
     public event EventHandler<ConnectionAttemptProgressEventArgs>? ProgressChanged;
