@@ -58,3 +58,14 @@ then confirms deletion, checks empty history and retained draft. Screenshots go 
 `$TMPDIR/meshcore-history-clear/`. No hardware or user database is used.
 See [verification report](../../docs/testing/history-clear.md) for the actual run
 status; the current environment may fail before opening a window with RenderTimer -6661.
+
+
+macOS startup preflight (no window, display state unchanged):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --startup-check-only
+```
+
+All modes check CoreVideo display-link availability before Avalonia startup and
+report managed startup failures to stderr with exit code 1. See
+[display/screen-lock investigation](../../docs/testing/viewport-audit-startup.md).
