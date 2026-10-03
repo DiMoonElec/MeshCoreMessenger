@@ -43,6 +43,8 @@
       <SolidColorBrush x:Key="ChatOwnMentionBackgroundBrush" Color="#D7EAFB" />
       <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#DCE5ED" />
       <SolidColorBrush x:Key="ChatBubbleBrush" Color="#FFFFFF" />
+      <SolidColorBrush x:Key="ChatOutgoingBubbleBrush" Color="#D7EAFB" />
+      <SolidColorBrush x:Key="ChatFailedBubbleBrush" Color="#FCE8E6" />
       <SolidColorBrush x:Key="ChatHoverBrush" Color="#EAF1F8" />
       <SolidColorBrush x:Key="ChatSelectedBrush" Color="#D7EAFB" />
       <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />
@@ -61,6 +63,8 @@
       <SolidColorBrush x:Key="ChatOwnMentionBackgroundBrush" Color="#244A69" />
       <SolidColorBrush x:Key="ChatSeparatorBrush" Color="#2B3D50" />
       <SolidColorBrush x:Key="ChatBubbleBrush" Color="#213448" />
+      <SolidColorBrush x:Key="ChatOutgoingBubbleBrush" Color="#244A69" />
+      <SolidColorBrush x:Key="ChatFailedBubbleBrush" Color="#44272B" />
       <SolidColorBrush x:Key="ChatHoverBrush" Color="#23374C" />
       <SolidColorBrush x:Key="ChatSelectedBrush" Color="#244A69" />
       <SolidColorBrush x:Key="ChatBadgeTextBrush" Color="#FFFFFF" />

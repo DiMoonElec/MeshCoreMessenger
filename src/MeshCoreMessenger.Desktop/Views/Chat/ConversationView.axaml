@@ -36,19 +36,7 @@
         <controls:VirtualizedHistoryListBox x:Name="HistoryList" Classes="history" ItemsSource="{Binding Navigation.Messages}">
           <ListBox.ItemTemplate>
             <DataTemplate x:DataType="vm:HistoryMessageListItem">
-              <Border Classes="message-bubble" BorderThickness="{Binding SearchBorderThickness}">
-                <Border.ContextMenu>
-                  <ContextMenu>
-                    <MenuItem Header="Копировать" CommandParameter="{Binding}" Click="OnCopyMessage" />
-                  </ContextMenu>
-                </Border.ContextMenu>
-                <StackPanel>
-                  <TextBlock Classes="message-date" Text="{Binding ReceivedTime}" />
-                  <TextBlock Classes="chat-meta" Text="{Binding ContentLabel}" IsVisible="{Binding HasContentLabel}" />
-                  <controls:MentionTextBlock Classes="message-body" MessageText="{Binding Body}" TextWrapping="Wrap"
-                    OwnNodeName="{Binding $parent[chat:ConversationView].((vm:ChatWorkspaceViewModel)DataContext).ViewedNode.MentionName}" />
-                </StackPanel>
-              </Border>
+              <chat:MessageView OwnNodeName="{Binding $parent[chat:ConversationView].((vm:ChatWorkspaceViewModel)DataContext).ViewedNode.MentionName}" />
             </DataTemplate>
           </ListBox.ItemTemplate>
         </controls:VirtualizedHistoryListBox>
@@ -60,7 +48,7 @@
       </StackPanel>
     </Grid>
     <Border Grid.Row="2" IsVisible="{Binding Navigation.HasSelection}">
-      <chat:ComposerView DataContext="{Binding Navigation.Draft}" />
+      <chat:ComposerView DataContext="{Binding Composer}" />
     </Border>
   </Grid>
 </UserControl>

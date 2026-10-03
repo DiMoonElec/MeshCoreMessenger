@@ -121,6 +121,50 @@ public sealed class DraftEditorViewModelTests
         Assert.Equal("последний символ перед закрытием", store.Saved?.Text);
     }
 
+    [Fact]
+    public async Task ComposerKeepsDraftOwnershipAndFullOfflineUnicodeTextWithoutEnablingSend()
+    {
+        var drafts = new FakeDraftBuffer();
+        var editor = Create(drafts, new ControlledDraftDelay());
+        var composer = new ComposerViewModel(editor);
+        await editor.OpenAsync(Item(NodeA, "chat", ConversationDirectorySection.ChatContacts, 1),
+            CancellationToken, dispatchResult: false);
+        var text = string.Concat(Enumerable.Repeat("Кириллица 👋\n", 200));
+        composer.Text = text;
+        Assert.Equal(text, editor.Text);
+        Assert.Equal(text, drafts.Updates.Single().Text);
+        Assert.True(composer.CanEdit);
+        Assert.False(composer.CanSend);
+        Assert.Contains("Черновик не сохранён", composer.StatusLine);
+        Assert.Null(composer.ByteCounter); // no invented production byte budget before D2
+        await editor.OpenAsync(Item(NodeA, "other", ConversationDirectorySection.ChatContacts, 2),
+            CancellationToken, dispatchResult: false);
+        Assert.Equal(string.Empty, composer.Text);
+        await editor.OpenAsync(Item(NodeA, "chat", ConversationDirectorySection.ChatContacts, 1),
+            CancellationToken, dispatchResult: false);
+        Assert.Equal(text, composer.Text);
+        await editor.StopAsync();
+    }
+
+    [Fact]
+    public async Task ComposerExposesDraftPersistenceFailureWhileSendRemainsDisabled()
+    {
+        var drafts = new FakeDraftBuffer { FlushFailure = new IOException("test failure") };
+        var delay = new ControlledDraftDelay();
+        var editor = Create(drafts, delay);
+        var composer = new ComposerViewModel(editor);
+        await editor.OpenAsync(Item(NodeA, "chat", ConversationDirectorySection.ChatContacts, 1),
+            CancellationToken, dispatchResult: false);
+        composer.Text = "не потерять 🐈";
+        delay.Requests.Single().Completion.SetResult();
+        for (var attempt = 0; attempt < 200 && !editor.HasError; attempt++) await Task.Delay(10, CancellationToken);
+        Assert.True(editor.HasError);
+        Assert.Contains("Не удалось сохранить черновик", composer.StatusLine);
+        Assert.Equal("не потерять 🐈", composer.Text);
+        Assert.False(composer.CanSend);
+        await editor.StopAsync();
+    }
+
     private static DraftEditorViewModel Create(
         IDraftBuffer drafts,
         IDraftDelay? delay = null) =>

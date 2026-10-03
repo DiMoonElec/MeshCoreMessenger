@@ -1,0 +1,15 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
+        x:Class="MeshCoreMessenger.Desktop.Views.Chat.MessageActionDialog" x:DataType="chat:MessageActionDialog"
+        Width="420" MinWidth="280" MaxHeight="600" SizeToContent="Height" CanResize="True"
+        WindowStartupLocation="CenterOwner" Background="{DynamicResource ChatSurfaceBrush}">
+  <Grid Margin="20" RowDefinitions="*,Auto">
+    <ScrollViewer MaxHeight="440">
+      <TextBlock Text="{Binding Explanation}" TextWrapping="Wrap" Foreground="{DynamicResource ChatTextBrush}" />
+    </ScrollViewer>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="12" Margin="0,20,0,0">
+      <Button Content="{Binding CancelLabel}" IsCancel="True" Click="OnCancel" />
+      <Button Content="Повторить" IsVisible="{Binding IsConfirmation}" Click="OnConfirm" />
+    </StackPanel>
+  </Grid>
+</Window>

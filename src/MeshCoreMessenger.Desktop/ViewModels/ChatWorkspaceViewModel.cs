@@ -13,10 +13,12 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
         Func<ConversationNavigationViewModel, ConversationListItem?, CancellationToken, Task> select)
     {
         Navigation = navigation;
+        Composer = new ComposerViewModel(navigation.Draft);
         _select = select;
     }
 
     public ConversationNavigationViewModel Navigation { get; }
+    public ComposerViewModel Composer { get; }
     public ConversationListItem? SelectedConversation => Navigation.SelectedConversation;
     public KnownNodeListItem? ViewedNode
     {

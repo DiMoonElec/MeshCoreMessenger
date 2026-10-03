@@ -6,6 +6,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Presentation;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
@@ -1188,6 +1189,7 @@ public sealed class ConversationListItem : ObservableObject
 public sealed class HistoryMessageListItem : ObservableObject
 {
     private bool _isSearchMatch;
+    private MessagePresentation _presentation = new();
 
     public HistoryMessageListItem(HistoryMessage message, bool isSearchMatch = false)
     {
@@ -1196,6 +1198,7 @@ public sealed class HistoryMessageListItem : ObservableObject
         LocalSequence = message.LocalSequence;
         ConversationId = message.ConversationId;
         Direction = message.Direction == MessageDirection.Outgoing ? "Вы" : "Входящее";
+        IsOutgoing = message.Direction == MessageDirection.Outgoing;
         Kind = message.MessageKind;
         TextType = message.TextType;
         BinaryDataType = message.BinaryDataType;
@@ -1223,6 +1226,36 @@ public sealed class HistoryMessageListItem : ObservableObject
     public int? TextType { get; }
     public ushort? BinaryDataType { get; }
     public string Direction { get; }
+    public bool IsOutgoing { get; }
+    public MessagePresentation Presentation
+    {
+        get => _presentation;
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (!SetProperty(ref _presentation, value)) return;
+            OnPropertyChanged(nameof(MetadataText));
+            OnPropertyChanged(nameof(IsSendError));
+            OnPropertyChanged(nameof(HasDetails));
+            OnPropertyChanged(nameof(DetailsText));
+            OnPropertyChanged(nameof(RetryVisible));
+            OnPropertyChanged(nameof(CanRetry));
+        }
+    }
+    public string MetadataText => MessageMetadataFormatter.Format(ReceivedTime, Presentation);
+    public bool IsSendError => IsOutgoing && Presentation.State == MessageSendDisplayState.Failed;
+    public bool HasDetails => Presentation.State is not null || !string.IsNullOrWhiteSpace(Presentation.Details);
+    public string DetailsText => string.Join("\n\n", new[] { MetadataText,
+        MessageMetadataFormatter.Explanation(Presentation.State),
+        Presentation.AttemptNumber is { } attempt ? $"Попытка: {attempt}" : null,
+        Presentation.Details }
+        .Where(s => !string.IsNullOrWhiteSpace(s)));
+    public bool RetryVisible => IsOutgoing && Presentation.RetryVisible;
+    public bool CanRetry => RetryVisible && Presentation.RetryEnabled && Presentation.RetryCommand?.CanExecute(null) == true;
+    public void RequestRetry()
+    {
+        if (CanRetry) Presentation.RetryCommand!.Execute(null);
+    }
     public string ContentLabel { get; }
     public string Body { get; }
     public string CopyText { get; }
@@ -1239,7 +1272,7 @@ public sealed class HistoryMessageListItem : ObservableObject
             }
         }
     }
-    public double SearchBorderThickness => IsSearchMatch ? 2 : 0;
+    public Avalonia.Thickness SearchBorderThickness => new(IsSearchMatch ? 2 : 0);
 }
 
 public sealed class HistorySearchResultListItem

@@ -1,0 +1,30 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
+             xmlns:controls="using:MeshCoreMessenger.Desktop.Controls"
+             x:Class="MeshCoreMessenger.Desktop.Views.Chat.MessageView" x:DataType="vm:HistoryMessageListItem">
+  <UserControl.Styles>
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/MessageStyles.axaml" />
+    <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/MentionStyles.axaml" />
+  </UserControl.Styles>
+  <Grid>
+    <StackPanel Classes="message" Classes.outgoing="{Binding IsOutgoing}">
+      <StackPanel.ContextMenu>
+        <ContextMenu>
+          <MenuItem Header="Копировать" CommandParameter="{Binding}" Click="OnCopyMessage" />
+          <MenuItem Header="Сведения о сообщении" CommandParameter="{Binding}" IsVisible="{Binding HasDetails}" Click="OnDetails" />
+          <MenuItem Header="Повторить отправку" CommandParameter="{Binding}" IsVisible="{Binding RetryVisible}"
+                    IsEnabled="{Binding CanRetry}" Click="OnRetry" />
+        </ContextMenu>
+      </StackPanel.ContextMenu>
+      <Border Classes="message-bubble" Classes.outgoing="{Binding IsOutgoing}" Classes.failed="{Binding IsSendError}"
+              BorderThickness="{Binding SearchBorderThickness}">
+        <StackPanel>
+          <TextBlock Classes="content-label" Text="{Binding ContentLabel}" IsVisible="{Binding HasContentLabel}" />
+          <controls:MentionTextBlock Classes="message-body" MessageText="{Binding Body}" TextWrapping="Wrap"
+              OwnNodeName="{Binding $parent[chat:MessageView].OwnNodeName}" />
+        </StackPanel>
+      </Border>
+      <TextBlock Classes="message-metadata" Text="{Binding MetadataText}" TextWrapping="Wrap" />
+    </StackPanel>
+  </Grid>
+</UserControl>

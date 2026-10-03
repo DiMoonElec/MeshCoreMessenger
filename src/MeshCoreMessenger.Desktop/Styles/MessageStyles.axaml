@@ -1,0 +1,33 @@
+<Styles xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="using:MeshCoreMessenger.Desktop.Controls">
+  <Style Selector="StackPanel.message">
+    <Setter Property="HorizontalAlignment" Value="Left" />
+    <Setter Property="MaxWidth" Value="{StaticResource ChatMessageMaxWidth}" />
+    <Setter Property="Margin" Value="{StaticResource ChatMessageMargin}" />
+  </Style>
+  <Style Selector="StackPanel.message.outgoing">
+    <Setter Property="HorizontalAlignment" Value="Right" />
+  </Style>
+  <Style Selector="Border.message-bubble">
+    <Setter Property="Background" Value="{DynamicResource ChatBubbleBrush}" />
+    <Setter Property="BorderBrush" Value="{DynamicResource ShellAccentBrush}" />
+    <Setter Property="CornerRadius" Value="{StaticResource ChatCornerRadius}" />
+    <Setter Property="Padding" Value="{StaticResource ChatBubblePadding}" />
+    <Setter Property="MinWidth" Value="{StaticResource ChatBubbleMinWidth}" />
+  </Style>
+  <Style Selector="Border.message-bubble.outgoing">
+    <Setter Property="Background" Value="{DynamicResource ChatOutgoingBubbleBrush}" />
+  </Style>
+  <Style Selector="Border.message-bubble.failed">
+    <Setter Property="Background" Value="{DynamicResource ChatFailedBubbleBrush}" />
+  </Style>
+  <Style Selector="TextBlock.message-metadata, TextBlock.content-label">
+    <Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatMetaFontSize}" />
+    <Setter Property="Margin" Value="{StaticResource ChatControlMargin}" />
+  </Style>
+  <Style Selector="controls|MentionTextBlock.message-body">
+    <Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" />
+    <Setter Property="FontSize" Value="{StaticResource ChatFontSize}" />
+  </Style>
+</Styles>

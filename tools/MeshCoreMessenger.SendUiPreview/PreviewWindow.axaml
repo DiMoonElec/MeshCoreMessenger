@@ -1,0 +1,48 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:preview="using:MeshCoreMessenger.SendUiPreview" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
+        xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+        x:Class="MeshCoreMessenger.SendUiPreview.PreviewWindow" x:DataType="preview:PreviewViewModel"
+        Title="D1 — Демонстрация UI · без БД и эфира" Width="960" Height="800" MinWidth="360" MinHeight="420"
+        Background="{DynamicResource ChatCanvasBrush}">
+  <Grid RowDefinitions="Auto,Auto,*">
+    <TextBlock Margin="16,10" Text="ДЕМОНСТРАЦИЯ · Счётчики и метаданные заданы вручную. Отправка не подключена."
+               TextWrapping="Wrap" Foreground="{DynamicResource ChatTextBrush}" />
+    <WrapPanel Grid.Row="1" Margin="12,0">
+      <Button Margin="4" Content="Light" Click="OnLight" />
+      <Button Margin="4" Content="Dark" Click="OnDark" />
+      <Button Margin="4" Content="Только счётчик" Command="{Binding ClearExplanation}" />
+      <Button Margin="4" Content="Offline + черновик" Command="{Binding OfflineExplanation}" />
+      <Button Margin="4" Content="Ошибки" Command="{Binding ErrorExplanation}" />
+    </WrapPanel>
+    <TabControl Grid.Row="2">
+      <TabItem Header="Публичный чат">
+        <Grid RowDefinitions="*,Auto">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding PublicMessages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HistoryMessageListItem">
+                  <chat:MessageView OwnNodeName="Наша нода 🐈" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <chat:ComposerView Grid.Row="1" DataContext="{Binding PublicComposer}" />
+        </Grid>
+      </TabItem>
+      <TabItem Header="Личный чат">
+        <Grid RowDefinitions="*,Auto">
+          <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding PrivateMessages}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:HistoryMessageListItem">
+                  <chat:MessageView OwnNodeName="Наша нода 🐈" />
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
+          <chat:ComposerView Grid.Row="1" DataContext="{Binding PrivateComposer}" />
+        </Grid>
+      </TabItem>
+    </TabControl>
+  </Grid>
+</Window>
