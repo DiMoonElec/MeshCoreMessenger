@@ -9,6 +9,17 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
 {
     public event EventHandler<OutgoingMessageCommit>? MessageCommitted;
 
+    public Task<long> GetLatestChannelTimestampAsync(Guid nodeId, CancellationToken cancellationToken = default) =>
+        reader.ExecuteAsync(connection =>
+        {
+            using var query = Command(connection, null, """
+                SELECT COALESCE(MAX(a.WireTimestamp),0)
+                FROM SendAttempts a JOIN Messages m ON m.Id=a.MessageId
+                JOIN Conversations c ON c.Id=m.ConversationId WHERE c.NodeId=$node AND c.Kind=1;
+                """, ("$node", nodeId));
+            return Convert.ToInt64(query.ExecuteScalar(), CultureInfo.InvariantCulture);
+        }, cancellationToken);
+
     public async Task<PreparedOutgoingMessage> PrepareAsync(PrepareOutgoingMessage message, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(message);

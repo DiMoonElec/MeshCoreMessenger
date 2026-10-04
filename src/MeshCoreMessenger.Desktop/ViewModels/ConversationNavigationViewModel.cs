@@ -1179,6 +1179,8 @@ public sealed class HistoryMessageListItem : ObservableObject
     private MessagePresentation _presentation = new();
     private System.Windows.Input.ICommand? _retryCommand;
     private bool? _retryVisible, _retryEnabled, _retryRequiresConfirmation;
+    private bool _sendAsNewVisible, _sendAsNewEnabled;
+    public System.Windows.Input.ICommand? SendAsNewCommand { get; private set; }
 
     public HistoryMessageListItem(HistoryMessage message, bool isSearchMatch = false)
     {
@@ -1245,7 +1247,19 @@ public sealed class HistoryMessageListItem : ObservableObject
     {
         _retryCommand = command; _retryVisible = visible; _retryEnabled = enabled; _retryRequiresConfirmation = requiresConfirmation;
         OnPropertyChanged(nameof(RetryVisible)); OnPropertyChanged(nameof(CanRetry));
-        OnPropertyChanged(nameof(RetryRequiresConfirmation));
+        OnPropertyChanged(nameof(RetryRequiresConfirmation)); OnPropertyChanged(nameof(RetryLabel));
+    }
+    internal void SetSendAsNewAction(System.Windows.Input.ICommand command, bool visible, bool enabled)
+    {
+        SendAsNewCommand = command; _sendAsNewVisible = visible; _sendAsNewEnabled = enabled;
+        OnPropertyChanged(nameof(SendAsNewVisible)); OnPropertyChanged(nameof(CanSendAsNew));
+    }
+    public string RetryLabel => _retryCommand is not null ? "Повторить доставку" : "Повторить отправку";
+    public bool SendAsNewVisible => IsOutgoing && _sendAsNewVisible;
+    public bool CanSendAsNew => SendAsNewVisible && _sendAsNewEnabled && SendAsNewCommand?.CanExecute(null) == true;
+    public void RequestSendAsNew()
+    {
+        if (CanSendAsNew) SendAsNewCommand!.Execute(null);
     }
     public bool RetryRequiresConfirmation => _retryRequiresConfirmation ?? true;
     public System.Windows.Input.ICommand? RetryCommand => _retryCommand ?? Presentation.RetryCommand;

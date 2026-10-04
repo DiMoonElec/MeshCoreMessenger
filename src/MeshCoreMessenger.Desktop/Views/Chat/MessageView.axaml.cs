@@ -30,6 +30,11 @@ public sealed partial class MessageView : UserControl
         await new MessageActionDialog(message.DetailsText, false) { RequestedThemeVariant = owner.ActualThemeVariant }.ShowDialog<bool>(owner);
     }
 
+    private void OnSendAsNew(object? sender, RoutedEventArgs args)
+    {
+        if (sender is MenuItem { CommandParameter: HistoryMessageListItem message }) message.RequestSendAsNew();
+    }
+
     private async void OnRetry(object? sender, RoutedEventArgs args)
     {
         if (sender is not MenuItem { CommandParameter: HistoryMessageListItem message } ||

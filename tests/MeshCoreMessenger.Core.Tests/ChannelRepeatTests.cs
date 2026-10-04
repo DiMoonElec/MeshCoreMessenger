@@ -7,6 +7,44 @@ namespace MeshCoreMessenger.Core.Tests;
 public sealed partial class SessionCommandGatewayTests
 {
     [Fact]
+    public async Task SendChannelAsNewAfterReconnectCreatesIndependentMessageAndLeavesDraftAndSourceIntact()
+    {
+        await using var f = await Fixture.CreateAsync(); await f.Connect();
+        var drafts = new DraftWriteTracker(f.Storage.Drafts, TimeProvider.System);
+        var sender = Sender(f, drafts, new CapturedProcessor());
+        var request = await Request(f, drafts);
+        var first = await sender.SendChannelAsync(request, cancellationToken: CancellationToken);
+        var source = await f.Storage.OutgoingMessages.GetAsync(f.NodeId, first.MessageId, CancellationToken);
+        var original = Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken));
+        drafts.Update(request.Draft.Target, "Leave draft alone", 2);
+        await f.Supervisor.DisconnectAsync(CancellationToken); await f.Connect();
+        sender = Sender(f, drafts);
+        var owner = f.Supervisor.Snapshot;
+        var copy = await sender.SendChannelAsNewAsync(new(f.NodeId, owner.SessionId!.Value, owner.Generation,
+            first.MessageId, 1, await f.ChannelRecipient()), CancellationToken);
+        Assert.NotEqual(first.MessageId, copy.MessageId);
+        Assert.Equal(SendAttemptState.Accepted, copy.State);
+        var storedCopy = await f.Storage.OutgoingMessages.GetAsync(f.NodeId, copy.MessageId, CancellationToken);
+        Assert.Equal(source.OriginalText, storedCopy.OriginalText);
+        Assert.Equal(source.TransmissionText, storedCopy.TransmissionText);
+        Assert.Equal(source.ConversationId, storedCopy.ConversationId);
+        var attempt = Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, copy.MessageId, CancellationToken));
+        Assert.Equal(1, attempt.AttemptNumber);
+        Assert.True(attempt.WireTimestamp > original.WireTimestamp);
+        Assert.Equal(original, Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken)));
+        var unchanged = await f.Storage.OutgoingMessages.GetAsync(f.NodeId, first.MessageId, CancellationToken);
+        Assert.Equal(source.SessionId, unchanged.SessionId);
+        Assert.Equal(source.TransmissionText, unchanged.TransmissionText);
+        await drafts.FlushAsync(request.Draft.Target, CancellationToken);
+        Assert.Equal("Leave draft alone", (await f.Storage.Drafts.GetAsync(request.Draft.Target, CancellationToken))!.Text);
+        sender = Sender(f, drafts); // Recreated allocator must also exceed timestamps of earlier copies.
+        var secondCopy = await sender.SendChannelAsNewAsync(new(f.NodeId, owner.SessionId.Value, owner.Generation,
+            first.MessageId, 1, await f.ChannelRecipient()), CancellationToken);
+        var secondAttempt = Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, secondCopy.MessageId, CancellationToken));
+        Assert.True(secondAttempt.WireTimestamp > attempt.WireTimestamp);
+    }
+
+    [Fact]
     public async Task ChannelRepeatCreatesNewAttemptAfterReconnectAndRejectsStaleDoubleClick()
     {
         await using var f = await Fixture.CreateAsync(); await f.Connect();

@@ -63,8 +63,20 @@ public sealed partial class UiWorkspaceIntegrationTests
         Assert.Same(bubble, workspace.Navigation.Messages.Single(m => m.Id == bubble.Id));
         Assert.Equal("Черновик оставить", composer.Text);
         Assert.Equal(2, (await w.Storage.OutgoingMessages.GetAttemptsAsync(w.A.NodeId, bubble.Id, Token)).Count);
+        Assert.Equal("Повторить доставку", bubble.RetryLabel);
+        sender.Gate = null;
+        await UntilAsync(() => bubble.CanSendAsNew);
+        bubble.RequestSendAsNew();
+        await ((CommunityToolkit.Mvvm.Input.IAsyncRelayCommand)bubble.SendAsNewCommand!).ExecutionTask!;
+        await UntilAsync(() => workspace.Navigation.Messages.Count(m => m.Body == bubble.Body) == 2);
+        var copy = workspace.Navigation.Messages.Single(m => m.Body == bubble.Body && m.Id != bubble.Id);
+        Assert.Equal(count + 1, workspace.Navigation.Messages.Count);
+        Assert.Single(await w.Storage.OutgoingMessages.GetAttemptsAsync(w.A.NodeId, copy.Id, Token));
+        Assert.Equal(2, (await w.Storage.OutgoingMessages.GetAttemptsAsync(w.A.NodeId, bubble.Id, Token)).Count);
+        Assert.Equal("Черновик оставить", composer.Text);
         w.Supervisor.Publish(w.Supervisor.Snapshot with { State = MeshCoreMessenger.Core.Domain.ConnectionSupervisorState.Offline });
         await UntilAsync(() => !bubble.CanRetry);
-        bubble.RequestRetry(); Assert.Equal(2, sender.Calls);
+        Assert.False(bubble.CanSendAsNew);
+        bubble.RequestRetry(); bubble.RequestSendAsNew(); Assert.Equal(3, sender.Calls);
     }
 }

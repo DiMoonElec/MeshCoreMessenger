@@ -14,4 +14,5 @@ public interface IOutgoingMessageStore
         throw new NotSupportedException();
     Task<StoredOutgoingMessage> GetAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OutgoingAttemptSnapshot>> GetAttemptsAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
+    Task<long> GetLatestChannelTimestampAsync(Guid nodeId, CancellationToken cancellationToken = default) => Task.FromResult(0L);
 }

@@ -20,7 +20,7 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
     private readonly Func<Task, Task> _track;
     private readonly CancellationToken _token;
     private readonly ILogger _logger;
-    private readonly Dictionary<HistoryMessageListItem, AsyncRelayCommand> _commands = [];
+    private readonly Dictionary<HistoryMessageListItem, (AsyncRelayCommand Repeat, AsyncRelayCommand AsNew)> _commands = [];
     private bool _busy, _stopped;
 
     public ChannelRepeatCoordinator(ChatWorkspaceViewModel workspace, IConnectionSupervisor supervisor,
@@ -49,7 +49,8 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
         {
             if (!_commands.ContainsKey(item))
             {
-                _commands[item] = new AsyncRelayCommand(() => _track(RepeatAsync(item)), () => CanRepeat(item));
+                _commands[item] = (new AsyncRelayCommand(() => _track(RepeatAsync(item, false)), () => CanRepeat(item)),
+                    new AsyncRelayCommand(() => _track(RepeatAsync(item, true)), () => CanRepeat(item)));
                 item.PropertyChanged += OnMessageChanged;
             }
             Apply(item);
@@ -83,11 +84,13 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
     private void Apply(HistoryMessageListItem item)
     {
         if (!_commands.TryGetValue(item, out var command)) return;
-        item.SetRetryAction(command, Eligible(item), CanRepeat(item), requiresConfirmation: false);
-        command.NotifyCanExecuteChanged();
+        item.SetRetryAction(command.Repeat, Eligible(item), CanRepeat(item), requiresConfirmation: false);
+        item.SetSendAsNewAction(command.AsNew, Eligible(item), CanRepeat(item));
+        command.Repeat.NotifyCanExecuteChanged();
+        command.AsNew.NotifyCanExecuteChanged();
     }
 
-    private async Task RepeatAsync(HistoryMessageListItem item)
+    private async Task RepeatAsync(HistoryMessageListItem item, bool asNew)
     {
         if (!CanRepeat(item)) return;
         var owner = _supervisor.Snapshot;
@@ -102,7 +105,9 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
             var target = targets.FirstOrDefault(target => target.Slot == selectedSlot) ??
                 targets.FirstOrDefault(target => target.Slot == stored.Recipient.Slot) ?? targets.FirstOrDefault()
                 ?? throw new InvalidOperationException("Channel is no longer configured.");
-            await _service.RepeatChannelAsync(new(node, owner.SessionId!.Value, owner.Generation, item.Id, attemptNumber, target), _token);
+            var request = new ChannelRepeatRequest(node, owner.SessionId!.Value, owner.Generation, item.Id, attemptNumber, target);
+            if (asNew) await _service.SendChannelAsNewAsync(request, _token);
+            else await _service.RepeatChannelAsync(request, _token);
         }
         catch (OperationCanceledException) when (_token.IsCancellationRequested) { }
         catch (Exception error)

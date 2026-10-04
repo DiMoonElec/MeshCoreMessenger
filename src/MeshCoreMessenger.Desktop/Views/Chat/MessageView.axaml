@@ -12,8 +12,10 @@
         <ContextMenu>
           <MenuItem Header="Копировать" CommandParameter="{Binding}" Click="OnCopyMessage" />
           <MenuItem Header="Сведения о сообщении" CommandParameter="{Binding}" IsVisible="{Binding HasDetails}" Click="OnDetails" />
-          <MenuItem Header="Повторить отправку" CommandParameter="{Binding}" IsVisible="{Binding RetryVisible}"
+          <MenuItem Header="{Binding RetryLabel}" CommandParameter="{Binding}" IsVisible="{Binding RetryVisible}"
                     IsEnabled="{Binding CanRetry}" Click="OnRetry" />
+          <MenuItem Header="Отправить как новое" CommandParameter="{Binding}" IsVisible="{Binding SendAsNewVisible}"
+                    IsEnabled="{Binding CanSendAsNew}" Click="OnSendAsNew" />
         </ContextMenu>
       </StackPanel.ContextMenu>
       <Border Classes="message-bubble" Classes.outgoing="{Binding IsOutgoing}" Classes.failed="{Binding IsSendError}"

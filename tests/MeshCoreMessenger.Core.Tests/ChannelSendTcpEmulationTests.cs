@@ -84,11 +84,22 @@ public sealed partial class SessionCommandGatewayTests
             var timestamps = server.ChannelTimestamps.ToArray();
             Assert.Equal(timestamps[0], timestamps[1]);
             Assert.Equal(timestamps[1], attemptsAfterRepeat[1].WireTimestamp);
+            var copy = await sender.SendChannelAsNewAsync(new(node, owner.SessionId!.Value, owner.Generation,
+                outcome.MessageId, 2, target), CancellationToken);
+            Assert.NotEqual(outcome.MessageId, copy.MessageId);
+            Assert.Equal(outcome.State, copy.State);
+            Assert.Equal(3, server.ChannelSendCount);
+            Assert.Equal("Тест D5 👋", server.LastChannelText);
+            var copyAttempt = Assert.Single(await storage.OutgoingMessages.GetAttemptsAsync(node, copy.MessageId, CancellationToken));
+            Assert.Equal(1, copyAttempt.AttemptNumber);
+            Assert.True(copyAttempt.WireTimestamp > timestamps[0]);
+            Assert.Equal(server.ChannelTimestamps.ToArray()[2], copyAttempt.WireTimestamp);
+            Assert.Equal(attemptsAfterRepeat, await storage.OutgoingMessages.GetAttemptsAsync(node, outcome.MessageId, CancellationToken));
             await drafts.FlushAsync(draftTarget, CancellationToken);
             Assert.Equal("Новый черновик не отправлять", (await storage.Drafts.GetAsync(draftTarget, CancellationToken))!.Text);
             await supervisor.ShutdownAsync(CancellationToken);
             await server.Completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken);
-            Assert.Equal(2, server.ChannelSendCount);
+            Assert.Equal(3, server.ChannelSendCount);
         }
         finally { Directory.Delete(paths.DataDirectory, true); }
     }

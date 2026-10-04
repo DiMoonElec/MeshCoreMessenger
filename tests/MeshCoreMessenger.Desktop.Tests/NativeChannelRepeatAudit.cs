@@ -40,7 +40,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                     var anchor = message.GetVisualDescendants().OfType<StackPanel>().Single(panel => panel.Classes.Contains("message"));
                     var menu = anchor.ContextMenu!;
                     menu.Open(anchor); await SettleAsync(window);
-                    var retry = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Повторить отправку"));
+                    var retry = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Повторить доставку"));
                     if (!retry.IsVisible || !retry.IsEnabled) throw new InvalidOperationException("Channel repeat menu binding failed.");
                     retry.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); menu.Close();
                     await UntilAsync(() => bubble.Presentation.AttemptNumber == 2 && bubble.Presentation.State == MessageSendDisplayState.AcceptedByNode);
@@ -48,9 +48,18 @@ public sealed partial class UiWorkspaceIntegrationTests
                     if (sender.Calls != 2 || window.OwnedWindows.Count != 0 || composer.Text != "Черновик остаётся" ||
                         workspace.Navigation.Messages.Count(m => m.Id == bubble.Id) != 1)
                         throw new InvalidOperationException("Repeat required a dialog, changed the draft, or duplicated the bubble.");
+                    menu.Open(anchor); await SettleAsync(window);
+                    var asNew = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Отправить как новое"));
+                    if (!asNew.IsVisible || !asNew.IsEnabled) throw new InvalidOperationException("Send as new menu binding failed.");
+                    asNew.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); menu.Close();
+                    await UntilAsync(() => workspace.Navigation.Messages.Count(m => m.Body == bubble.Body) == 2);
+                    await SettleAsync(window);
+                    if (sender.Calls != 3 || window.OwnedWindows.Count != 0 || composer.Text != "Черновик остаётся" ||
+                        bubble.Presentation.AttemptNumber != 2)
+                        throw new InvalidOperationException("Send as new did not preserve source or draft.");
                     using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
                     bitmap.Render(window); bitmap.Save(Path.Combine(output, $"{theme}-{width}.png"), PngBitmapEncoderOptions.Default);
-                    Console.WriteLine($"Channel repeat/{theme}/{width}: context menu, no confirmation, one bubble, draft retained.");
+                    Console.WriteLine($"Channel repeat/{theme}/{width}: context menu, no confirmation, delivery repeat keeps one bubble; send as new adds a bubble; draft retained.");
                 }
                 finally { await w.Root.StopAsync(); window.Close(); }
             }

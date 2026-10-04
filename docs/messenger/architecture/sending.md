@@ -86,3 +86,5 @@ D6: тот же MessageService подключает личную отправк�
 перед Delivered и сохраняет RTT. Observer/cleanup завершаются через D4 session barrier;
 ошибки записи повторяются только в SQLite. Подробности и доказательства —
 [D6](../plan/d6-private-send.md).
+
+D7.1, 05.10.2026: в канальном меню «Повторить доставку» создаёт attempt того же message с прежним timestamp; «Отправить как новое» создаёт новое message с новым timestamp. Оба используют сохранённый текст, оставляя текущий draft. [Контракт и проверки](../../testing/channel-repeat-actions.md).

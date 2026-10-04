@@ -110,6 +110,19 @@ public sealed partial class UiWorkspaceIntegrationTests
     // UI adapter deliberately uses the real outgoing store/notifications. Core tests exercise the production service/session.
     private sealed class UiChannelSender(Workspace w) : IMessageService
     {
+        public async Task<ChannelSendOutcome> SendChannelAsNewAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
+        {
+            var stored = await w.Storage.OutgoingMessages.GetAsync(request.NodeId, request.MessageId, cancellationToken);
+            Calls++; LastSlot = request.Recipient.Slot;
+            var prepared = await w.Storage.OutgoingMessages.PrepareAsync(new(Guid.NewGuid(), request.NodeId, request.SessionId,
+                stored.ConversationId, request.Recipient, stored.OriginalText, stored.TransmissionText, 160, DateTimeOffset.UtcNow), cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, prepared.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Prepared, SendAttemptState.Sending, DateTimeOffset.UtcNow), cancellationToken);
+            if (Gate is not null) await Gate.WaitAsync(cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, prepared.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Sending, SendAttemptState.Accepted, DateTimeOffset.UtcNow, AckExpectation.NotExpected), cancellationToken);
+            return new(prepared.MessageId, SendAttemptState.Accepted);
+        }
         public async Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
         {
             Calls++; LastSlot = request.Recipient.Slot;

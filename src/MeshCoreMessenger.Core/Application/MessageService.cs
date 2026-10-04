@@ -21,6 +21,8 @@ public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
 
 public interface IMessageService
 {
+    Task<ChannelSendOutcome> SendChannelAsNewAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<IReadOnlyList<OutgoingRecipient>> GetChannelTargetsAsync(Guid nodeId, ReadOnlyMemory<byte> fingerprint,
@@ -40,12 +42,20 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
     private long _lastChannelTimestamp;
 
     public async Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
+        => await SendCapturedChannelAsync(request, false, cancellationToken).ConfigureAwait(false);
+
+    public Task<ChannelSendOutcome> SendChannelAsNewAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
+        SendCapturedChannelAsync(request, true, cancellationToken);
+
+    private async Task<ChannelSendOutcome> SendCapturedChannelAsync(ChannelRepeatRequest request, bool asNew, CancellationToken cancellationToken)
     {
         var stored = await messages.GetAsync(request.NodeId, request.MessageId, cancellationToken).ConfigureAwait(false);
+        if (stored.Recipient.Kind != ConversationKind.Channel)
+            throw new InvalidOperationException("Only captured channel messages are supported.");
         var capture = new DraftCapture(new(request.NodeId, stored.ConversationId, ConversationKind.Channel,
             stored.Recipient.Identity.ToArray()), stored.OriginalText, 0);
         return await SendAsync(new ChannelSendRequest(request.NodeId, request.SessionId, request.Generation,
-            request.Recipient, capture, new()), true, null, cancellationToken, stored, request.ExpectedAttemptNumber).ConfigureAwait(false);
+            request.Recipient, capture, new()), true, null, cancellationToken, stored, request.ExpectedAttemptNumber, asNew).ConfigureAwait(false);
     }
 
     public async Task<IReadOnlyList<OutgoingRecipient>> GetChannelTargetsAsync(Guid nodeId, ReadOnlyMemory<byte> fingerprint,
@@ -77,7 +87,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
 
     private async Task<ChannelSendOutcome> SendAsync(TextSendRequest request, bool isChannel,
         Func<DraftCapture, Task>? transferred, CancellationToken cancellationToken,
-        StoredOutgoingMessage? repeat = null, int expectedAttemptNumber = 0)
+        StoredOutgoingMessage? repeat = null, int expectedAttemptNumber = 0, bool asNew = false)
     {
         if (!await _singleFlight.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("An outgoing send is already in progress.");
@@ -106,18 +116,18 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             {
                 // A not-yet-materialized directory conversation is created by the local draft store.
                 PreparedOutgoingMessage prepared;
-                if (repeat is not null)
+                if (repeat is not null && !asNew)
                     prepared = await messages.PrepareChannelRepeatAsync(new(request.NodeId, repeat.MessageId, owned.Owner.SessionId,
                         recipient, expectedAttemptNumber, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
                 else
                 {
-                    await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
-                    var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
+                    if (repeat is null) await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
+                    var draft = repeat is null ? await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false) : null;
                     var conversation = capture.Target.ConversationId ?? draft?.ConversationId
                         ?? throw new InvalidOperationException("The conversation has not been materialized.");
                     prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
-                        conversation, recipient, processed!.OriginalText, transmission,
-                        processed.Validation.MaxUtf8Bytes!.Value, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                        conversation, recipient, repeat?.OriginalText ?? processed!.OriginalText, transmission,
+                        processed?.Validation.MaxUtf8Bytes ?? budget, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
                 }
                 await owned.BindOutgoingAsync(prepared.MessageId, prepared.Attempt.Id).ConfigureAwait(false);
                 if (repeat is null && await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
@@ -125,11 +135,12 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 uint? channelTimestamp = null;
                 if (isChannel)
                 {
-                    var attempts = await messages.GetAttemptsAsync(request.NodeId, prepared.MessageId, token).ConfigureAwait(false);
+                    var attempts = await messages.GetAttemptsAsync(request.NodeId, repeat?.MessageId ?? prepared.MessageId, token).ConfigureAwait(false);
                     var prior = attempts.Max(attempt => attempt.WireTimestamp ?? 0);
-                    // Temporary hardware deduplication experiment: repeat the captured
-                    // payload timestamp rather than making this a new mesh message.
-                    var next = repeat is not null
+                    if (repeat is null || asNew)
+                        prior = Math.Max(prior, await messages.GetLatestChannelTimestampAsync(request.NodeId, token).ConfigureAwait(false));
+                    // Delivery repeat retains packet identity; sending as new must exceed the source timestamp.
+                    var next = repeat is not null && !asNew
                         ? attempts.First(attempt => attempt.WireTimestamp is not null).WireTimestamp!.Value
                         : Math.Max(timeProvider.GetUtcNow().ToUnixTimeSeconds(), Math.Max(prior, _lastChannelTimestamp) + 1);
                     channelTimestamp = checked((uint)next);
