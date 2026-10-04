@@ -47,6 +47,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
     public int ChannelSendCount { get; private set; }
+    public System.Collections.Concurrent.ConcurrentQueue<uint> ChannelTimestamps { get; } = new();
     public string? LastChannelText { get; private set; }
     public byte? LastChannelSlot { get; private set; }
     public bool RejectChannelSend { get; set; }
@@ -150,6 +151,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             {
                 ChannelSendCount++;
                 LastChannelSlot = command[2];
+                ChannelTimestamps.Enqueue(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3, 4)));
                 LastChannelText = Encoding.UTF8.GetString(command.AsSpan(7));
                 if (BeforeChannelResponse is not null) await BeforeChannelResponse();
                 await WriteFrameAsync(stream, 0x3E, RejectChannelSend

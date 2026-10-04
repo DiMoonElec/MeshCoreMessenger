@@ -1177,6 +1177,8 @@ public sealed class HistoryMessageListItem : ObservableObject
 {
     private bool _isSearchMatch;
     private MessagePresentation _presentation = new();
+    private System.Windows.Input.ICommand? _retryCommand;
+    private bool? _retryVisible, _retryEnabled, _retryRequiresConfirmation;
 
     public HistoryMessageListItem(HistoryMessage message, bool isSearchMatch = false)
     {
@@ -1239,11 +1241,19 @@ public sealed class HistoryMessageListItem : ObservableObject
         Presentation.AttemptNumber is { } attempt ? $"Попытка: {attempt}" : null,
         Presentation.Details }
         .Where(s => !string.IsNullOrWhiteSpace(s)));
-    public bool RetryVisible => IsOutgoing && Presentation.RetryVisible;
-    public bool CanRetry => RetryVisible && Presentation.RetryEnabled && Presentation.RetryCommand?.CanExecute(null) == true;
+    internal void SetRetryAction(System.Windows.Input.ICommand command, bool visible, bool enabled, bool requiresConfirmation)
+    {
+        _retryCommand = command; _retryVisible = visible; _retryEnabled = enabled; _retryRequiresConfirmation = requiresConfirmation;
+        OnPropertyChanged(nameof(RetryVisible)); OnPropertyChanged(nameof(CanRetry));
+        OnPropertyChanged(nameof(RetryRequiresConfirmation));
+    }
+    public bool RetryRequiresConfirmation => _retryRequiresConfirmation ?? true;
+    public System.Windows.Input.ICommand? RetryCommand => _retryCommand ?? Presentation.RetryCommand;
+    public bool RetryVisible => IsOutgoing && (_retryVisible ?? Presentation.RetryVisible);
+    public bool CanRetry => RetryVisible && (_retryEnabled ?? Presentation.RetryEnabled) && RetryCommand?.CanExecute(null) == true;
     public void RequestRetry()
     {
-        if (CanRetry) Presentation.RetryCommand!.Execute(null);
+        if (CanRetry) RetryCommand!.Execute(null);
     }
     public string ContentLabel { get; }
     public string Body { get; }

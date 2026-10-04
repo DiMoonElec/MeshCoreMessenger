@@ -420,7 +420,19 @@ public sealed class MeshCoreClient : IAsyncDisposable
         byte channelIndex, string text, CancellationToken cancellationToken = default)
     {
         EnsureReady();
-        var timestamp = NextMessageTimestamp();
+        return await SendChannelTextAsync(channelIndex, text, NextMessageTimestamp(), cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Sends once with the supplied wire timestamp, for durable application-owned retries.</summary>
+    public async Task<ChannelMessageSendResult> SendChannelTextAsync(
+        byte channelIndex, string text, uint timestamp, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        while (true)
+        {
+            var previous = Interlocked.Read(ref _lastMessageTimestamp);
+            if (previous >= timestamp || Interlocked.CompareExchange(ref _lastMessageTimestamp, timestamp, previous) == previous) break;
+        }
         var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
         await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,

@@ -43,7 +43,7 @@ public sealed partial class UiWorkspaceIntegrationTests
         Assert.Same(sendingBubble, bubble);
         Assert.Equal(old.Length + 1, history.Messages.Count);
         Assert.Equal("новый черновик", composer.Text); Assert.Equal("private unchanged", privateDraft.Text);
-        Assert.Equal(1, sender.Calls); Assert.False(bubble.RetryVisible);
+        Assert.Equal(1, sender.Calls); Assert.True(bubble.RetryVisible);
         Assert.DoesNotContain("Доставлено", bubble.MetadataText);
         Assert.All(old, m => Assert.Contains(m, history.Messages));
     }
@@ -110,6 +110,18 @@ public sealed partial class UiWorkspaceIntegrationTests
     // UI adapter deliberately uses the real outgoing store/notifications. Core tests exercise the production service/session.
     private sealed class UiChannelSender(Workspace w) : IMessageService
     {
+        public async Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls++; LastSlot = request.Recipient.Slot;
+            var prepared = await w.Storage.OutgoingMessages.PrepareChannelRepeatAsync(new(request.NodeId, request.MessageId,
+                request.SessionId, request.Recipient, request.ExpectedAttemptNumber, DateTimeOffset.UtcNow), cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, request.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Prepared, SendAttemptState.Sending, DateTimeOffset.UtcNow), cancellationToken);
+            if (Gate is not null) await Gate.WaitAsync(cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, request.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Sending, SendAttemptState.Accepted, DateTimeOffset.UtcNow, AckExpectation.NotExpected), cancellationToken);
+            return new(request.MessageId, SendAttemptState.Accepted);
+        }
         public Task? Gate { get; set; }
         public int Calls { get; private set; }
         public byte? LastSlot { get; private set; }

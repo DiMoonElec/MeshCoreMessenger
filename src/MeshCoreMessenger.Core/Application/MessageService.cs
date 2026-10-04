@@ -15,10 +15,14 @@ public sealed record PrivateSendRequest(Guid NodeId, Guid SessionId, long Genera
     OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options)
     : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
 public sealed record PrivateSendOutcome(Guid MessageId, SendAttemptState State);
+public sealed record ChannelRepeatRequest(Guid NodeId, Guid SessionId, long Generation,
+    Guid MessageId, int ExpectedAttemptNumber, OutgoingRecipient Recipient);
 public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
 
 public interface IMessageService
 {
+    Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<IReadOnlyList<OutgoingRecipient>> GetChannelTargetsAsync(Guid nodeId, ReadOnlyMemory<byte> fingerprint,
         CancellationToken cancellationToken = default);
     Task<PrivateSendOutcome> SendPrivateAsync(PrivateSendRequest request,
@@ -33,6 +37,16 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
     IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations) : IMessageService
 {
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
+    private long _lastChannelTimestamp;
+
+    public async Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
+    {
+        var stored = await messages.GetAsync(request.NodeId, request.MessageId, cancellationToken).ConfigureAwait(false);
+        var capture = new DraftCapture(new(request.NodeId, stored.ConversationId, ConversationKind.Channel,
+            stored.Recipient.Identity.ToArray()), stored.OriginalText, 0);
+        return await SendAsync(new ChannelSendRequest(request.NodeId, request.SessionId, request.Generation,
+            request.Recipient, capture, new()), true, null, cancellationToken, stored, request.ExpectedAttemptNumber).ConfigureAwait(false);
+    }
 
     public async Task<IReadOnlyList<OutgoingRecipient>> GetChannelTargetsAsync(Guid nodeId, ReadOnlyMemory<byte> fingerprint,
         CancellationToken cancellationToken = default)
@@ -62,7 +76,8 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
     }
 
     private async Task<ChannelSendOutcome> SendAsync(TextSendRequest request, bool isChannel,
-        Func<DraftCapture, Task>? transferred, CancellationToken cancellationToken)
+        Func<DraftCapture, Task>? transferred, CancellationToken cancellationToken,
+        StoredOutgoingMessage? repeat = null, int expectedAttemptNumber = 0)
     {
         if (!await _singleFlight.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("An outgoing send is already in progress.");
@@ -82,29 +97,48 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 ? new ChannelCommandTarget(recipient) : new ContactCommandTarget(recipient.Identity), cancellationToken);
             if (lease.Owner.SessionId != request.SessionId || lease.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
-            var processed = processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName), request.Options);
-            if (!processed.Validation.IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
+            var processed = repeat is null ? processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName), request.Options) : null;
+            var transmission = repeat?.TransmissionText ?? processed!.TransmissionText;
+            var budget = isChannel ? MeshCoreSharp.TextMessageValidator.GetChannelTextLimit(lease.Owner.SenderName) : MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes;
+            if (!(processed?.Validation.IsValid ?? MeshCoreSharp.TextMessageValidator.Validate(transmission, budget).IsValid) || string.IsNullOrWhiteSpace(transmission))
                 throw new ArgumentException("Message text is empty or invalid.");
             return await lease.RunAsync(async (owned, token) =>
             {
                 // A not-yet-materialized directory conversation is created by the local draft store.
-                await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
-                var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
-                var conversation = capture.Target.ConversationId ?? draft?.ConversationId
-                    ?? throw new InvalidOperationException("The conversation has not been materialized.");
-                var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
-                    conversation, recipient, processed.OriginalText, processed.TransmissionText,
-                    processed.Validation.MaxUtf8Bytes!.Value, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                PreparedOutgoingMessage prepared;
+                if (repeat is not null)
+                    prepared = await messages.PrepareChannelRepeatAsync(new(request.NodeId, repeat.MessageId, owned.Owner.SessionId,
+                        recipient, expectedAttemptNumber, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                else
+                {
+                    await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
+                    var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
+                    var conversation = capture.Target.ConversationId ?? draft?.ConversationId
+                        ?? throw new InvalidOperationException("The conversation has not been materialized.");
+                    prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
+                        conversation, recipient, processed!.OriginalText, transmission,
+                        processed.Validation.MaxUtf8Bytes!.Value, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                }
                 await owned.BindOutgoingAsync(prepared.MessageId, prepared.Attempt.Id).ConfigureAwait(false);
-                if (await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
+                if (repeat is null && await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
                     await transferred(capture).ConfigureAwait(false);
-                if (!await owned.TransitionAsync(SendAttemptState.Prepared, SendAttemptState.Sending).ConfigureAwait(false))
+                uint? channelTimestamp = null;
+                if (isChannel)
+                {
+                    var attempts = await messages.GetAttemptsAsync(request.NodeId, prepared.MessageId, token).ConfigureAwait(false);
+                    var prior = attempts.Max(attempt => attempt.WireTimestamp ?? 0);
+                    var next = Math.Max(timeProvider.GetUtcNow().ToUnixTimeSeconds(), Math.Max(prior, _lastChannelTimestamp) + 1);
+                    channelTimestamp = checked((uint)next);
+                    _lastChannelTimestamp = next;
+                }
+                if (!await owned.TransitionAsync(SendAttemptState.Prepared, SendAttemptState.Sending,
+                    wireTimestamp: channelTimestamp).ConfigureAwait(false))
                     throw new InvalidOperationException("Sending was not committed.");
                 ChannelMessageSendResult? channelResult = null;
                 TextMessageSendResult? privateResult = null;
                 try
                 {
-                    if (isChannel) channelResult = await owned.SendChannelTextAsync().ConfigureAwait(false);
+                    if (isChannel) channelResult = await owned.SendChannelTextAsync(channelTimestamp).ConfigureAwait(false);
                     else
                     {
                         privateResult = await owned.SendTextAsync().ConfigureAwait(false);

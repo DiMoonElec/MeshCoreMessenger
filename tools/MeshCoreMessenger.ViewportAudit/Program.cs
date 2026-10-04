@@ -16,7 +16,8 @@ try
     {
         try
         {
-            if (args.Contains("--modal-only")) await UiWorkspaceIntegrationTests.NativeModalAudit.RunAsync();
+            if (args.Contains("--repeat-channel-only")) await UiWorkspaceIntegrationTests.NativeChannelRepeatAudit.RunAsync();
+            else if (args.Contains("--modal-only")) await UiWorkspaceIntegrationTests.NativeModalAudit.RunAsync();
             else if (args.Contains("--route-reset-only")) await UiWorkspaceIntegrationTests.NativeContactRouteAudit.RunAsync();
             else if (args.Contains("--history-clear-only")) await UiWorkspaceIntegrationTests.NativeHistoryClearAudit.RunAsync();
             else if (args.Contains("--private-send-only")) await UiWorkspaceIntegrationTests.NativePrivateSendAudit.RunAsync();

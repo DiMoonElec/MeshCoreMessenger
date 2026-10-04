@@ -119,6 +119,46 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
         }
     }
 
+    public async Task<PreparedOutgoingMessage> PrepareChannelRepeatAsync(PrepareChannelRepeat repeat, CancellationToken cancellationToken = default)
+    {
+        var recipient = repeat.Recipient with { Identity = repeat.Recipient.Identity.ToArray() };
+        if (recipient.Kind != ConversationKind.Channel || recipient.Identity.Length != 32 || repeat.ExpectedAttemptNumber < 1)
+            throw new ArgumentException("A resolved channel and previous attempt are required.", nameof(repeat));
+        var prepared = await writer.ExecuteAsync(connection =>
+        {
+            using var transaction = connection.BeginTransaction();
+            using var query = Command(connection, transaction, """
+                SELECT m.LocalSequence,m.ConversationId,m.Text,m.TransmissionText,ch.KeyFingerprint
+                FROM Messages m JOIN Conversations c ON c.Id=m.ConversationId JOIN Channels ch ON ch.Id=c.ChannelId
+                WHERE m.Id=$message AND c.NodeId=$node AND c.Kind=1 AND m.Direction=1 AND m.MessageKind=0;
+                """, ("$message", repeat.MessageId), ("$node", repeat.NodeId));
+            using var row = query.ExecuteReader();
+            if (!row.Read() || row.IsDBNull(3) || !((byte[])row.GetValue(4)).AsSpan().SequenceEqual(recipient.Identity.Span))
+                throw new InvalidOperationException("Only a captured outgoing message in this channel can be repeated.");
+            var sequence = row.GetInt64(0); var conversation = Guid.Parse(row.GetString(1));
+            var original = row.GetString(2); var text = row.GetString(3); row.Close();
+            var attempts = ReadAttempts(connection, transaction, repeat.NodeId, repeat.MessageId);
+            var latest = attempts[^1];
+            if (latest.AttemptNumber != repeat.ExpectedAttemptNumber || latest.State == SendAttemptState.Sending ||
+                latest.State == SendAttemptState.Accepted && latest.AckExpectation != AckExpectation.NotExpected)
+                throw new InvalidOperationException("The message attempt has changed or is still sending.");
+            EnsureOwnership(connection, transaction, new(repeat.MessageId, repeat.NodeId, repeat.SessionId,
+                conversation, recipient, original, text, MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, repeat.PreparedUtc));
+            var id = Guid.NewGuid();
+            using var insert = Command(connection, transaction, """
+                INSERT INTO SendAttempts (Id,MessageId,SessionId,AttemptNumber,State,StartedUtc)
+                VALUES ($id,$message,$session,$number,0,$utc);
+                """, ("$id", id), ("$message", repeat.MessageId), ("$session", repeat.SessionId),
+                ("$number", checked(latest.AttemptNumber + 1)), ("$utc", repeat.PreparedUtc.ToUniversalTime()));
+            insert.ExecuteNonQuery();
+            var attempt = ReadAttempts(connection, transaction, repeat.NodeId, repeat.MessageId)[^1];
+            transaction.Commit();
+            return (Prepared: new PreparedOutgoingMessage(repeat.MessageId, sequence, attempt), Conversation: conversation);
+        }, cancellationToken).ConfigureAwait(false);
+        Notify(new(repeat.NodeId, prepared.Conversation, repeat.MessageId, false));
+        return prepared.Prepared;
+    }
+
     public async Task<bool> TransitionAsync(OutgoingAttemptTransition transition, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(transition);
@@ -160,7 +200,7 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
                 AcceptedUtc=CASE WHEN $state=1 THEN $utc ELSE AcceptedUtc END,
                 CompletedUtc=CASE WHEN $terminal THEN $utc ELSE CompletedUtc END,
                 AckExpectation=CASE WHEN $state=1 THEN $expectation ELSE AckExpectation END,
-                WireTimestamp=CASE WHEN $state=1 THEN $timestamp ELSE WireTimestamp END,
+                WireTimestamp=CASE WHEN $state IN (1,6) THEN COALESCE($timestamp,WireTimestamp) ELSE WireTimestamp END,
                 ExpectedAck=CASE WHEN $state=1 THEN $ack ELSE ExpectedAck END,
                 RoundTripMilliseconds=COALESCE($rtt,RoundTripMilliseconds), ErrorCode=$error
             WHERE Id=$id AND State=$expected;

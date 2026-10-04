@@ -33,7 +33,9 @@ public sealed partial class MessageView : UserControl
     private async void OnRetry(object? sender, RoutedEventArgs args)
     {
         if (sender is not MenuItem { CommandParameter: HistoryMessageListItem message } ||
-            !message.CanRetry || TopLevel.GetTopLevel(this) is not Window owner) return;
+            !message.CanRetry) return;
+        if (!message.RetryRequiresConfirmation) { message.RequestRetry(); return; }
+        if (TopLevel.GetTopLevel(this) is not Window owner) return;
         // Capture the clicked message, not the current selection. Recheck admission after confirmation.
         if (await new MessageActionDialog("Сообщение могло быть доставлено. Повтор может создать дубликат у получателя.", true)
             { RequestedThemeVariant = owner.ActualThemeVariant }

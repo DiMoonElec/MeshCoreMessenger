@@ -92,6 +92,7 @@ public sealed class ComposerViewModel : ObservableObject
         }
         InvalidateSend();
     }
+    internal void SetActionError(string? error) { _sendError = error; OnPropertyChanged(nameof(StatusLine)); }
     internal void StopSend() { _stopped = true; InvalidateSend(); }
     private async Task SendAsync()
     {

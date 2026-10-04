@@ -42,3 +42,7 @@ public sealed record OutgoingMessageCommit(Guid NodeId, Guid ConversationId, Gui
 /// <summary>Persisted immutable send capture. TransmissionText is never reprocessed on a lease.</summary>
 public sealed record StoredOutgoingMessage(Guid MessageId, Guid NodeId, Guid ConversationId, Guid? SessionId,
     OutgoingRecipient Recipient, string OriginalText, string TransmissionText);
+
+/// <summary>CAS append of a channel attempt; message body and channel identity remain immutable.</summary>
+public sealed record PrepareChannelRepeat(Guid NodeId, Guid MessageId, Guid SessionId,
+    OutgoingRecipient Recipient, int ExpectedAttemptNumber, DateTimeOffset PreparedUtc);

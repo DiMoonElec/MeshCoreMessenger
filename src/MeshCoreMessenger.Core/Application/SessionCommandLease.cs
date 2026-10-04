@@ -62,6 +62,10 @@ public sealed class SessionCommandLease : IAsyncDisposable
         var message = await _scope.Messages.GetAsync(Owner.NodeId, messageId, Token).ConfigureAwait(false);
         var attempts = await _scope.Messages.GetAttemptsAsync(Owner.NodeId, messageId, Token).ConfigureAwait(false);
         var attempt = attempts.SingleOrDefault(item => item.Id == attemptId);
+        // Repeats retain the message's original session/binding, but own a new session and current binding.
+        if (attempt is { AttemptNumber: > 1 } && Target is ChannelCommandTarget channel &&
+            message.Recipient.Kind == ConversationKind.Channel && message.Recipient.Identity.Span.SequenceEqual(channel.Recipient.Identity.Span))
+            message = message with { SessionId = Owner.SessionId, Recipient = channel.Recipient };
         if (attempt is null || attempt.SessionId != Owner.SessionId || message.SessionId != Owner.SessionId || attempt.State != SendAttemptState.Prepared || !Matches(message.Recipient))
             throw new InvalidOperationException("Prepared attempt belongs to another session/recipient or has already started.");
         lock (_scope.Gate)
@@ -123,11 +127,13 @@ public sealed class SessionCommandLease : IAsyncDisposable
         return await _scope.Invoke(this, (client, token) => client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 
-    public Task<ChannelMessageSendResult> SendChannelTextAsync() => OwnAsync(async () =>
+    public Task<ChannelMessageSendResult> SendChannelTextAsync(uint? timestamp = null) => OwnAsync(async () =>
     {
         if (Target is not ChannelCommandTarget channel) throw new InvalidOperationException("Channel sending requires a binding target.");
         await ValidateTextSendAsync().ConfigureAwait(false);
-        return await _scope.Invoke(this, (client, token) => client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
+        return await _scope.Invoke(this, (client, token) => timestamp is { } wireTimestamp
+            ? client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, wireTimestamp, token)
+            : client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 
     public Task SendAdvertisementAsync(AdvertisementMode mode)

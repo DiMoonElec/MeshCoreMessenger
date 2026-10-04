@@ -59,7 +59,7 @@ public sealed partial class SessionCommandGatewayTests
             storage.OutgoingMessages.MessageCommitted += (_, commit) => { if (commit.Inserted) messageId = commit.MessageId; };
             server.BeforeChannelResponse = async () =>
             {
-                var attempt = Assert.Single(await storage.OutgoingMessages.GetAttemptsAsync(node, messageId, CancellationToken));
+                var attempt = (await storage.OutgoingMessages.GetAttemptsAsync(node, messageId, CancellationToken))[^1];
                 Assert.Equal(SendAttemptState.Sending, attempt.State);
                 Assert.Equal("Тест D5 👋", (await storage.OutgoingMessages.GetAsync(node, messageId, CancellationToken)).TransmissionText);
             };
@@ -71,9 +71,24 @@ public sealed partial class SessionCommandGatewayTests
             var final = Assert.Single(await storage.OutgoingMessages.GetAttemptsAsync(node, outcome.MessageId, CancellationToken));
             Assert.Equal(outcome.State, final.State);
             if (!reject) Assert.Equal(AckExpectation.NotExpected, final.AckExpectation);
+            drafts.Update(draftTarget, "Новый черновик не отправлять", 2);
+            var repeated = await sender.RepeatChannelAsync(new(node, owner.SessionId!.Value, owner.Generation,
+                outcome.MessageId, 1, target), CancellationToken);
+            Assert.Equal(outcome.MessageId, repeated.MessageId);
+            Assert.Equal(outcome.State, repeated.State);
+            Assert.Equal(2, server.ChannelSendCount);
+            Assert.Equal("Тест D5 👋", server.LastChannelText);
+            var attemptsAfterRepeat = await storage.OutgoingMessages.GetAttemptsAsync(node, outcome.MessageId, CancellationToken);
+            Assert.Equal(new[] { 1, 2 }, attemptsAfterRepeat.Select(attempt => attempt.AttemptNumber));
+            Assert.Equal(final, attemptsAfterRepeat[0]);
+            var timestamps = server.ChannelTimestamps.ToArray();
+            Assert.True(timestamps[1] > timestamps[0]);
+            Assert.Equal(timestamps[1], attemptsAfterRepeat[1].WireTimestamp);
+            await drafts.FlushAsync(draftTarget, CancellationToken);
+            Assert.Equal("Новый черновик не отправлять", (await storage.Drafts.GetAsync(draftTarget, CancellationToken))!.Text);
             await supervisor.ShutdownAsync(CancellationToken);
             await server.Completion.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken);
-            Assert.Equal(1, server.ChannelSendCount);
+            Assert.Equal(2, server.ChannelSendCount);
         }
         finally { Directory.Delete(paths.DataDirectory, true); }
     }

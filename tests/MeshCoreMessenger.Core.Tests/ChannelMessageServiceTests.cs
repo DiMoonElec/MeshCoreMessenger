@@ -43,7 +43,7 @@ public sealed partial class SessionCommandGatewayTests
         Assert.Equal(SendAttemptState.Accepted, outcome.State);
         Assert.Equal(1, f.Clients.Current.Tx); Assert.Equal("processed", f.Clients.Current.SentText);
         var final = Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, outcome.MessageId, CancellationToken));
-        Assert.Equal(AckExpectation.NotExpected, final.AckExpectation); Assert.Equal(42, final.WireTimestamp);
+        Assert.Equal(AckExpectation.NotExpected, final.AckExpectation); Assert.Equal(f.Clients.Current!.SentChannelTimestamp, final.WireTimestamp);
         Assert.Single(commits, c => c.Inserted); Assert.Equal(3, commits.Count);
         Assert.Equal("", await drafts.LoadTextAsync(request.Draft.Target, CancellationToken));
         await f.Supervisor.DisconnectAsync(CancellationToken); await f.Connect();
