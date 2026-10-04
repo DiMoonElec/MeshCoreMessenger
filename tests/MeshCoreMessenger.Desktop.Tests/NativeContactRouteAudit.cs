@@ -54,7 +54,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                     await workspace.RouteReset.Command.ExecutionTask!;
                     await SettleAsync(window);
                     if (service.Calls != 1 || workspace.RouteReset.StatusMessage != "Маршрут сброшен." ||
-                        !workspace.Navigation.SelectedMetadata.Contains("flood") ||
+                        workspace.Navigation.SelectedMetadata != "Маршрут: широковещательный" ||
                         !messages.SequenceEqual(workspace.Navigation.Messages.Select(message => message.Id)) ||
                         workspace.Navigation.Draft.Text != "Черновик не отправляется 👋") throw new InvalidOperationException("Reset metadata/history/draft audit failed.");
                     using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));

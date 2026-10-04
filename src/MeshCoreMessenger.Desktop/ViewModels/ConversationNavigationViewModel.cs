@@ -198,6 +198,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
                 OnPropertyChanged(nameof(SelectedTitle));
                 OnPropertyChanged(nameof(SelectedIdentity));
                 OnPropertyChanged(nameof(SelectedMetadata));
+                OnPropertyChanged(nameof(HasSelectedMetadata));
             }
         }
     }
@@ -210,6 +211,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             if (SetProperty(ref _contactDetails, value))
             {
                 OnPropertyChanged(nameof(SelectedMetadata));
+                OnPropertyChanged(nameof(HasSelectedMetadata));
             }
         }
     }
@@ -222,6 +224,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
             if (SetProperty(ref _channelDetails, value))
             {
                 OnPropertyChanged(nameof(SelectedMetadata));
+                OnPropertyChanged(nameof(HasSelectedMetadata));
             }
         }
     }
@@ -275,6 +278,7 @@ public sealed class ConversationNavigationViewModel : ObservableObject
     public string SelectedTitle => SelectedConversation?.Title ?? "Выберите диалог";
     public string SelectedIdentity => SelectedConversation?.IdentityHex ?? string.Empty;
     public string SelectedMetadata => DescribeSelectedMetadata();
+    public bool HasSelectedMetadata => !string.IsNullOrEmpty(SelectedMetadata);
 
     public bool IsNarrowLayout
     {
@@ -875,33 +879,10 @@ public sealed class ConversationNavigationViewModel : ObservableObject
 
     private string DescribeSelectedMetadata()
     {
-        if (SelectedConversation is null)
-        {
+        if (SelectedConversation?.Kind is not (ConversationKind.Contact or ConversationKind.UnknownContact))
             return string.Empty;
-        }
 
-        if (ContactDetails is { } contact)
-        {
-            var presence = contact.PresentOnNode ? "есть в справочнике ноды" : "сохранён в истории";
-            var advert = contact.LastAdvertUtc is { } lastAdvert
-                ? $"advert: {lastAdvert.ToLocalTime():g}"
-                : "advert: неизвестно";
-            var location = contact.Latitude is { } latitude && contact.Longitude is { } longitude
-                ? $"координаты: {latitude:F5}, {longitude:F5}"
-                : "координаты: неизвестны";
-            var route = "маршрут: " + ContactRouteFormatter.Format(contact.OutPathLength, contact.OutPath);
-            return $"{SelectedConversation.TypeLabel} · {presence} · {advert} · {location} · {route}";
-        }
-
-        if (ChannelDetails is { } channel)
-        {
-            var slots = channel.ActiveSlots.Count == 0
-                ? "нет активного слота"
-                : $"слоты: {string.Join(", ", channel.ActiveSlots)}";
-            return $"{SelectedConversation.AccessLabel} · {slots}";
-        }
-
-        return SelectedConversation.TypeLabel;
+        return "Маршрут: " + ContactRouteFormatter.FormatSummary(ContactDetails?.OutPathLength, ContactDetails?.OutPath);
     }
 
     private Task ApplyAsync(Action action, bool dispatch, CancellationToken cancellationToken)

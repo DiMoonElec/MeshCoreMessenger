@@ -55,4 +55,8 @@ dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --modal
 ```
 
 Изображения: `$TMPDIR/meshcore-modal-cards/channel-{Light|Dark}-{420|960}.png`.
-Ручная приёмка новой карточки ожидается.
+Пользователь подтвердил ручную приёмку карточки канала 04.10.2026.
+
+Заголовок Public переписки теперь содержит только название; дополнительные
+сведения доступны в этой карточке. Native `--modal-only` проверяет, что строка
+метаданных в Public скрыта, а в Private содержит только `Маршрут: …`.

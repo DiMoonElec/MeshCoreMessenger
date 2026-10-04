@@ -78,14 +78,18 @@ public sealed class ContactRouteResetViewModelTests
     }
 
     [Theory]
-    [InlineData(null, "данные не получены")]
-    [InlineData((byte)255, "неизвестен · flood")]
-    [InlineData((byte)0, "напрямую")]
-    [InlineData((byte)0x42, "хопов: 2, 2-байтовые хеши · 11111111")]
-    [InlineData((byte)0x82, "хопов: 2, 3-байтовые хеши · 111111111111")]
-    [InlineData((byte)0xC1, "некорректные данные")]
-    public void RouteFormattingUsesEncodedDescriptorRatherThanStalePathBytes(byte? descriptor, string expected) =>
-        Assert.Equal(expected, ContactRouteFormatter.Format(descriptor, Enumerable.Repeat((byte)0x11, 64).ToArray()));
+    [InlineData(null, "данные не получены", "неизвестен")]
+    [InlineData((byte)255, "неизвестен · flood", "широковещательный")]
+    [InlineData((byte)0, "напрямую", "direct")]
+    [InlineData((byte)0x42, "хопов: 2, 2-байтовые хеши · 11111111", "2 хопа")]
+    [InlineData((byte)0x82, "хопов: 2, 3-байтовые хеши · 111111111111", "2 хопа")]
+    [InlineData((byte)0xC1, "некорректные данные", "неизвестен")]
+    public void RouteFormattingUsesEncodedDescriptorRatherThanStalePathBytes(byte? descriptor, string expected, string summary)
+    {
+        var path = Enumerable.Repeat((byte)0x11, 64).ToArray();
+        Assert.Equal(expected, ContactRouteFormatter.Format(descriptor, path));
+        Assert.Equal(summary, ContactRouteFormatter.FormatSummary(descriptor, path));
+    }
 
     private static ContactRouteResetRequest Target() => new(Guid.NewGuid(), Guid.NewGuid(), 1, Enumerable.Repeat((byte)9, 32).ToArray());
     private sealed class Service : IContactRouteService

@@ -12,7 +12,7 @@
         <Button Content="‹" Command="{Binding Navigation.BackCommand}" IsVisible="{Binding Navigation.CanNavigateBack}" ToolTip.Tip="Назад к чатам" />
         <StackPanel Grid.Column="1" Classes="header-text">
           <TextBlock Classes="chat-title" Text="{Binding Navigation.SelectedTitle}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Navigation.SelectedTitle}" />
-          <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" TextTrimming="CharacterEllipsis" />
+          <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" IsVisible="{Binding Navigation.HasSelectedMetadata}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <Button x:Name="ConversationMenuButton" Grid.Column="2" Classes="conversation-menu"
                 IsVisible="{Binding Navigation.HasSelection}" ToolTip.Tip="Меню переписки"

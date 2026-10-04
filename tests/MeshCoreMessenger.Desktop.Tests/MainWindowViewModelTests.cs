@@ -23,13 +23,13 @@ public sealed class MainWindowViewModelTests
         var vm = CreateViewModel(history, directory: reader, directoryUpdates: updates);
         await vm.LoadAsync(CancellationToken);
         vm.Shell.SelectSection(ShellSection.PrivateChats);
-        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata.Contains("flood"));
+        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata == "Маршрут: широковещательный");
         var window = vm.Chats.Private.Navigation.History;
         reader.RouteDescriptor = 0;
         updates.Emit(NodeBId);
-        Assert.Contains("flood", vm.Chats.Private.Navigation.SelectedMetadata);
+        Assert.Equal("Маршрут: широковещательный", vm.Chats.Private.Navigation.SelectedMetadata);
         updates.Emit(NodeAId);
-        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata.Contains("напрямую"));
+        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata == "Маршрут: direct");
         Assert.Same(window, vm.Chats.Private.Navigation.History);
         Assert.Equal("Keep body", Assert.Single(vm.Chats.Private.Navigation.Messages).Body);
         Assert.Equal(id, vm.Chats.Private.SelectedConversation?.Id);

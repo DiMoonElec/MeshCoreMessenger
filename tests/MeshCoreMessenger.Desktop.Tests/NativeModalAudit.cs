@@ -37,6 +37,10 @@ public sealed partial class UiWorkspaceIntegrationTests
                     await SettleAsync(window);
                     await workspace.SelectConversationAsync(workspace.SelectedConversation);
                     await SettleAsync(window);
+                    var headerMetadata = window.GetVisualDescendants().OfType<TextBlock>()
+                        .Single(text => text.Classes.Contains("chat-meta") && text.Parent is StackPanel panel && panel.Classes.Contains("header-text"));
+                    if (headerMetadata.IsVisible != privateChat || (privateChat && !headerMetadata.Text!.StartsWith("Маршрут: ")))
+                        throw new InvalidOperationException("Conversation header metadata visibility/content failed.");
                     var input = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "MessageInput" && t.IsEffectivelyVisible);
                     input.Focus();
                     detailsCommand.Execute(null);
