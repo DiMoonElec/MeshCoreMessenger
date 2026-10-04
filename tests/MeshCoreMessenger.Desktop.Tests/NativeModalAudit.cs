@@ -18,6 +18,7 @@ public sealed partial class UiWorkspaceIntegrationTests
         {
             var output = Path.Combine(Path.GetTempPath(), "meshcore-modal-cards");
             Directory.CreateDirectory(output);
+            foreach (var privateChat in new[] { false, true })
             foreach (var theme in new[] { ThemeVariant.Light, ThemeVariant.Dark })
             foreach (var width in new[] { 420, 960 })
             {
@@ -25,21 +26,28 @@ public sealed partial class UiWorkspaceIntegrationTests
                 await w.Root.StopAsync();
                 w.Root = w.CreateRoot(dispatcher: new NativeDispatcher());
                 await w.Root.LoadAsync();
-                w.Root.Shell.SelectSection(ShellSection.PrivateChats);
+                w.Root.Shell.SelectSection(privateChat ? ShellSection.PrivateChats : ShellSection.PublicChats);
+                var workspace = privateChat ? w.Root.Chats.Private : w.Root.Chats.Public;
+                var kind = privateChat ? "contact" : "channel";
+                var detailsCommand = workspace.Menu.Items.Single(item => item.Action == ConversationMenuAction.Details).Command;
                 var window = new MainWindow { DataContext = w.Root, MinWidth = 0, Width = width, Height = 540, RequestedThemeVariant = theme };
                 window.Show(); window.Activate();
                 try
                 {
                     await SettleAsync(window);
-                    await w.Root.Chats.Private.SelectConversationAsync(w.Root.Chats.Private.SelectedConversation);
+                    await workspace.SelectConversationAsync(workspace.SelectedConversation);
                     await SettleAsync(window);
                     var input = window.GetVisualDescendants().OfType<TextBox>().Single(t => t.Name == "MessageInput" && t.IsEffectivelyVisible);
                     input.Focus();
-                    w.Root.Chats.Private.ContactDetailsCommand.Execute(null);
-                    await UntilAsync(() => w.Root.Modal.Active is ContactDetailsCardViewModel { HasDetails: true });
+                    detailsCommand.Execute(null);
+                    await UntilAsync(() => privateChat
+                        ? w.Root.Modal.Active is ContactDetailsCardViewModel { HasDetails: true }
+                        : w.Root.Modal.Active is ChannelDetailsCardViewModel { HasDetails: true });
                     await SettleAsync(window);
                     var host = window.FindControl<ModalHostView>("ModalHost")!;
-                    if (!host.GetVisualDescendants().OfType<ContactDetailsCardView>().Any()) throw new InvalidOperationException("Contact content template was not resolved.");
+                    if (privateChat ? !host.GetVisualDescendants().OfType<ContactDetailsCardView>().Any()
+                        : !host.GetVisualDescendants().OfType<ChannelDetailsCardView>().Any())
+                        throw new InvalidOperationException("Card content template was not resolved.");
                     var close = host.FindControl<Button>("CloseButton")!;
                     var card = host.FindControl<Border>("Card")!;
                     if (!close.IsFocused || input.IsEffectivelyEnabled) throw new InvalidOperationException("Modal focus or background isolation failed.");
@@ -59,7 +67,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                     using (var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height)))
                     {
                         bitmap.Render(window);
-                        bitmap.Save(Path.Combine(output, $"contact-{theme}-{width}.png"), PngBitmapEncoderOptions.Default);
+                        bitmap.Save(Path.Combine(output, $"{kind}-{theme}-{width}.png"), PngBitmapEncoderOptions.Default);
                     }
                     window.Height = 440;
                     await SettleAsync(window);
@@ -67,12 +75,12 @@ public sealed partial class UiWorkspaceIntegrationTests
                     close.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Escape });
                     await SettleAsync(window);
                     if (w.Root.Modal.IsOpen || !input.IsFocused || !input.IsEffectivelyEnabled) throw new InvalidOperationException("Escape/focus restoration failed.");
-                    w.Root.Chats.Private.ContactDetailsCommand.Execute(null);
+                    detailsCommand.Execute(null);
                     await SettleAsync(window);
                     typeof(Button).GetMethod("OnClick", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(close, null);
                     await SettleAsync(window);
                     if (w.Root.Modal.IsOpen) throw new InvalidOperationException("Close button failed.");
-                    Console.WriteLine($"Modal/{theme}/{width}: content, bounds, resize, focus, Escape and close passed.");
+                    Console.WriteLine($"Modal/{kind}/{theme}/{width}: content, bounds, resize, focus, Escape and close passed.");
                 }
                 finally { window.Close(); await w.Root.StopAsync(); }
             }

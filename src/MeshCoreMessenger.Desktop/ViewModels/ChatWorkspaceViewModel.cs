@@ -18,16 +18,17 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
         IOutgoingTextProcessor? textProcessor = null)
     {
         Navigation = navigation;
-        ContactDetailsCommand = new RelayCommand(() => ContactDetailsRequested?.Invoke(this, EventArgs.Empty),
-            () => kind == MessengerNavigationTab.Personal && ViewedNode is { } node &&
-                SelectedConversation is { Kind: ConversationKind.Contact } contact && contact.NodeId == node.Id && contact.Entry.Identity.Length == 32);
-        Menu = new ConversationMenuViewModel(kind, _historyClear, RouteReset, ContactDetailsCommand);
+        DetailsCommand = new RelayCommand(() => DetailsRequested?.Invoke(this, EventArgs.Empty),
+            () => ViewedNode is { } node && SelectedConversation is { } conversation && conversation.NodeId == node.Id &&
+                conversation.Entry.Identity.Length == 32 && conversation.Kind ==
+                    (kind == MessengerNavigationTab.Personal ? ConversationKind.Contact : ConversationKind.Channel));
+        Menu = new ConversationMenuViewModel(kind, _historyClear, RouteReset, DetailsCommand);
         navigation.PropertyChanged += (_, args) =>
         {
             if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedConversation))
             {
                 RouteReset.Invalidate();
-                ContactDetailsCommand.NotifyCanExecuteChanged();
+                DetailsCommand.NotifyCanExecuteChanged();
             }
         };
         Composer = new ComposerViewModel(navigation.Draft, textProcessor);
@@ -38,8 +39,8 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
     public ComposerViewModel Composer { get; }
     public ContactRouteResetViewModel RouteReset { get; } = new();
     public ConversationMenuViewModel Menu { get; }
-    public RelayCommand ContactDetailsCommand { get; }
-    public event EventHandler? ContactDetailsRequested;
+    public RelayCommand DetailsCommand { get; }
+    public event EventHandler? DetailsRequested;
     public HistoryClearViewModel HistoryClear
     {
         get => _historyClear;
@@ -58,7 +59,7 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
             if (SetProperty(ref _viewedNode, value))
             {
                 OnPropertyChanged(nameof(ViewedNodePublicKeyHex));
-                ContactDetailsCommand.NotifyCanExecuteChanged();
+                DetailsCommand.NotifyCanExecuteChanged();
                 RouteReset.Invalidate();
             }
         }

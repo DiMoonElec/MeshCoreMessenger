@@ -11,6 +11,9 @@
     <DataTemplate DataType="vm:ContactDetailsCardViewModel">
       <dialogs:ContactDetailsCardView />
     </DataTemplate>
+    <DataTemplate DataType="vm:ChannelDetailsCardViewModel">
+      <dialogs:ChannelDetailsCardView />
+    </DataTemplate>
   </Window.DataTemplates>
   <Window.Title>
     <MultiBinding StringFormat="{}{0}{1}">

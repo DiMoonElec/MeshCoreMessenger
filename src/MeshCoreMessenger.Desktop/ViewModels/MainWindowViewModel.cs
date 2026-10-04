@@ -107,12 +107,20 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             await Chats.RefreshAsync(_lifetimeCancellation.Token);
             await Devices.RefreshAsync(_lifetimeCancellation.Token);
         }, Track, _lifetimeCancellation.Token);
-        Chats.Private.ContactDetailsRequested += (_, _) =>
+        Chats.Private.DetailsRequested += (_, _) =>
         {
-            if (Modal.IsOpen || Volatile.Read(ref _stopped) != 0 || !Chats.Private.ContactDetailsCommand.CanExecute(null)) return;
+            if (Modal.IsOpen || Volatile.Read(ref _stopped) != 0 || !Chats.Private.DetailsCommand.CanExecute(null)) return;
             var contact = Chats.Private.SelectedConversation!;
             var card = new ContactDetailsCardViewModel(contact.NodeId, contact.Entry.Identity,
                 directory, directoryUpdates, dispatcher, logger, Track);
+            _ = Track(Modal.ShowAsync(card));
+            _ = Track(card.RefreshAsync());
+        };
+        Chats.Public.DetailsRequested += (_, _) =>
+        {
+            if (Modal.IsOpen || Volatile.Read(ref _stopped) != 0 || !Chats.Public.DetailsCommand.CanExecute(null)) return;
+            var channel = Chats.Public.SelectedConversation!;
+            var card = new ChannelDetailsCardViewModel(channel.NodeId, channel.Entry.Identity, directory, dispatcher, logger, Track);
             _ = Track(Modal.ShowAsync(card));
             _ = Track(card.RefreshAsync());
         };

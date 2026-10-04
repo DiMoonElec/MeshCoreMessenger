@@ -1,0 +1,25 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Dialogs.ChannelDetailsCardView" x:DataType="vm:ChannelDetailsCardViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" /><Setter Property="Margin" Value="0,12,0,2" /></Style>
+    <Style Selector="SelectableTextBlock"><Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="4">
+    <TextBlock Text="Чтение сохранённых сведений…" IsVisible="{Binding IsLoading}" Foreground="{DynamicResource ChatMutedBrush}" />
+    <StackPanel IsVisible="{Binding HasError}" Spacing="8">
+      <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource ChatErrorBrush}" />
+      <Button Content="Обновить" Command="{Binding RetryCommand}" HorizontalAlignment="Left" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasDetails}" Spacing="4">
+      <TextBlock Classes="label" Text="Название" /><SelectableTextBlock Text="{Binding Details.Name}" FontSize="18" />
+      <TextBlock Classes="label" Text="Тип доступа" /><SelectableTextBlock Text="{Binding Details.Access}" />
+      <TextBlock Classes="label" Text="Настройка на ноде" /><SelectableTextBlock Text="{Binding Details.Presence}" />
+      <TextBlock Classes="label" Text="Номер слота на ноде" /><SelectableTextBlock Text="{Binding Details.Slots}" />
+      <TextBlock Classes="label" Text="Создано локально" /><SelectableTextBlock Text="{Binding Details.Created}" />
+      <TextBlock Classes="label" Text="Обновлено локально" /><SelectableTextBlock Text="{Binding Details.Updated}" />
+    </StackPanel>
+    <TextBlock Classes="label" Text="Отпечаток ключа (SHA-256)" />
+    <SelectableTextBlock Text="{Binding Fingerprint}" />
+  </StackPanel>
+</UserControl>
