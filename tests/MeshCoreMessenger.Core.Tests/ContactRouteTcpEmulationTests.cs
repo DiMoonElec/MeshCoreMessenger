@@ -105,7 +105,7 @@ public sealed partial class SessionCommandGatewayTests
         var key = Enumerable.Repeat((byte)0xA1, 32).ToArray();
         var request = RouteRequest(f) with { PublicKey = key };
         var entered = NewGate(); var release = NewGate();
-        f.Server.BeforeContactsResponse = async () => { entered.TrySetResult(); await release.Task; };
+        f.Server.BeforeSingleContactResponse = async () => { entered.TrySetResult(); await release.Task; };
         var reset = f.Routes.ResetAsync(request, CancellationToken);
         await entered.Task.WaitAsync(TimeSpan.FromSeconds(5), CancellationToken);
         Array.Fill(key, (byte)0xB2);

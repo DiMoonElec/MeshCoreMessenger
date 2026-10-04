@@ -4,6 +4,15 @@
 
 ## Contact mutation
 
+`GET_CONTACT_BY_KEY (30)`: `1E | full public key (32)`, ответ — один обычный
+`CONTACT` или `ERROR/NOT_FOUND`. Реализован `MeshCoreClient.GetContactAsync`;
+проверяется полный ключ ответа, global command gate освобождается после ответа.
+
+`PATH_UPDATED (0x81)`: `81 | full public key (32)` — push-уведомление о маршруте,
+без самого пути. Реализован `PathUpdatedPacket`; приложение может запросить контакт
+через GetContactAsync. Нода выдаёт это событие при обучении маршрута, отдельно от ACK.
+[Application workflow и проверки](../../testing/live-contact-routes.md).
+
 `ADD_UPDATE_CONTACT (9)` uses the same contact fields as `CONTACT`, without the
 response type byte and without a required `lastmod`:
 

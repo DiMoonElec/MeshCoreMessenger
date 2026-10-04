@@ -74,6 +74,12 @@ public sealed class CompanionSession : IAsyncDisposable
         return _client.GetContactsAsync(cancellationToken);
     }
 
+    internal Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
+    {
+        EnsureIdentified();
+        return _client.GetContactAsync(publicKey, cancellationToken);
+    }
+
     internal Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
@@ -337,6 +343,8 @@ public sealed class CompanionSession : IAsyncDisposable
             RawPacketType = args.Packet.RawType,
             RawFrame = args.Packet.RawFrame.ToArray(),
             Acknowledgement = (args.Packet as MeshCoreSharp.Protocol.Packets.AckPacket)?.Info,
+            RouteContactKey = args.Packet is MeshCoreSharp.Protocol.Packets.PathUpdatedPacket path
+                ? path.PublicKey.ToArray() : (ReadOnlyMemory<byte>?)null,
         });
 
     private void OnMessageReceived(object? sender, MessageReceivedEventArgs args) =>

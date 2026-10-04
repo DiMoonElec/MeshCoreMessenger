@@ -209,6 +209,18 @@ public sealed class MeshCoreClient : IAsyncDisposable
             cancellationToken);
     }
 
+    /// <summary>Reads one current contact by its full public key, without enumerating the directory.</summary>
+    public async Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var command = CompanionCommands.GetContact(publicKey.Span);
+        var key = command.AsMemory(1); // The command owns the captured key before the first await.
+        var packet = await _dispatcher.SendAsync<ContactPacket>(CommandType.GetContactByKey, command,
+            nameof(GetContactAsync), _options.CommandTimeout, cancellationToken,
+            acceptsPacket: packet => packet.Contact.PublicKey.Span.SequenceEqual(key.Span)).ConfigureAwait(false);
+        return packet.Contact;
+    }
+
     /// <summary>Creates or replaces a Companion contact and waits for local OK/ERROR.</summary>
     /// <remarks>Call <see cref="GetContactsAsync"/> afterwards when the application needs a refreshed snapshot.</remarks>
     public async Task AddOrUpdateContactAsync(ContactConfiguration contact,

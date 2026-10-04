@@ -42,9 +42,8 @@ public sealed class ContactRouteService(ISessionCommandGateway gateway, IConvers
             try
             {
                 var observedUtc = timeProvider.GetUtcNow();
-                var contacts = await owned.GetContactsAsync().ConfigureAwait(false);
-                var contact = contacts.SingleOrDefault(item => item.PublicKey.Span.SequenceEqual(request.PublicKey.Span))
-                    ?? throw new InvalidOperationException("Contact no longer present in route readback.");
+                var contact = await owned.GetContactAsync().ConfigureAwait(false);
+                if (!contact.PublicKey.Span.SequenceEqual(request.PublicKey.Span)) throw new InvalidDataException("Contact readback returned a different key.");
                 await store.UpdateContactRouteAsync(owned.Owner.NodeId, owned.Owner.SessionId, contact.PublicKey,
                     contact.OutPath, contact.OutPathLength, observedUtc, token).ConfigureAwait(false);
                 return new ContactRouteResetResult(request.NodeId, request.PublicKey, true, null);

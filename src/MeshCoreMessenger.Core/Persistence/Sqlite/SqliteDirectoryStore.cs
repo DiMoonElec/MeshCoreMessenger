@@ -6,6 +6,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader reader) : IDirectoryStore
 {
+    public event EventHandler<ContactRouteCommit>? ContactRouteCommitted;
     public Task<DirectorySnapshotResult> ApplySnapshotAsync(
         Guid nodeId,
         Guid sessionId,
@@ -94,7 +95,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         }, cancellationToken);
     }
 
-    public Task UpdateContactRouteAsync(Guid nodeId, Guid sessionId, ReadOnlyMemory<byte> publicKey,
+    public async Task UpdateContactRouteAsync(Guid nodeId, Guid sessionId, ReadOnlyMemory<byte> publicKey,
         ReadOnlyMemory<byte> outPath, byte outPathLength, DateTimeOffset observedUtc, CancellationToken cancellationToken = default)
     {
         ValidateId(nodeId, nameof(nodeId));
@@ -102,7 +103,7 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         if (publicKey.Length != 32 || outPath.Length != 64) throw new ArgumentException("A complete contact key and path are required.");
         if (!ValidRouteDescriptor(outPathLength)) throw new ArgumentOutOfRangeException(nameof(outPathLength));
         var key = publicKey.ToArray(); var path = outPath.ToArray();
-        return writer.ExecuteAsync(connection =>
+        await writer.ExecuteAsync(connection =>
         {
             using var transaction = connection.BeginTransaction();
             using var command = connection.CreateCommand();
@@ -122,7 +123,13 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             if (command.ExecuteNonQuery() != 1) throw new InvalidOperationException("Contact/session changed or a newer route has already been observed.");
             transaction.Commit();
             return true;
-        }, cancellationToken);
+        }, cancellationToken).ConfigureAwait(false);
+        var commit = new ContactRouteCommit(nodeId, sessionId, key);
+        foreach (EventHandler<ContactRouteCommit> handler in ContactRouteCommitted?.GetInvocationList() ?? [])
+        {
+            try { handler(this, commit); }
+            catch { /* Observers cannot turn a committed route into an apparent write failure. */ }
+        }
     }
 
     public Task CommitPendingChannelTransitionsAsync(

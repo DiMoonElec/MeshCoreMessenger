@@ -18,6 +18,11 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public bool RejectRouteReset { get; set; }
     public bool RejectContactsReadback { get; set; }
     public Func<Task>? BeforeContactsResponse { get; set; }
+    public ConcurrentQueue<byte[]> SingleContactReads { get; } = new();
+    public int ContactsReadCount { get; private set; }
+    public Func<Task>? BeforeSingleContactResponse { get; set; }
+    public bool LearnRouteOnPrivateSend { get; set; }
+    public byte LearnedRouteDescriptor { get; set; }
     public bool RejectPrivateSend { get; set; }
     public bool AutoAcknowledgePrivate { get; set; } = true;
     public Func<int, uint> PrivateAckTag { get; set; } = number => 0x10000000u + (uint)number;
@@ -31,6 +36,13 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(1), tag);
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(5), roundTripMilliseconds);
         return WriteFrameAsync(_stream ?? throw new InvalidOperationException("Emulator not connected."), 0x3E, frame);
+    }
+
+    public Task SendPathUpdatedAsync(byte peer, byte descriptor)
+    {
+        ContactRoutes[peer] = descriptor;
+        return WriteFrameAsync(_stream ?? throw new InvalidOperationException("Emulator not connected."), 0x3E,
+            [(byte)PacketType.PathUpdated, .. Enumerable.Repeat(peer, ProtocolLimits.PublicKeySize)]);
     }
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
@@ -78,6 +90,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
             if (type == CommandType.GetContacts)
             {
+                ContactsReadCount++;
                 if (BeforeContactsResponse is not null) await BeforeContactsResponse();
                 if (RejectContactsReadback) { await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Error, (byte)MeshCoreErrorCode.BadState]); continue; }
                 await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactStart, 2));
@@ -85,6 +98,20 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
                 await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
                 await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
+                continue;
+            }
+
+            if (type == CommandType.GetContactByKey)
+            {
+                var key = command.AsSpan(1).ToArray();
+                SingleContactReads.Enqueue(key);
+                var peer = key[0];
+                var valid = key.Length == ProtocolLimits.PublicKeySize && key.All(value => value == peer) && ContactRoutes.ContainsKey(peer);
+                var frame = valid ? BuildContact(peer == 0xA1 ? "Alice" : "Bob", peer)
+                    : new byte[] { (byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound };
+                if (BeforeSingleContactResponse is not null) await BeforeSingleContactResponse();
+                await WriteFrameAsync(stream, 0x3E, RejectContactsReadback
+                    ? [(byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound] : frame);
                 continue;
             }
 
@@ -114,6 +141,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 BinaryPrimitives.WriteUInt32LittleEndian(sentResponse.AsSpan(6), PrivateSuggestedTimeoutMilliseconds);
                 await WriteFrameAsync(stream, 0x3E, RejectPrivateSend
                     ? [(byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound] : sentResponse);
+                if (!RejectPrivateSend && LearnRouteOnPrivateSend) await SendPathUpdatedAsync(command[7], LearnedRouteDescriptor);
                 if (!RejectPrivateSend && AutoAcknowledgePrivate && tag != 0) await SendAcknowledgementAsync(tag);
                 continue;
             }

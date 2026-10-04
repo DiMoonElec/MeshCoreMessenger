@@ -14,6 +14,8 @@ internal static class ContactMutationTests
         ("Contact mutation wire encoding and model conversion", Encoding),
         ("Contact mutation validation", Validation),
         ("Route reset full key, push, rejection, timeout and cancellation", ResetRouting),
+        ("Single contact read captures full key, ignores pushes and wrong contacts, and recovers", ReadSingleContact),
+        ("PATH_UPDATED typed parsing validates full key and tolerates extensions", ParsePathUpdated),
         ("Contact add/update handles interleaved push", AddRouting),
         ("Contact removal, errors, cancellation and recovery", RemoveAndRecovery),
         ("NEW_ADVERT can be stored without manual wire fields", AdvertisementOverload),
@@ -138,6 +140,46 @@ internal static class ContactMutationTests
         Check(!add.IsCompleted);
         transport.Emit([0]);
         await add;
+    }
+
+    private static Task ParsePathUpdated()
+    {
+        var decoder = new CompanionPacketDecoder();
+        var key = Enumerable.Repeat((byte)0xA1, 32).ToArray();
+        var packet = (PathUpdatedPacket)decoder.Decode(new byte[] { 0x81 }.Concat(key).Concat(new byte[] { 99 }).ToArray());
+        Check(packet.PublicKey.Span.SequenceEqual(key) && packet.IsPush);
+        try { decoder.Decode(new byte[] { 0x81 }.Concat(new byte[31]).ToArray()); }
+        catch (MeshCoreProtocolException) { return Task.CompletedTask; }
+        throw new Exception("Short path update was accepted.");
+    }
+
+    private static async Task ReadSingleContact()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        await Throws<ArgumentException>(() => client.GetContactAsync(new byte[6]));
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Throws<OperationCanceledException>(() => client.GetContactAsync(new byte[32], cancelled.Token));
+        Check(!transport.Sent.Reader.TryRead(out _));
+        var key = Enumerable.Repeat((byte)0xA5, 32).ToArray();
+        var read = client.GetContactAsync(key);
+        Array.Fill(key, (byte)0xCC);
+        var command = await Sent(transport);
+        Check(command[0] == 30 && command.Length == 33 && command.AsSpan(1).IndexOfAnyExcept((byte)0xA5) < 0);
+        var push = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        client.PushPacketReceived += (_, args) => { if (args.Packet is PathUpdatedPacket) push.TrySetResult(); };
+        transport.Emit(new byte[] { 0x81 }.Concat(new byte[32]).ToArray());
+        transport.Emit(Fixtures.Contact("Other", 0xB2));
+        await push.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        transport.Emit(Fixtures.Contact("Wanted", 0xA5));
+        Check((await read).Name == "Wanted");
+        var rejected = client.GetContactAsync(new byte[32]); await Sent(transport); transport.Emit([1, 2]);
+        Check((await Throws<MeshCoreCommandException>(() => rejected)).Command == CommandType.GetContactByKey);
+        var timeout = client.GetContactAsync(new byte[32]); await Sent(transport);
+        await Throws<MeshCoreTimeoutException>(() => timeout);
+        var recovered = client.GetContactAsync(Enumerable.Repeat((byte)0xA5, 32).ToArray()); await Sent(transport);
+        transport.Emit(Fixtures.Contact()); await recovered;
     }
 
     private static async Task RemoveAndRecovery()

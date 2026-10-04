@@ -26,6 +26,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly ComposerContextCoordinator[] _composerContexts;
     private readonly IOutgoingMessageStore? _outgoingMessages;
+    private readonly IDirectoryStore? _directoryUpdates;
     private readonly ConcurrentQueue<OutgoingMessageCommit> _pendingOutgoing = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
     private readonly SemaphoreSlim _projectionRefreshSignal = new(0);
@@ -69,10 +70,13 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ILogger<MainWindowViewModel> logger,
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
-        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null)
+        IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null,
+        IDirectoryStore? directoryUpdates = null)
     {
         _outgoingMessages = outgoingMessages;
         if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
+        _directoryUpdates = directoryUpdates;
+        if (directoryUpdates is not null) directoryUpdates.ContactRouteCommitted += OnContactRouteCommitted;
         _nodes = nodes;
         _settings = settings;
         _preferences = preferences;
@@ -369,6 +373,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
 
         if (_outgoingMessages is not null) _outgoingMessages.MessageCommitted -= OnOutgoingCommitted;
+        if (_directoryUpdates is not null) _directoryUpdates.ContactRouteCommitted -= OnContactRouteCommitted;
         _supervisor.StateChanged -= OnSupervisorStateChanged;
         _commitNotifications.MessageCommitted -= OnMessageCommitted;
         Shell.PropertyChanged -= OnShellPropertyChanged;
@@ -700,6 +705,12 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     {
         if (Volatile.Read(ref _stopped) != 0) return;
         _pendingOutgoing.Enqueue(commit);
+        RequestProjectionRefresh();
+    }
+
+    private void OnContactRouteCommitted(object? sender, ContactRouteCommit commit)
+    {
+        if (Volatile.Read(ref _stopped) != 0 || ViewedNode?.Id != commit.NodeId) return;
         RequestProjectionRefresh();
     }
 

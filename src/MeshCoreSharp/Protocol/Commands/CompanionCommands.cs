@@ -23,6 +23,13 @@ internal static class CompanionCommands
 
     public static byte[] GetContacts() => [(byte)CommandType.GetContacts];
 
+    public static byte[] GetContact(ReadOnlySpan<byte> publicKey)
+    {
+        if (publicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException("A full 32-byte contact public key is required.", nameof(publicKey));
+        return [(byte)CommandType.GetContactByKey, .. publicKey];
+    }
+
     public static byte[] AddOrUpdateContact(ContactConfiguration contact)
     {
         ArgumentNullException.ThrowIfNull(contact);

@@ -12,7 +12,18 @@ public sealed partial class DirectoryServiceTests
         var alice = Contact(1, "Alice") with { OutPathLength = 2 };
         var bob = Contact(2, "Bob") with { OutPathLength = 0 };
         await f.Storage.Directories.ApplySnapshotAsync(f.Node.Id, f.Session.Id, [alice, bob], [], f.Now, CancellationToken);
+        var notifications = 0;
+        Task<ContactDetailsProjection?>? afterCommit = null;
+        f.Storage.Directories.ContactRouteCommitted += (_, commit) =>
+        {
+            notifications++;
+            Assert.Equal(f.Node.Id, commit.NodeId);
+            Assert.Equal(f.Session.Id, commit.SessionId);
+            afterCommit = f.Storage.ConversationDirectory.GetContactDetailsAsync(commit.NodeId, commit.PublicKey, CancellationToken);
+        };
+        f.Storage.Directories.ContactRouteCommitted += (_, _) => throw new InvalidOperationException("Broken UI subscriber");
         await f.Storage.Directories.UpdateContactRouteAsync(f.Node.Id, f.Session.Id, alice.PublicKey, alice.OutPath, 0xFF, f.Now.AddMinutes(1), CancellationToken);
+        Assert.Equal(byte.MaxValue, (await afterCommit!)!.OutPathLength);
         var stale = await f.Storage.Directories.ApplySnapshotAsync(f.Node.Id, f.Session.Id, [alice, bob], [], f.Now, CancellationToken);
         Assert.Equal(byte.MaxValue, stale.CurrentContacts.Single(contact => contact.PublicKey.SequenceEqual(alice.PublicKey)).OutPathLength);
         var current = await f.Storage.ConversationDirectory.GetContactDetailsAsync(f.Node.Id, alice.PublicKey, CancellationToken);
@@ -25,6 +36,7 @@ public sealed partial class DirectoryServiceTests
         Assert.Equal((byte)0x42, (await f.Storage.ConversationDirectory.GetContactDetailsAsync(f.Node.Id, alice.PublicKey, CancellationToken))!.OutPathLength);
         await Assert.ThrowsAsync<InvalidOperationException>(() => f.Storage.Directories.UpdateContactRouteAsync(f.Node.Id, f.Session.Id,
             alice.PublicKey, alice.OutPath, 0xFF, f.Now.AddMinutes(1), CancellationToken));
+        Assert.Equal(1, notifications);
     }
 
     [Fact]

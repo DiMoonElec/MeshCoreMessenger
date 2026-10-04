@@ -24,6 +24,8 @@ public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
 
 internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionClient
 {
+    public Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
+        client.GetContactAsync(publicKey, cancellationToken);
     public MeshCoreConnectionState State => client.State;
     public bool IsConnected => client.IsConnected;
     public bool IsStarted => client.IsStarted;

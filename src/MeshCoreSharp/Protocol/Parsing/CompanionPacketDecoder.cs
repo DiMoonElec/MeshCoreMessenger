@@ -21,6 +21,7 @@ internal sealed class CompanionPacketDecoder
             new StatsPacketParser(),
             new MessageSentPacketParser(),
             new AckPacketParser(),
+            new PathUpdatedPacketParser(),
             new AdvertisementPacketParser(PacketType.Advertisement),
             new AdvertisementPacketParser(PacketType.NewAdvertisement),
             new ContactStartPacketParser(),

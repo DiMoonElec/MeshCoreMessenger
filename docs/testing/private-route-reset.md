@@ -19,9 +19,12 @@ Library `MeshCoreClient.ResetPathAsync` кодирует `0D | publicKey[32]` и
 Core ICompanionClient/adapter/SessionCommandLease используют этот публичный API.
 Новых библиотечных сборок нет.
 
-ContactRouteService выполняет команду, полный GetContacts readback и точечную запись
-маршрута в одном owned lease.RunAsync. Полный список нужен потому, что firmware reset
-не увеличивает lastmod. Обновляется только целевой контакт, канальные bindings,
+ContactRouteService первоначально выполнял команду, полный GetContacts readback и
+точечную запись маршрута в одном owned lease.RunAsync: API чтения одного контакта
+ещё отсутствовал, а since-фильтр неприменим, поскольку reset не увеличивает lastmod.
+04.10.2026 readback заменён на GetContactAsync; добавлена
+[синхронизация по PATH_UPDATED](live-contact-routes.md).
+Обновляется только целевой контакт, канальные bindings,
 остальные контакты, история, попытки и черновики не меняются. Успешная запись
 обновляет UI через существующие node-scoped projections; target не перенаправляется
 при смене переписки. Все UI workflows отслеживаются MainWindow lifetime.

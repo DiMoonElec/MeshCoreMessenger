@@ -25,6 +25,8 @@ public interface ICompanionClient : IAsyncDisposable
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task<SelfInfo> StartAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default);
+    Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
+        Task.FromException<Contact>(new NotSupportedException("Single contact reading is not implemented by this adapter."));
     Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default);
     Task DrainMessagesAsync(CancellationToken cancellationToken = default);
     Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default) =>

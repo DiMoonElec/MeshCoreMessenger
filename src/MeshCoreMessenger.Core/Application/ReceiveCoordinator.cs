@@ -23,6 +23,8 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     private CancellationTokenSource? _eventStop;
     private Task? _eventPump;
     private Task? _worker;
+    private ContactRouteRefreshQueue? _routeRefresh;
+    private Task? _routeWorker;
     private TaskCompletionSource _initial = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private TaskCompletionSource<Exception> _ingestFailure = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly TaskCompletionSource<Exception> _failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -46,6 +48,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
     public ReceiveCoordinatorState State => _state;
     public Exception? LastError { get; private set; }
+    public Exception? LastRouteRefreshError => _routeRefresh?.LastError;
     internal Task<Exception> Failure => _failure.Task;
 
     /// <summary>Completes after directories, initial drain, both event barriers and binding activation.</summary>
@@ -82,7 +85,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         eventStop?.Cancel();
         _retrySignal.Release();
         _drainSignal.Release();
-        var tasks = new[] { _eventPump, _worker }.Where(task => task is not null).Cast<Task>();
+        var tasks = new[] { _eventPump, _worker, _routeWorker }.Where(task => task is not null).Cast<Task>();
         await Task.WhenAll(tasks).WaitAsync(cancellationToken).ConfigureAwait(false);
         workerStop?.Dispose();
         eventStop?.Dispose();
@@ -105,6 +108,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         {
             await _worker.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
+        if (_routeWorker is not null) await _routeWorker.WaitAsync(cancellationToken).ConfigureAwait(false);
         workerStop.Dispose();
     }
 
@@ -130,6 +134,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
         _ingestor.Failed -= OnIngestFailed;
         await StopAsync(CancellationToken.None).ConfigureAwait(false);
+        _routeRefresh?.Dispose();
         _drainSignal.Dispose();
         _retrySignal.Dispose();
     }
@@ -158,8 +163,12 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
             _workerStop = new CancellationTokenSource();
             _eventStop = new CancellationTokenSource();
             _state = ReceiveCoordinatorState.Synchronizing;
-            _eventPump = Task.Run(() => PumpEventsAsync(session, _eventStop.Token));
-            _worker = Task.Run(() => RunAsync(session, _workerStop.Token));
+            _routeRefresh = new ContactRouteRefreshQueue(_directories, session, _initial.Task);
+            var workerToken = _workerStop.Token;
+            var eventToken = _eventStop.Token;
+            _eventPump = Task.Run(() => PumpEventsAsync(session, eventToken));
+            _worker = Task.Run(() => RunAsync(session, workerToken));
+            _routeWorker = Task.Run(() => _routeRefresh.RunAsync(workerToken));
         }
     }
 
@@ -281,6 +290,9 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
             {
                 switch (item.Kind)
                 {
+                    case CompanionSessionEventKind.PushPacketReceived when item.RouteContactKey is { } key:
+                        _routeRefresh?.Enqueue(key);
+                        break;
                     case CompanionSessionEventKind.MessageReceived when item.Message is not null:
                         await HandleMessageAsync(item, cancellationToken).ConfigureAwait(false);
                         break;

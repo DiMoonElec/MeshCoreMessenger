@@ -4,6 +4,8 @@ namespace MeshCoreMessenger.Core.Persistence;
 
 public interface IDirectoryStore
 {
+    /// <summary>Published after a contact route has been committed to local storage.</summary>
+    event EventHandler<ContactRouteCommit>? ContactRouteCommitted { add { } remove { } }
     Task<DirectorySnapshotResult> ApplySnapshotAsync(
         Guid nodeId,
         Guid sessionId,
@@ -32,3 +34,5 @@ public interface IDirectoryStore
         byte slot,
         CancellationToken cancellationToken = default);
 }
+
+public sealed record ContactRouteCommit(Guid NodeId, Guid SessionId, ReadOnlyMemory<byte> PublicKey);

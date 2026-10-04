@@ -11,6 +11,32 @@ namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class MainWindowViewModelTests
 {
+    [Fact]
+    public async Task RouteCommitRefreshesSelectedHeaderWithoutChangingHistoryAndUnsubscribesOnStop()
+    {
+        var history = new FakeHistoryReader();
+        var id = Guid.NewGuid();
+        history.SetConversations(NodeAId, [CreateSummary(NodeAId, id, "Peer", 1) with { Kind = ConversationKind.Contact }]);
+        history.Messages[id] = [CreateMessage(id, 1, "Keep body")];
+        var reader = new FakeConversationDirectoryReader(history) { RouteDescriptor = byte.MaxValue };
+        var updates = new RouteNotifications();
+        var vm = CreateViewModel(history, directory: reader, directoryUpdates: updates);
+        await vm.LoadAsync(CancellationToken);
+        vm.Shell.SelectSection(ShellSection.PrivateChats);
+        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata.Contains("flood"));
+        var window = vm.Chats.Private.Navigation.History;
+        reader.RouteDescriptor = 0;
+        updates.Emit(NodeBId);
+        Assert.Contains("flood", vm.Chats.Private.Navigation.SelectedMetadata);
+        updates.Emit(NodeAId);
+        await WaitUntilAsync(() => vm.Chats.Private.Navigation.SelectedMetadata.Contains("напрямую"));
+        Assert.Same(window, vm.Chats.Private.Navigation.History);
+        Assert.Equal("Keep body", Assert.Single(vm.Chats.Private.Navigation.Messages).Body);
+        Assert.Equal(id, vm.Chats.Private.SelectedConversation?.Id);
+        await vm.StopAsync();
+        Assert.Equal(0, updates.SubscriberCount);
+    }
+
     private static readonly Guid NodeAId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid NodeBId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
@@ -533,7 +559,8 @@ public sealed class MainWindowViewModelTests
         IUiDispatcher? dispatcher = null,
         FakeNodeStore? nodes = null,
         FakeSettingsStore? settings = null,
-        TestProfileManager? profileManager = null)
+        TestProfileManager? profileManager = null,
+        IConversationDirectoryReader? directory = null, IDirectoryStore? directoryUpdates = null)
     {
         supervisor ??= new FakeConnectionSupervisor();
         nodes ??= new FakeNodeStore([CreateNode(NodeAId, "Node A", 0x11)]);
@@ -545,7 +572,7 @@ public sealed class MainWindowViewModelTests
             NullLogger<ConnectionProfilesViewModel>.Instance);
         var readStates = new FakeConversationReadStateService();
         return new MainWindowViewModel(
-            new FakeConversationDirectoryReader(history),
+            directory ?? new FakeConversationDirectoryReader(history),
             history,
             readStates,
             readStates,
@@ -559,7 +586,7 @@ public sealed class MainWindowViewModelTests
             dispatcher ?? new ImmediateUiDispatcher(),
             new ImmediateSearchDelay(),
             new ImmediateDraftDelay(),
-            NullLogger<MainWindowViewModel>.Instance);
+            NullLogger<MainWindowViewModel>.Instance, directoryUpdates: directoryUpdates);
     }
 
     [Fact]
@@ -841,6 +868,7 @@ public sealed class MainWindowViewModelTests
     private sealed class FakeConversationDirectoryReader(ILocalHistoryReader history)
         : IConversationDirectoryReader
     {
+        public byte? RouteDescriptor { get; set; }
         public async Task<ConversationDirectoryPage> GetPageAsync(
             Guid nodeId,
             ConversationDirectorySection section,
@@ -894,7 +922,9 @@ public sealed class MainWindowViewModelTests
         public Task<ContactDetailsProjection?> GetContactDetailsAsync(
             Guid nodeId,
             ReadOnlyMemory<byte> publicKey,
-            CancellationToken cancellationToken = default) => Task.FromResult<ContactDetailsProjection?>(null);
+            CancellationToken cancellationToken = default) => Task.FromResult<ContactDetailsProjection?>(RouteDescriptor is { } descriptor
+                ? new(nodeId, publicKey.ToArray(), "Peer", 1, 0, new byte[64], null, true, null, null, null, DateTimeOffset.UtcNow, descriptor)
+                : null);
 
         public Task<ChannelDetailsProjection?> GetChannelDetailsAsync(
             Guid nodeId,
@@ -909,6 +939,22 @@ public sealed class MainWindowViewModelTests
             ConversationKind.UnknownChannel => ConversationDirectorySection.UnknownChannels,
             _ => throw new ArgumentOutOfRangeException(nameof(kind)),
         };
+    }
+
+    private sealed class RouteNotifications : IDirectoryStore
+    {
+        public event EventHandler<ContactRouteCommit>? ContactRouteCommitted;
+        public int SubscriberCount => ContactRouteCommitted?.GetInvocationList().Length ?? 0;
+        public void Emit(Guid node) => ContactRouteCommitted?.Invoke(this, new(node, Guid.NewGuid(), new byte[32]));
+        public Task<DirectorySnapshotResult> ApplySnapshotAsync(Guid nodeId, Guid sessionId,
+            IReadOnlyList<DirectoryContactSnapshot> contacts, IReadOnlyList<DirectoryChannelSnapshot> channels,
+            DateTimeOffset observedUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task CommitPendingChannelTransitionsAsync(IReadOnlyList<PendingChannelTransition> transitions,
+            DateTimeOffset observedUtc, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<IReadOnlyList<ContactRecord>> GetCurrentContactsByPrefixAsync(Guid nodeId,
+            ReadOnlyMemory<byte> publicKeyPrefix, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public Task<ChannelBindingRecord?> GetActiveChannelBindingAsync(Guid nodeId, byte slot,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class FakeNodeStore(IReadOnlyList<NodeRecord> nodes) : INodeStore

@@ -167,6 +167,11 @@ public sealed class SessionCommandLease : IAsyncDisposable
     }
     public Task<IReadOnlyList<Contact>> GetContactsAsync() => OwnAsync(
         () => _scope.Invoke(this, (client, token) => client.GetContactsAsync(token)), requireAdmission: true);
+    public Task<Contact> GetContactAsync()
+    {
+        if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Contact reading requires a full contact target.");
+        return OwnAsync(() => _scope.Invoke(this, (client, token) => client.GetContactAsync(contact.PublicKey, token)), requireAdmission: true);
+    }
     public Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync() => OwnAsync(
         () => _scope.Invoke(this, (client, token) => client.GetChannelsAsync(token)), requireAdmission: true);
 

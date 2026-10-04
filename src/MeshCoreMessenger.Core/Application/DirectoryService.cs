@@ -9,6 +9,18 @@ namespace MeshCoreMessenger.Core.Application;
 /// <summary>Reads complete Companion directories and persists only a validated, secret-free snapshot.</summary>
 public sealed class DirectoryService(IDirectoryStore directories, TimeProvider timeProvider)
 {
+    internal async Task RefreshContactRouteAsync(CompanionSession session, ReadOnlyMemory<byte> publicKey,
+        CancellationToken cancellationToken)
+    {
+        var nodeId = session.LocalNodeId ?? throw new InvalidOperationException("Session has no local node.");
+        // Capture before the read: an older in-flight read must not overwrite a later reset.
+        var observedUtc = timeProvider.GetUtcNow();
+        var contact = await session.GetContactAsync(publicKey, cancellationToken).ConfigureAwait(false);
+        if (!contact.PublicKey.Span.SequenceEqual(publicKey.Span)) throw new InvalidDataException("Contact readback returned a different key.");
+        await directories.UpdateContactRouteAsync(nodeId, session.SessionId, contact.PublicKey,
+            contact.OutPath, contact.OutPathLength, observedUtc, cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<DirectorySnapshotResult> SynchronizeAsync(
         CompanionSession session,
         CancellationToken cancellationToken = default)

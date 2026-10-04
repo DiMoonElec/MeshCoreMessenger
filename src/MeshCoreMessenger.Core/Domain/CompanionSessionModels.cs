@@ -60,6 +60,7 @@ public sealed record CompanionSessionEvent
     public ReadOnlyMemory<byte> RawFrame { get; init; }
     public ReceivedMessage? Message { get; init; }
     public MessageAcknowledgement? Acknowledgement { get; init; }
+    public ReadOnlyMemory<byte>? RouteContactKey { get; init; }
     public AdvertisementInfo? Advertisement { get; init; }
     internal TaskCompletionSource? BarrierCompletion { get; init; }
 }
