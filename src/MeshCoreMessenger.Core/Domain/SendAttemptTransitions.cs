@@ -7,6 +7,7 @@ internal static class SendAttemptTransitions
         SendAttemptState.Prepared => next is SendAttemptState.Sending or SendAttemptState.Failed,
         SendAttemptState.Sending => next is SendAttemptState.Accepted or SendAttemptState.Failed or SendAttemptState.Unknown,
         SendAttemptState.Accepted when expectation == AckExpectation.Expected => next is SendAttemptState.Delivered or SendAttemptState.Unconfirmed or SendAttemptState.Unknown,
+        SendAttemptState.Unconfirmed when expectation == AckExpectation.Expected => next == SendAttemptState.Delivered,
         _ => false,
     };
 }

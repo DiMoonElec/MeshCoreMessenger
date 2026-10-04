@@ -23,7 +23,7 @@ public sealed class ConnectionAttemptFactory(
         var session = await sessions.CreateAsync(profile, generation, cancellationToken).ConfigureAwait(false);
         try
         {
-            var coordinator = new ReceiveCoordinator(directories, directoryStore, ingestor);
+            var coordinator = new ReceiveCoordinator(directories, directoryStore, ingestor, outgoing);
             return new ConnectionAttempt(session, coordinator, commands, outgoing);
         }
         catch

@@ -336,6 +336,7 @@ public sealed class CompanionSession : IAsyncDisposable
         {
             RawPacketType = args.Packet.RawType,
             RawFrame = args.Packet.RawFrame.ToArray(),
+            Acknowledgement = (args.Packet as MeshCoreSharp.Protocol.Packets.AckPacket)?.Info,
         });
 
     private void OnMessageReceived(object? sender, MessageReceivedEventArgs args) =>

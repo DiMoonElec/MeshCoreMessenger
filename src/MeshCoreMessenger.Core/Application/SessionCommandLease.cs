@@ -109,6 +109,13 @@ public sealed class SessionCommandLease : IAsyncDisposable
         finally { _statusGate.Release(); }
     }, requireAdmission: false);
 
+    internal async Task<bool> IsDeliveryCommittedAsync()
+    {
+        if (_attempt is null || _message is null) return false;
+        var attempts = await _scope.Messages.GetAttemptsAsync(Owner.NodeId, _message.MessageId, CancellationToken.None).ConfigureAwait(false);
+        return attempts.Any(attempt => attempt.Id == _attempt.Id && attempt.State == SendAttemptState.Delivered);
+    }
+
     public Task<TextMessageSendResult> SendTextAsync() => OwnAsync(async () =>
     {
         if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Private sending requires a contact target.");

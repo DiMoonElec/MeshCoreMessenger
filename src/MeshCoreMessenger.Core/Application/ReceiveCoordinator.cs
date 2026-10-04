@@ -12,6 +12,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     private readonly DirectoryService _directories;
     private readonly IDirectoryStore _directoryStore;
     private readonly MessageIngestor _ingestor;
+    private readonly IDurableOutgoingWrites? _outgoing;
     private readonly object _gate = new();
     private readonly SemaphoreSlim _drainSignal = new(0);
     private readonly SemaphoreSlim _retrySignal = new(0);
@@ -33,11 +34,13 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     private int _disposed;
     private volatile ReceiveCoordinatorState _state = ReceiveCoordinatorState.Created;
 
-    public ReceiveCoordinator(DirectoryService directories, IDirectoryStore directoryStore, MessageIngestor ingestor)
+    public ReceiveCoordinator(DirectoryService directories, IDirectoryStore directoryStore, MessageIngestor ingestor,
+        IDurableOutgoingWrites? outgoing = null)
     {
         _directories = directories;
         _directoryStore = directoryStore;
         _ingestor = ingestor;
+        _outgoing = outgoing;
         _ingestor.Failed += OnIngestFailed;
     }
 
@@ -280,6 +283,17 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                 {
                     case CompanionSessionEventKind.MessageReceived when item.Message is not null:
                         await HandleMessageAsync(item, cancellationToken).ConfigureAwait(false);
+                        break;
+                    case CompanionSessionEventKind.PushPacketReceived when item.Acknowledgement is { } ack && _outgoing is not null:
+                        if (ack.Ack != 0)
+                        {
+                            try
+                            {
+                                await _outgoing.SaveAcknowledgementAsync(new(_nodeId, item.SessionId, ack.Ack,
+                                    ack.RoundTripTimeMilliseconds, item.OccurredUtc), cancellationToken).ConfigureAwait(false);
+                            }
+                            catch (OutgoingPersistenceException) { /* The writer retains ACK evidence and pauses commands. */ }
+                        }
                         break;
                     case CompanionSessionEventKind.PushPacketReceived when item.RawPacketType == (byte)PacketType.MessagesWaiting:
                         RequestDrain();

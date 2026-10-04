@@ -192,7 +192,8 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             errorCode = error.GetType().Name;
         }
         if (!await lease.TransitionAsync(SendAttemptState.Accepted, state,
-            roundTripMilliseconds: roundTrip, errorCode: errorCode).ConfigureAwait(false))
+            roundTripMilliseconds: roundTrip, errorCode: errorCode).ConfigureAwait(false) &&
+            !await lease.IsDeliveryCommittedAsync().ConfigureAwait(false))
             throw new InvalidOperationException("Delivery status changed before its result was committed.");
     }
 
