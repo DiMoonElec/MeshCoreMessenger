@@ -15,7 +15,7 @@ public sealed partial class SessionCommandGatewayTests
         var first = await sender.SendChannelAsync(await Request(f, drafts), cancellationToken: CancellationToken);
         var original = Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken));
         await f.Supervisor.DisconnectAsync(CancellationToken); await f.Connect();
-        sender = Sender(f, drafts); // New timestamp allocator; the floor comes from persisted attempts.
+        sender = Sender(f, drafts); // New service; the original timestamp comes from persisted attempts.
         var owner = f.Supervisor.Snapshot;
         var request = new ChannelRepeatRequest(f.NodeId, owner.SessionId!.Value, owner.Generation, first.MessageId, 1, await f.ChannelRecipient());
         var result = await sender.RepeatChannelAsync(request, CancellationToken);
@@ -24,7 +24,7 @@ public sealed partial class SessionCommandGatewayTests
         var attempts = await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken);
         Assert.Equal(2, attempts.Count); Assert.Equal(original, attempts[0]);
         Assert.NotEqual(original.SessionId, attempts[1].SessionId);
-        Assert.True(attempts[1].WireTimestamp > original.WireTimestamp);
+        Assert.Equal(original.WireTimestamp, attempts[1].WireTimestamp);
         await Assert.ThrowsAsync<InvalidOperationException>(() => sender.RepeatChannelAsync(request, CancellationToken));
         Assert.Equal(1, f.Clients.Current.Tx);
     }
@@ -97,13 +97,13 @@ public sealed partial class SessionCommandGatewayTests
             first.MessageId, 1, recipient), CancellationToken);
         Assert.Equal(SendAttemptState.Unknown, unknown.State);
         var attempts = await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken);
-        Assert.True(attempts[1].WireTimestamp > attempts[0].WireTimestamp);
+        Assert.Equal(attempts[0].WireTimestamp, attempts[1].WireTimestamp);
         f.Clients.Current.ChannelSendAction = null;
         sender = Sender(f, drafts);
         Assert.Equal(2, f.Clients.Current.Tx); // Recreating the service does not replay Unknown.
         await sender.RepeatChannelAsync(new(f.NodeId, owner.SessionId.Value, owner.Generation, first.MessageId, 2, recipient), CancellationToken);
         var third = (await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, first.MessageId, CancellationToken))[2];
-        Assert.True(third.WireTimestamp > attempts[1].WireTimestamp);
+        Assert.Equal(attempts[1].WireTimestamp, third.WireTimestamp);
         Assert.Equal(3, f.Clients.Current.Tx);
     }
 

@@ -101,6 +101,7 @@ Keep the Companion library free of UI, database and message-history responsibili
 
 ## Engineering rules
 
+- When committing changes, use `git add .` from the repository root rather than staging individual files, as requested by the user. Review the staged diff before committing so no intended files are omitted.
 - Target modern .NET/C# and preserve `CancellationToken` through async APIs.
 - Do not block the RX loop waiting for a command or user callback.
 - Avoid magic protocol numbers outside protocol definitions.

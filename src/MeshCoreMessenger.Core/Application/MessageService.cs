@@ -127,9 +127,13 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 {
                     var attempts = await messages.GetAttemptsAsync(request.NodeId, prepared.MessageId, token).ConfigureAwait(false);
                     var prior = attempts.Max(attempt => attempt.WireTimestamp ?? 0);
-                    var next = Math.Max(timeProvider.GetUtcNow().ToUnixTimeSeconds(), Math.Max(prior, _lastChannelTimestamp) + 1);
+                    // Temporary hardware deduplication experiment: repeat the captured
+                    // payload timestamp rather than making this a new mesh message.
+                    var next = repeat is not null
+                        ? attempts.First(attempt => attempt.WireTimestamp is not null).WireTimestamp!.Value
+                        : Math.Max(timeProvider.GetUtcNow().ToUnixTimeSeconds(), Math.Max(prior, _lastChannelTimestamp) + 1);
                     channelTimestamp = checked((uint)next);
-                    _lastChannelTimestamp = next;
+                    _lastChannelTimestamp = Math.Max(_lastChannelTimestamp, next);
                 }
                 if (!await owned.TransitionAsync(SendAttemptState.Prepared, SendAttemptState.Sending,
                     wireTimestamp: channelTimestamp).ConfigureAwait(false))

@@ -82,7 +82,7 @@ public sealed partial class SessionCommandGatewayTests
             Assert.Equal(new[] { 1, 2 }, attemptsAfterRepeat.Select(attempt => attempt.AttemptNumber));
             Assert.Equal(final, attemptsAfterRepeat[0]);
             var timestamps = server.ChannelTimestamps.ToArray();
-            Assert.True(timestamps[1] > timestamps[0]);
+            Assert.Equal(timestamps[0], timestamps[1]);
             Assert.Equal(timestamps[1], attemptsAfterRepeat[1].WireTimestamp);
             await drafts.FlushAsync(draftTarget, CancellationToken);
             Assert.Equal("Новый черновик не отправлять", (await storage.Drafts.GetAsync(draftTarget, CancellationToken))!.Text);
