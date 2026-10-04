@@ -315,7 +315,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                 dispatcher ?? new ImmediateUiDispatcher(), new ImmediateSearchDelay(), new ControlledDraftDelay(), logger ?? NullLogger<MainWindowViewModel>.Instance,
                 sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory),
                 messageService: messageService, outgoingMessages: Storage.OutgoingMessages,
-                historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)), contactRoutes: contactRoutes);
+                historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)), contactRoutes: contactRoutes, directoryUpdates: Storage.Directories);
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));

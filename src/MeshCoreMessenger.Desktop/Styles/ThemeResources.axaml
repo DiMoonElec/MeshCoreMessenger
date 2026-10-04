@@ -32,6 +32,7 @@
   <CornerRadius x:Key="ChatMentionRadius">6</CornerRadius>
   <ResourceDictionary.ThemeDictionaries>
     <ResourceDictionary x:Key="Light">
+      <SolidColorBrush x:Key="ModalBackdropBrush" Color="#66000000" />
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
       <SolidColorBrush x:Key="ChatCanvasBrush" Color="#EEF3F8" />
       <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#FFFFFF" />
@@ -52,6 +53,7 @@
       <SolidColorBrush x:Key="ApplicationErrorBackgroundBrush" Color="#FCE8E6" />
     </ResourceDictionary>
     <ResourceDictionary x:Key="Dark">
+      <SolidColorBrush x:Key="ModalBackdropBrush" Color="#88000000" />
       <SolidColorBrush x:Key="ShellAccentBrush" Color="#1976D2" />
       <SolidColorBrush x:Key="ChatCanvasBrush" Color="#101B27" />
       <SolidColorBrush x:Key="ChatSurfaceBrush" Color="#182635" />

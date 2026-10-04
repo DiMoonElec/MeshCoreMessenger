@@ -1,4 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Application;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
@@ -16,10 +18,17 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
         IOutgoingTextProcessor? textProcessor = null)
     {
         Navigation = navigation;
-        Menu = new ConversationMenuViewModel(kind, _historyClear, RouteReset);
+        ContactDetailsCommand = new RelayCommand(() => ContactDetailsRequested?.Invoke(this, EventArgs.Empty),
+            () => kind == MessengerNavigationTab.Personal && ViewedNode is { } node &&
+                SelectedConversation is { Kind: ConversationKind.Contact } contact && contact.NodeId == node.Id && contact.Entry.Identity.Length == 32);
+        Menu = new ConversationMenuViewModel(kind, _historyClear, RouteReset, ContactDetailsCommand);
         navigation.PropertyChanged += (_, args) =>
         {
-            if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedConversation)) RouteReset.Invalidate();
+            if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedConversation))
+            {
+                RouteReset.Invalidate();
+                ContactDetailsCommand.NotifyCanExecuteChanged();
+            }
         };
         Composer = new ComposerViewModel(navigation.Draft, textProcessor);
         _select = select;
@@ -29,6 +38,8 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
     public ComposerViewModel Composer { get; }
     public ContactRouteResetViewModel RouteReset { get; } = new();
     public ConversationMenuViewModel Menu { get; }
+    public RelayCommand ContactDetailsCommand { get; }
+    public event EventHandler? ContactDetailsRequested;
     public HistoryClearViewModel HistoryClear
     {
         get => _historyClear;
@@ -47,6 +58,7 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
             if (SetProperty(ref _viewedNode, value))
             {
                 OnPropertyChanged(nameof(ViewedNodePublicKeyHex));
+                ContactDetailsCommand.NotifyCanExecuteChanged();
                 RouteReset.Invalidate();
             }
         }

@@ -1,0 +1,37 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Dialogs.ContactDetailsCardView" x:DataType="vm:ContactDetailsCardViewModel">
+  <UserControl.Styles>
+    <Style Selector="TextBlock.label"><Setter Property="Foreground" Value="{DynamicResource ChatMutedBrush}" /><Setter Property="Margin" Value="0,12,0,2" /></Style>
+    <Style Selector="SelectableTextBlock"><Setter Property="Foreground" Value="{DynamicResource ChatTextBrush}" /><Setter Property="TextWrapping" Value="Wrap" /></Style>
+  </UserControl.Styles>
+  <StackPanel Spacing="4">
+    <TextBlock Text="Чтение сохранённых сведений…" IsVisible="{Binding IsLoading}" Foreground="{DynamicResource ChatMutedBrush}" />
+    <StackPanel IsVisible="{Binding HasError}" Spacing="8">
+      <TextBlock Text="{Binding Error}" TextWrapping="Wrap" Foreground="{DynamicResource ChatErrorBrush}" />
+      <Button Content="Обновить" Command="{Binding RetryCommand}" HorizontalAlignment="Left" />
+    </StackPanel>
+    <StackPanel IsVisible="{Binding HasDetails}" Spacing="4">
+      <TextBlock Classes="label" Text="Имя" /><SelectableTextBlock Text="{Binding Details.Name}" FontSize="18" />
+    </StackPanel>
+    <TextBlock Classes="label" Text="Публичный ключ контакта" />
+    <SelectableTextBlock Text="{Binding PublicKey}" />
+    <StackPanel IsVisible="{Binding HasDetails}" Spacing="4">
+      <TextBlock Classes="label" Text="Тип" /><SelectableTextBlock Text="{Binding Details.Type}" />
+      <TextBlock Classes="label" Text="Справочник ноды" /><SelectableTextBlock Text="{Binding Details.Presence}" />
+      <TextBlock Classes="label" Text="Маршрут отправки" /><SelectableTextBlock Text="{Binding Route}" />
+      <TextBlock Classes="label" Text="Последний advert" /><SelectableTextBlock Text="{Binding Details.LastAdvert}" />
+      <TextBlock Classes="label" Text="Координаты" /><SelectableTextBlock Text="{Binding Details.Coordinates}" />
+      <TextBlock Text="{Binding Details.CoordinatesNote}" TextWrapping="Wrap" Foreground="{DynamicResource ChatMutedBrush}" />
+      <TextBlock Classes="label" Text="Обновлено локально" /><SelectableTextBlock Text="{Binding Details.Updated}" />
+      <Expander Header="Технические сведения" Margin="0,12,0,0" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+        <StackPanel>
+          <TextBlock Classes="label" Text="Флаги" /><SelectableTextBlock Text="{Binding Details.Flags}" />
+          <TextBlock Classes="label" Text="Дескриптор маршрута" /><SelectableTextBlock Text="{Binding Details.RouteDescriptor}" />
+          <TextBlock Classes="label" Text="Поле маршрута (hex)" /><SelectableTextBlock Text="{Binding Details.RawRoute}" />
+          <TextBlock Classes="label" Text="Advert (hex)" /><SelectableTextBlock Text="{Binding Details.RawAdvert}" />
+        </StackPanel>
+      </Expander>
+    </StackPanel>
+  </StackPanel>
+</UserControl>

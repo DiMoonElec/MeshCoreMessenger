@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             x:Class="MeshCoreMessenger.Desktop.Views.Dialogs.ModalHostView" x:DataType="vm:ModalHostViewModel"
+             IsVisible="{Binding IsOpen}" Focusable="True" KeyboardNavigation.TabNavigation="Cycle">
+  <Grid>
+    <Border Background="{DynamicResource ModalBackdropBrush}" PointerPressed="OnBackdropPressed" />
+    <Border x:Name="Card" Margin="20" MaxWidth="640" HorizontalAlignment="Center" VerticalAlignment="Center"
+            Background="{DynamicResource ChatSurfaceBrush}" BorderBrush="{DynamicResource ChatSeparatorBrush}"
+            BorderThickness="1" CornerRadius="16" Padding="20" BoxShadow="0 8 32 0 #40000000">
+      <Grid RowDefinitions="Auto,*,Auto" RowSpacing="16">
+        <Grid ColumnDefinitions="*,Auto">
+          <StackPanel Spacing="4">
+            <TextBlock Text="{Binding Active.Title}" FontSize="20" FontWeight="SemiBold" TextWrapping="Wrap" Foreground="{DynamicResource ChatTextBrush}" />
+            <TextBlock Text="{Binding Active.Description}" IsVisible="{Binding Active.HasDescription}" TextWrapping="Wrap" Foreground="{DynamicResource ChatMutedBrush}" />
+          </StackPanel>
+          <Button Grid.Column="1" x:Name="CloseButton" Content="×" FontSize="24" Width="40" Height="40"
+                  Margin="12,0,0,0" VerticalAlignment="Top" Command="{Binding CloseCommand}"
+                  ToolTip.Tip="Закрыть (Esc)" AutomationProperties.Name="Закрыть карточку" />
+        </Grid>
+        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+          <ContentControl Content="{Binding Active}" HorizontalContentAlignment="Stretch" />
+        </ScrollViewer>
+        <ItemsControl Grid.Row="2" ItemsSource="{Binding Active.Actions}" IsVisible="{Binding Active.HasActions}">
+          <ItemsControl.ItemsPanel><ItemsPanelTemplate><WrapPanel HorizontalAlignment="Right" /></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="vm:ModalAction"><Button Content="{Binding Label}" Command="{Binding Command}" Margin="8,0,0,0" /></DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

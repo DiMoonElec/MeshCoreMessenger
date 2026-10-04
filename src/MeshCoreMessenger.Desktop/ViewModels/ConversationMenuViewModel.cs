@@ -36,7 +36,7 @@ public sealed class ConversationMenuViewModel
     private readonly ContactRouteResetViewModel _routeReset;
     private readonly ConversationMenuItemViewModel? _routeItem;
 
-    internal ConversationMenuViewModel(MessengerNavigationTab kind, HistoryClearViewModel historyClear, ContactRouteResetViewModel? routeReset = null)
+    internal ConversationMenuViewModel(MessengerNavigationTab kind, HistoryClearViewModel historyClear, ContactRouteResetViewModel? routeReset = null, ICommand? contactDetails = null)
     {
         _routeReset = routeReset ?? new ContactRouteResetViewModel();
         _historyClear = historyClear;
@@ -44,7 +44,9 @@ public sealed class ConversationMenuViewModel
         _clearItem = new(ConversationMenuAction.ClearHistory, "Удалить историю сообщений", _clear);
         var items = new List<ConversationMenuItemViewModel>
         {
-            Placeholder(ConversationMenuAction.Details, "Подробности (тест)"),
+            kind == MessengerNavigationTab.Personal
+                ? new(ConversationMenuAction.Details, "О контакте", contactDetails ?? new RelayCommand(() => { }, () => false))
+                : Placeholder(ConversationMenuAction.Details, "Подробности (тест)"),
             Placeholder(ConversationMenuAction.Search, "Поиск (тест)"),
             Placeholder(ConversationMenuAction.Share, "Поделиться (тест)"),
         };

@@ -140,6 +140,7 @@ public sealed partial class MainWindow : Window
     private void OnWorkspaceKeyDown(object? sender, KeyEventArgs args)
     {
         if (args.Handled || DataContext is not MainWindowViewModel owner) return;
+        if (owner.Modal.IsOpen) return;
         if (owner.IsChatWorkspaceVisible)
         {
             (owner.Shell.SelectedItem.Section == ShellSection.PublicChats ? _publicChats : _privateChats).HandleShortcut(args);

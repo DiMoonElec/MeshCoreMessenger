@@ -107,6 +107,15 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             await Chats.RefreshAsync(_lifetimeCancellation.Token);
             await Devices.RefreshAsync(_lifetimeCancellation.Token);
         }, Track, _lifetimeCancellation.Token);
+        Chats.Private.ContactDetailsRequested += (_, _) =>
+        {
+            if (Modal.IsOpen || Volatile.Read(ref _stopped) != 0 || !Chats.Private.ContactDetailsCommand.CanExecute(null)) return;
+            var contact = Chats.Private.SelectedConversation!;
+            var card = new ContactDetailsCardViewModel(contact.NodeId, contact.Entry.Identity,
+                directory, directoryUpdates, dispatcher, logger, Track);
+            _ = Track(Modal.ShowAsync(card));
+            _ = Track(card.RefreshAsync());
+        };
         _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
             new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
@@ -125,6 +134,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public string Title => $"MeshCore Messenger - {(_connectionState == ConnectionSupervisorState.Offline ? "Отключено" : ConnectionStatus)}" +
         (_connectionState == ConnectionSupervisorState.Online && ActiveNode is { } node ? $" [{node.HeaderLabel}]" : string.Empty);
 
+    public ModalHostViewModel Modal { get; } = new();
     public NavigationShellViewModel Shell { get; } = new();
     public DevicesWorkspaceViewModel Devices { get; }
     public ChatWorkspacesViewModel Chats { get; }
@@ -372,6 +382,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             return;
         }
 
+        if (Modal.IsOpen) await _dispatcher.InvokeAsync(() => Modal.Close(ModalCloseReason.Shutdown));
         if (_outgoingMessages is not null) _outgoingMessages.MessageCommitted -= OnOutgoingCommitted;
         if (_directoryUpdates is not null) _directoryUpdates.ContactRouteCommitted -= OnContactRouteCommitted;
         _supervisor.StateChanged -= OnSupervisorStateChanged;

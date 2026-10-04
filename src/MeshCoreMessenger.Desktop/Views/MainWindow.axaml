@@ -1,19 +1,28 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+        xmlns:dialogs="using:MeshCoreMessenger.Desktop.Views.Dialogs"
         xmlns:shell="using:MeshCoreMessenger.Desktop.Views.Shell"
         x:Class="MeshCoreMessenger.Desktop.Views.MainWindow"
         x:Name="RootWindow"
         x:DataType="vm:MainWindowViewModel"
         Width="1040" Height="700" MinWidth="560" MinHeight="440">
+  <Window.DataTemplates>
+    <DataTemplate DataType="vm:ContactDetailsCardViewModel">
+      <dialogs:ContactDetailsCardView />
+    </DataTemplate>
+  </Window.DataTemplates>
   <Window.Title>
     <MultiBinding StringFormat="{}{0}{1}">
       <Binding Path="Title" />
       <Binding Path="#RootWindow.DataDirectoryTitleSuffix" />
     </MultiBinding>
   </Window.Title>
-  <Grid RowDefinitions="Auto,*">
-    <shell:ApplicationErrorView IsVisible="{Binding HasError}" />
-    <shell:NavigationShellView Grid.Row="1" x:Name="ShellHost" DataContext="{Binding Shell}" />
+  <Grid>
+    <Grid RowDefinitions="Auto,*" IsEnabled="{Binding Modal.IsClosed}">
+      <shell:ApplicationErrorView IsVisible="{Binding HasError}" />
+      <shell:NavigationShellView Grid.Row="1" x:Name="ShellHost" DataContext="{Binding Shell}" />
+    </Grid>
+    <dialogs:ModalHostView x:Name="ModalHost" DataContext="{Binding Modal}" />
   </Grid>
 </Window>
