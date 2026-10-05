@@ -25,11 +25,12 @@ public sealed class ContactDetailsCardViewModel : ModalCardViewModel
 
     public ContactDetailsCardViewModel(Guid nodeId, ReadOnlyMemory<byte> publicKey,
         IConversationDirectoryReader directory, IDirectoryStore? updates, IUiDispatcher dispatcher,
-        ILogger logger, Func<Task, Task> track) : base("О контакте")
+        ILogger logger, Func<Task, Task> track, IContactDeliveryHistoryReader? deliveries = null) : base("О контакте")
     {
         if (publicKey.Length != 32) throw new ArgumentException("A full contact key is required.", nameof(publicKey));
         _nodeId = nodeId; _key = publicKey.ToArray(); _directory = directory; _updates = updates;
         _dispatcher = dispatcher; _logger = logger; _track = track;
+        DeliveryHistory = new(nodeId, publicKey, deliveries, dispatcher, logger, track);
         RetryCommand = new AsyncRelayCommand(() => _track(RefreshAsync()));
         if (_updates is not null) _updates.ContactRouteCommitted += OnRouteCommitted;
     }
@@ -41,7 +42,9 @@ public sealed class ContactDetailsCardViewModel : ModalCardViewModel
     public bool HasError => Error is not null;
     public bool IsLoading { get => _loading; private set => SetProperty(ref _loading, value); }
     public AsyncRelayCommand RetryCommand { get; }
-    public async Task RefreshAsync()
+    public ContactDeliveryHistoryViewModel DeliveryHistory { get; }
+    public Task RefreshAsync() => Task.WhenAll(RefreshDetailsAsync(), DeliveryHistory.RefreshAsync());
+    private async Task RefreshDetailsAsync()
     {
         if (_disposed) return;
         var revision = ++_revision;
@@ -79,6 +82,7 @@ public sealed class ContactDetailsCardViewModel : ModalCardViewModel
         if (_disposed) return;
         _disposed = true; ++_revision;
         if (_updates is not null) _updates.ContactRouteCommitted -= OnRouteCommitted;
+        DeliveryHistory.Dispose();
         _lifetime.Cancel(); _lifetime.Dispose();
     }
 }

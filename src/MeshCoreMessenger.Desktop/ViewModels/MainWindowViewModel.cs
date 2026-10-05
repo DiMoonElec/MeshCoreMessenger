@@ -72,7 +72,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
         IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null,
-        IDirectoryStore? directoryUpdates = null)
+        IDirectoryStore? directoryUpdates = null, IContactDeliveryHistoryReader? contactDeliveries = null)
     {
         _outgoingMessages = outgoingMessages;
         if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
@@ -113,7 +113,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             if (Modal.IsOpen || Volatile.Read(ref _stopped) != 0 || !Chats.Private.DetailsCommand.CanExecute(null)) return;
             var contact = Chats.Private.SelectedConversation!;
             var card = new ContactDetailsCardViewModel(contact.NodeId, contact.Entry.Identity,
-                directory, directoryUpdates, dispatcher, logger, Track);
+                directory, directoryUpdates, dispatcher, logger, Track, contactDeliveries);
             _ = Track(Modal.ShowAsync(card));
             _ = Track(card.RefreshAsync());
         };

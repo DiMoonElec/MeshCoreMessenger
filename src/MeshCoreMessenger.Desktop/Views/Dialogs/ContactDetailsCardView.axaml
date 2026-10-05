@@ -33,5 +33,45 @@
         </StackPanel>
       </Expander>
     </StackPanel>
+    <StackPanel DataContext="{Binding DeliveryHistory}" x:DataType="vm:ContactDeliveryHistoryViewModel" Spacing="8" Margin="0,20,0,0">
+      <Grid ColumnDefinitions="*,Auto">
+        <TextBlock Text="Успешные доставки" FontSize="18" VerticalAlignment="Center" Foreground="{DynamicResource ChatTextBrush}" />
+        <Button Grid.Column="1" Content="Обновить" Command="{Binding RefreshCommand}" />
+      </Grid>
+      <TextBlock Text="{Binding Summary}" Foreground="{DynamicResource ChatMutedBrush}" />
+      <TextBlock Text="Время ACK — по часам ПК. Снимки маршрута до отправки и после ACK не доказывают фактический путь пакета. Одна доставка может иметь несколько подтверждений."
+                 TextWrapping="Wrap" Foreground="{DynamicResource ChatMutedBrush}" />
+      <TextBlock Text="Чтение истории доставок…" IsVisible="{Binding IsLoading}" Foreground="{DynamicResource ChatMutedBrush}" />
+      <TextBlock Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" Foreground="{DynamicResource ChatErrorBrush}" />
+      <TextBlock Text="Успешных доставок пока нет." IsVisible="{Binding IsEmpty}" Foreground="{DynamicResource ChatMutedBrush}" />
+      <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+        <StackPanel MinWidth="560">
+          <Grid ColumnDefinitions="140,175,165,80" Margin="0,4,0,8">
+            <TextBlock Text="ACK / время ПК" Foreground="{DynamicResource ChatMutedBrush}" />
+            <TextBlock Grid.Column="1" Text="Перед отправкой" Foreground="{DynamicResource ChatMutedBrush}" />
+            <TextBlock Grid.Column="2" Text="После ACK" Foreground="{DynamicResource ChatMutedBrush}" />
+            <TextBlock Grid.Column="3" Text="RTT" Foreground="{DynamicResource ChatMutedBrush}" />
+          </Grid>
+          <ItemsControl ItemsSource="{Binding Rows}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ContactDeliveryRowViewModel">
+                <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource ChatMutedBrush}" Padding="0,10" ToolTip.Tip="{Binding Diagnostics}">
+                  <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="140,175,165,80">
+                      <SelectableTextBlock Text="{Binding AckTime}" Margin="0,0,8,0" />
+                      <SelectableTextBlock Grid.Column="1" Text="{Binding ConfiguredRoutes}" Margin="0,0,8,0" />
+                      <SelectableTextBlock Grid.Column="2" Text="{Binding LearnedRoute}" Margin="0,0,8,0" />
+                      <SelectableTextBlock Grid.Column="3" Text="{Binding RoundTrip}" />
+                    </Grid>
+                    <TextBlock Text="{Binding Attribution}" TextWrapping="Wrap" Foreground="{DynamicResource ChatMutedBrush}" />
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </StackPanel>
+      </ScrollViewer>
+      <Button Content="Показать ещё" Command="{Binding LoadMoreCommand}" IsVisible="{Binding HasMore}" HorizontalAlignment="Left" />
+    </StackPanel>
   </StackPanel>
 </UserControl>
