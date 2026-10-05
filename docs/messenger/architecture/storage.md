@@ -22,6 +22,13 @@ Writer выполняет SQL вне UI/RX; чтения идут через о�
 поэтому необходим собственный фоновый исполнитель.
 [Документация Microsoft](https://learn.microsoft.com/en-us/dotnet/standard/data/sqlite/async).
 
+В SQLite v6 [P7](../../testing/private-incoming-retries.md) обычные входящие ЛС
+с однозначным полным отправителем объединяются по contact/node/type/timestamp/
+точному тексту и extra. IncomingMessageEvents связывает несколько EventId с одним
+MessageId; всё записывается одной транзакцией. Повтор возвращает Inserted=false,
+не увеличивает unread. Clear удаляет event aliases вместе с сообщением. Не применять
+эту дедупликацию к unknown/ambiguous, CLI/room posts или каналам.
+
 Концептуальная схема; финальные SQL-имена можно уточнить без изменения инвариантов:
 
 | Таблица | Ключи и основные поля |

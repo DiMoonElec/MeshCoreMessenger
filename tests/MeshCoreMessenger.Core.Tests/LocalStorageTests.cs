@@ -43,6 +43,7 @@ public sealed class LocalStorageTests
             "SendAttempts", "Drafts",
             "PrivateTimestampFloors", "PrivateDeliveryCycles", "PrivateWireMessages",
             "ContactDeliveryHistory", "ContactDeliveryEvidence", "ContactDeliveryCandidates",
+            "IncomingMessageEvents",
         ];
         Assert.All(expectedTables, table => Assert.Contains(table, tables));
     }

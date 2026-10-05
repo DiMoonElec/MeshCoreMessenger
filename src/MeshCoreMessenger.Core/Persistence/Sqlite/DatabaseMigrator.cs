@@ -4,7 +4,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private static readonly Migration[] Migrations =
     [
@@ -13,6 +13,7 @@ internal static class DatabaseMigrator
         new(3, "Durable outgoing messages", OutgoingMessagesSql),
         new(4, "Contact route descriptors", ContactRoutesSql),
         new(5, "Private delivery cycles and route evidence", PrivateDeliverySql),
+        new(6, "Private incoming retry event identities", IncomingRetryIdentitiesSql),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
@@ -79,6 +80,18 @@ internal static class DatabaseMigrator
     }
 
     private sealed record Migration(int Version, string Name, string Sql);
+
+    private const string IncomingRetryIdentitiesSql = """
+        CREATE TABLE IncomingMessageEvents (
+            EventId TEXT NOT NULL PRIMARY KEY,
+            MessageId TEXT NOT NULL REFERENCES Messages(Id) ON DELETE CASCADE
+        );
+        CREATE INDEX IX_IncomingMessageEvents_Message ON IncomingMessageEvents(MessageId);
+        INSERT INTO IncomingMessageEvents(EventId,MessageId)
+            SELECT EventId,Id FROM Messages WHERE Direction=0 AND EventId IS NOT NULL;
+        CREATE INDEX IX_Messages_PrivateRetry ON Messages(ConversationId,WireTimestamp,TextType)
+            WHERE Direction=0 AND MessageKind=0 AND ResolutionState=1 AND TextType=0;
+        """;
 
     private const string InitialSchemaSql = """
         CREATE TABLE SchemaMigrations (

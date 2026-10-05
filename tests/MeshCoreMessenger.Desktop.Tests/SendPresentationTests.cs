@@ -10,9 +10,12 @@ namespace MeshCoreMessenger.Desktop.Tests;
 public sealed class SendPresentationTests
 {
     [Theory]
+    [InlineData(PrivateDeliveryState.Prepared, MessageSendDisplayState.Sending)]
     [InlineData(PrivateDeliveryState.Active, MessageSendDisplayState.Sending)]
     [InlineData(PrivateDeliveryState.Delivered, MessageSendDisplayState.Delivered)]
     [InlineData(PrivateDeliveryState.Unconfirmed, MessageSendDisplayState.Failed)]
+    [InlineData(PrivateDeliveryState.Failed, MessageSendDisplayState.Failed)]
+    [InlineData(PrivateDeliveryState.Unknown, MessageSendDisplayState.Unknown)]
     public void PrivateCycleOutcomeOverridesLatestAttemptAndShowsBudget(PrivateDeliveryState state, MessageSendDisplayState expected)
     {
         var id = Guid.NewGuid();
@@ -25,7 +28,7 @@ public sealed class SendPresentationTests
         });
         Assert.Equal(expected, message.Presentation.State);
         Assert.Equal(3, message.Presentation.AttemptLimit);
-        Assert.Equal(state == PrivateDeliveryState.Unconfirmed, message.IsSendError);
+        Assert.Equal(state is PrivateDeliveryState.Unconfirmed or PrivateDeliveryState.Failed, message.IsSendError);
         if (state == PrivateDeliveryState.Active)
             Assert.Contains("Отправка (попытка 2/3)", MessageMetadataFormatter.Format("12:00", message.Presentation));
     }

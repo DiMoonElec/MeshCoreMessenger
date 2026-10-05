@@ -391,7 +391,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | P4 — выполнен | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
 | P5 — выполнен | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
 | P6 — выполнен | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
-| P7 | Ingress dedup и итоговые UI projections, прежний byte counter 160 | Same timestamp → одно входящее/unread, new timestamp → второе, один исходящий пузырёк |
+| P7 — выполнен | Ingress dedup и event aliases (SQLite v6), итоговые UI projections, прежний byte counter 160 | Same timestamp → одно входящее/unread, new timestamp → второе; legacy/V3 TCP, alias replay/reopen/clear, один исходящий пузырёк; [отчёт](../../testing/private-incoming-retries.md) |
 | P8 | Совместная loopback/native приёмка и аппаратные эксперименты пользователя | Полная матрица ниже, обновлённые docs, user confirmation |
 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,

@@ -7,7 +7,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class IncomingMessageStoreTests
+public sealed partial class IncomingMessageStoreTests
 {
     [Fact]
     public async Task StoresAllIncomingModelsWithProtocolMetadataAndStableChannelBinding()
@@ -86,7 +86,8 @@ public sealed class IncomingMessageStoreTests
         Assert.Equal(context.Node.Id, firstInsert.NodeId);
         Assert.Equal(context.Node.Id, duplicate.NodeId);
         Assert.Equal(firstInsert.MessageId, duplicate.MessageId);
-        Assert.NotEqual(firstInsert.MessageId, separateButIdentical.MessageId);
+        Assert.Equal(firstInsert.MessageId, separateButIdentical.MessageId);
+        Assert.False(separateButIdentical.Inserted);
 
         await context.Storage.Directories.ApplySnapshotAsync(
             context.Node.Id, context.Session.Id,
@@ -112,7 +113,7 @@ public sealed class IncomingMessageStoreTests
             context.Envelope(new ChannelMessage(3, 2, MessageTextType.Plain, context.Now, "unknown", null)), CancellationToken);
 
         await using var connection = OpenReadOnly(context.DatabasePath);
-        Assert.Equal(2, ScalarInt(connection, "SELECT COUNT(*) FROM Messages WHERE ResolutionState = 1;"));
+        Assert.Equal(1, ScalarInt(connection, "SELECT COUNT(*) FROM Messages WHERE ResolutionState = 1;"));
         Assert.Equal(1, ScalarInt(connection, "SELECT COUNT(*) FROM Messages WHERE ResolutionState = 2;"));
         Assert.Equal(2, ScalarInt(connection, "SELECT COUNT(*) FROM Messages WHERE ResolutionState = 0;"));
         using var unknown = connection.CreateCommand();
@@ -148,7 +149,7 @@ public sealed class IncomingMessageStoreTests
         }
         public string Root { get; }
         public string DatabasePath => Path.Combine(Root, "messenger.db");
-        public LocalStorage Storage { get; }
+        public LocalStorage Storage { get; private set; }
         public NodeRecord Node { get; }
         public SessionRecord Session { get; }
         public DateTimeOffset Now { get; } = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
@@ -175,6 +176,11 @@ public sealed class IncomingMessageStoreTests
         }
         public IncomingMessageEnvelope Envelope(ReceivedMessage message, Guid? eventId = null, ChannelBindingRecord? binding = null) =>
             new(eventId ?? Guid.NewGuid(), Session.Id, Node.Id, message, Now, binding, null);
+        public async Task ReopenAsync()
+        {
+            await Storage.DisposeAsync();
+            Storage = await LocalStorage.OpenAsync(new TestPaths(Root), CancellationToken);
+        }
         public async ValueTask DisposeAsync()
         {
             await Storage.DisposeAsync();

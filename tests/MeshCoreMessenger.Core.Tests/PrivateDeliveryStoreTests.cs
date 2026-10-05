@@ -310,7 +310,7 @@ public sealed partial class OutgoingMessageStoreTests
         {
             DropPrivateDeliverySchema(connection);
             using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM SchemaMigrations WHERE Version=5; PRAGMA user_version=4;";
+            command.CommandText = "DELETE FROM SchemaMigrations WHERE Version>=5; PRAGMA user_version=4;";
             command.ExecuteNonQuery();
         }
         f.Storage = await LocalStorage.OpenAsync(f.Paths, CancellationToken);
@@ -335,7 +335,7 @@ public sealed partial class OutgoingMessageStoreTests
         {
             DropPrivateDeliverySchema(connection);
             using var command = connection.CreateCommand();
-            command.CommandText = "DELETE FROM SchemaMigrations WHERE Version=5; PRAGMA user_version=4; CREATE TABLE PrivateWireMessages (Collision TEXT);";
+            command.CommandText = "DELETE FROM SchemaMigrations WHERE Version>=5; PRAGMA user_version=4; CREATE TABLE PrivateWireMessages (Collision TEXT);";
             command.ExecuteNonQuery();
         }
         await Assert.ThrowsAsync<DatabaseStorageException>(() => LocalStorage.OpenAsync(f.Paths, CancellationToken));
@@ -351,6 +351,7 @@ public sealed partial class OutgoingMessageStoreTests
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
+            DROP TABLE IncomingMessageEvents; DROP INDEX IX_Messages_PrivateRetry;
             DROP TABLE ContactDeliveryCandidates; DROP TABLE ContactDeliveryEvidence; DROP TABLE ContactDeliveryHistory;
             DROP TRIGGER TR_SendAttempts_PrivateCaptureImmutable; DROP TRIGGER TR_PrivateWireMessages_Immutable;
             DROP INDEX UX_SendAttempts_PrivatePreparation; DROP INDEX IX_SendAttempts_PrivateAck;

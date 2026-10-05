@@ -25,6 +25,19 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
             }
             var resolution = ResolveConversation(connection, transaction, envelope);
             var data = MessageData.From(envelope.Message);
+            // Only ordinary private text with a uniquely resolved full contact identity is safe to merge.
+            // Room posts, CLI replies, unknown/ambiguous prefixes and channels keep their existing behavior.
+            if (envelope.Message is ContactMessage { TextType: MessageTextType.Plain }
+                && resolution.State == MessageResolutionState.Resolved)
+            {
+                existing = TryReadPrivateRetry(connection, transaction, envelope, resolution, data);
+                if (existing is not null)
+                {
+                    RememberEvent(connection, transaction, envelope.EventId, existing.MessageId);
+                    transaction.Commit();
+                    return existing;
+                }
+            }
             var messageId = Guid.NewGuid();
             using var insert = connection.CreateCommand();
             insert.Transaction = transaction;
@@ -84,6 +97,7 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
                 lastInsert.CommandText = "SELECT last_insert_rowid();";
                 sequence = (long)lastInsert.ExecuteScalar()!;
             }
+            RememberEvent(connection, transaction, envelope.EventId, messageId);
             transaction.Commit();
             return new StoredIncomingMessage(
                 messageId,
@@ -181,9 +195,16 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
         using var command = connection.CreateCommand(); command.Transaction = transaction;
         command.CommandText = """
             SELECT m.Id, c.NodeId, m.ConversationId, m.LocalSequence
+            FROM IncomingMessageEvents e
+            INNER JOIN Messages m ON m.Id=e.MessageId
+            INNER JOIN Conversations c ON c.Id=m.ConversationId
+            WHERE e.EventId=$eventId
+            UNION ALL
+            SELECT m.Id, c.NodeId, m.ConversationId, m.LocalSequence
             FROM Messages AS m
             INNER JOIN Conversations AS c ON c.Id = m.ConversationId
-            WHERE m.EventId = $eventId;
+            WHERE m.EventId = $eventId
+            LIMIT 1;
             """;
         Add(command, "$eventId", eventId);
         using var result = command.ExecuteReader();
@@ -195,6 +216,33 @@ internal sealed class SqliteIncomingMessageStore(DatabaseWorker writer) : IIncom
             Guid.Parse(result.GetString(2)),
             result.GetInt64(3),
             false);
+    }
+
+    private static StoredIncomingMessage? TryReadPrivateRetry(SqliteConnection connection, SqliteTransaction transaction,
+        IncomingMessageEnvelope envelope, Resolution resolution, MessageData data)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = """
+            SELECT Id,LocalSequence FROM Messages
+            WHERE ConversationId=$conversation AND Direction=0 AND MessageKind=0 AND ResolutionState=1 AND TextType=0
+              AND WireTimestamp=$timestamp AND Text=$text COLLATE BINARY AND OriginalSenderPrefix IS $extra
+            ORDER BY LocalSequence LIMIT 1;
+            """;
+        Add(command, "$conversation", resolution.ConversationId);
+        Add(command, "$timestamp", data.WireTimestamp);
+        Add(command, "$text", data.Text);
+        AddBlob(command, "$extra", data.SenderPrefix);
+        using var row = command.ExecuteReader();
+        return row.Read() ? new(Guid.Parse(row.GetString(0)), envelope.EventId, envelope.NodeId,
+            resolution.ConversationId, row.GetInt64(1), false) : null;
+    }
+
+    private static void RememberEvent(SqliteConnection connection, SqliteTransaction transaction, Guid eventId, Guid messageId)
+    {
+        using var command = connection.CreateCommand(); command.Transaction = transaction;
+        command.CommandText = "INSERT INTO IncomingMessageEvents(EventId,MessageId) VALUES ($event,$message);";
+        Add(command, "$event", eventId); Add(command, "$message", messageId);
+        command.ExecuteNonQuery();
     }
 
     private static bool IsActiveBinding(SqliteConnection connection, SqliteTransaction transaction, ChannelBindingRecord binding)

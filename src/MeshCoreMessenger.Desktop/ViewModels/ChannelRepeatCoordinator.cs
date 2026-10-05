@@ -32,6 +32,7 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
         if (service is null || store is null) return;
         workspace.Navigation.History.Messages.CollectionChanged += OnCollectionChanged;
         workspace.Composer.PropertyChanged += OnContextChanged;
+        workspace.Composer.SendCommand.PropertyChanged += OnSendExecutionChanged;
         workspace.PropertyChanged += OnContextChanged;
         workspace.Navigation.PropertyChanged += OnContextChanged;
         Rebind();
@@ -69,6 +70,10 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
         // Offline LoadAsync also publishes here before Avalonia is initialized; queuing
         // then would create its dispatcher on the storage continuation's thread.
         Rebind();
+    }
+    private void OnSendExecutionChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (!_stopped && args.PropertyName == nameof(AsyncRelayCommand.IsRunning)) Rebind();
     }
     private bool Eligible(HistoryMessageListItem item) => item.IsOutgoing && item.Kind == StoredMessageKind.Text && item.Presentation.AttemptNumber is > 0;
     private bool CanRepeat(HistoryMessageListItem item)
@@ -122,6 +127,7 @@ internal sealed class ChannelRepeatCoordinator : IDisposable
         _stopped = true;
         _workspace.Navigation.History.Messages.CollectionChanged -= OnCollectionChanged;
         _workspace.Composer.PropertyChanged -= OnContextChanged;
+        _workspace.Composer.SendCommand.PropertyChanged -= OnSendExecutionChanged;
         _workspace.PropertyChanged -= OnContextChanged;
         _workspace.Navigation.PropertyChanged -= OnContextChanged;
         foreach (var item in _commands.Keys) item.PropertyChanged -= OnMessageChanged;

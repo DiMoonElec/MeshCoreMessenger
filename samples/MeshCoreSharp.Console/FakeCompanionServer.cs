@@ -12,6 +12,18 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private Task? _serverTask;
     private NetworkStream? _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly ConcurrentQueue<byte[]> _messages = new(
+    [
+        BuildMessage(PacketType.ContactMessageReceivedV3, "Hello from Alice"),
+        BuildMessage(PacketType.ChannelMessageReceivedV3, "Bob: Hello channel"),
+        [(byte)PacketType.ChannelDataReceived, 0xE3, 0, 0, 0, 0xFF, 0xFF, 0xFF, 3, 0, 1, 255],
+    ]);
+    public Task QueueIncomingMessageAsync(ReadOnlyMemory<byte> frame)
+    {
+        var stream = _stream ?? throw new InvalidOperationException("Emulator not connected.");
+        _messages.Enqueue(frame.ToArray());
+        return WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
+    }
     public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck,
         byte RouteDescriptor = byte.MaxValue, byte Attempt = 0);
     public ConcurrentQueue<PrivateTransmission> PrivateTransmissions { get; } = new();
@@ -70,12 +82,6 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         await using var stream = client.GetStream();
         _stream = stream;
 
-        var messages = new Queue<byte[]>(
-        [
-            BuildMessage(PacketType.ContactMessageReceivedV3, "Hello from Alice"),
-            BuildMessage(PacketType.ChannelMessageReceivedV3, "Bob: Hello channel"),
-            [(byte)PacketType.ChannelDataReceived, 0xE3, 0, 0, 0, 0xFF, 0xFF, 0xFF, 3, 0, 1, 255],
-        ]);
         while (true)
         {
             byte[] command;
@@ -86,7 +92,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
 
             if (type == CommandType.SyncNextMessage)
             {
-                await WriteFrameAsync(stream, 0x3E, messages.TryDequeue(out var message)
+                await WriteFrameAsync(stream, 0x3E, _messages.TryDequeue(out var message)
                     ? message : [(byte)PacketType.NoMoreMessages]);
                 continue;
             }
