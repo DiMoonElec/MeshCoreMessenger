@@ -127,7 +127,7 @@ public sealed partial class OutgoingMessageStoreTests
     }
 
     [Fact]
-    public async Task DeliveryHistorySchemaRetainsEvidenceAfterConversationClear()
+    public async Task DeliveryHistoryCascadesEvidenceAfterConversationClear()
     {
         await using var f = await Fixture.CreateAsync();
         var message = await BeginCycle(f);
@@ -136,7 +136,7 @@ public sealed partial class OutgoingMessageStoreTests
         await Expire(f, prepared);
         var delivery = Guid.NewGuid();
         var evidence = Guid.NewGuid();
-        // P3 will write these rows atomically with ACK. Here verify the retention contract of migration v5.
+        // Seed snapshots to verify history clear removes all three analytics tables atomically.
         using (var connection = f.Open())
         using (var command = connection.CreateCommand())
         {
@@ -172,7 +172,9 @@ public sealed partial class OutgoingMessageStoreTests
             WHERE h.MessageId IS NULL AND c.AttemptId IS NULL
               AND h.PcTimeZoneId='Europe/Moscow' AND c.RouteDescriptor=255;
             """;
-        Assert.Equal(1L, check.ExecuteScalar());
+        Assert.Equal(0L, check.ExecuteScalar());
+        check.CommandText = "SELECT (SELECT COUNT(*) FROM ContactDeliveryHistory) + (SELECT COUNT(*) FROM ContactDeliveryEvidence) + (SELECT COUNT(*) FROM ContactDeliveryCandidates);";
+        Assert.Equal(0L, check.ExecuteScalar());
         check.CommandText = "PRAGMA foreign_key_check;";
         Assert.Null(check.ExecuteScalar());
     }

@@ -54,7 +54,7 @@ public sealed partial class OutgoingMessageStoreTests
     }
 
     [Fact]
-    public async Task HistoryPagesUseScopedTieBreakerAndRemainAfterClearContactRemovalAndReopen()
+    public async Task HistoryPagesUseScopedTieBreakerAndRemainAfterContactRemovalAndReopen()
     {
         await using var f = await Fixture.CreateAsync();
         for (var index = 0; index < 3; index++)
@@ -82,7 +82,6 @@ public sealed partial class OutgoingMessageStoreTests
         await Assert.ThrowsAsync<ArgumentException>(() => f.Storage.ContactDeliveries.GetPageAsync(Guid.NewGuid(), DeliveryContactKey, 2, first.NextCursor, CancellationToken));
         await Assert.ThrowsAsync<ArgumentException>(() => f.Storage.ContactDeliveries.GetPageAsync(f.NodeId, new byte[32], 2, first.NextCursor, CancellationToken));
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => f.Storage.ContactDeliveries.GetPageAsync(f.NodeId, DeliveryContactKey, 101, cancellationToken: CancellationToken));
-        await f.Storage.HistoryClear.ClearAsync(f.NodeId, f.ConversationId, CancellationToken);
         using (var connection = f.Open()) using (var command = connection.CreateCommand())
         { command.CommandText = "DELETE FROM Conversations; DELETE FROM Contacts;"; command.ExecuteNonQuery(); }
         await f.Storage.DisposeAsync();

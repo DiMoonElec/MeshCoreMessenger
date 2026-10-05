@@ -23,6 +23,15 @@ internal sealed class SqliteHistoryClearStore(DatabaseWorker writer, DatabaseRea
             using var cutoffCommand = Command(connection, transaction, nodeId, conversationId,
                 "SELECT COALESCE(MAX(LocalSequence),0) FROM Messages WHERE ConversationId=$conversation;");
             var cutoff = (long)cutoffCommand.ExecuteScalar()!;
+            if (status.Kind == ConversationKind.Contact)
+            {
+                // Full contact key and owning node, including legacy rows whose MessageId is already NULL.
+                // Evidence and candidate route snapshots cascade in the same transaction as messages.
+                using var deliveries = Command(connection, transaction, nodeId, conversationId,
+                    "DELETE FROM ContactDeliveryHistory WHERE NodeId=$node AND ContactPublicKey=$key;");
+                deliveries.Parameters.AddWithValue("$key", status.Identity.ToArray());
+                deliveries.ExecuteNonQuery();
+            }
             using var delete = Command(connection, transaction, nodeId, conversationId,
                 "DELETE FROM Messages WHERE ConversationId=$conversation AND LocalSequence <= $cutoff;");
             delete.Parameters.AddWithValue("$cutoff", cutoff);
@@ -45,7 +54,8 @@ internal sealed class SqliteHistoryClearStore(DatabaseWorker writer, DatabaseRea
                           WHERE m.ConversationId=c.Id AND
                           (a.State=$sending OR (a.State=$accepted AND a.AckExpectation<>$notExpected)))
                    OR EXISTS(SELECT 1 FROM Messages m JOIN PrivateDeliveryCycles d ON d.MessageId=m.Id
-                             WHERE m.ConversationId=c.Id AND d.State IN ($preparedCycle,$activeCycle))
+                             WHERE m.ConversationId=c.Id AND d.State IN ($preparedCycle,$activeCycle)),
+                   EXISTS(SELECT 1 FROM ContactDeliveryHistory h WHERE h.NodeId=c.NodeId AND h.ContactPublicKey=c.ContactPublicKey)
             FROM Conversations c LEFT JOIN Channels ch ON ch.Id=c.ChannelId
             WHERE c.Id=$conversation AND c.NodeId=$node;
             """);
@@ -56,7 +66,7 @@ internal sealed class SqliteHistoryClearStore(DatabaseWorker writer, DatabaseRea
         command.Parameters.AddWithValue("$activeCycle", (int)PrivateDeliveryState.Active);
         using var row = command.ExecuteReader();
         if (!row.Read()) throw new KeyNotFoundException("Переписка не принадлежит выбранной ноде.");
-        return new(nodeId, conversationId, (ConversationKind)row.GetInt32(0), (byte[])row.GetValue(1), row.GetInt64(2), row.GetBoolean(3));
+        return new(nodeId, conversationId, (ConversationKind)row.GetInt32(0), (byte[])row.GetValue(1), row.GetInt64(2), row.GetBoolean(3), row.GetBoolean(4));
     }
 
     private static SqliteCommand Command(SqliteConnection connection, SqliteTransaction transaction, Guid node, Guid conversation, string sql)

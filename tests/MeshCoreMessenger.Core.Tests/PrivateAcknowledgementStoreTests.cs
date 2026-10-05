@@ -130,8 +130,9 @@ public sealed partial class OutgoingMessageStoreTests
         Assert.Equal(0, writes.PendingCount);
         Assert.Equal(3, Scalar(f, "SELECT COUNT(*) FROM SendAttempts;")); // Persistence retry adds no transmissions/attempts.
         await f.Storage.HistoryClear.ClearAsync(f.NodeId, f.ConversationId, CancellationToken);
-        Assert.Equal(1, Scalar(f, "SELECT COUNT(*) FROM ContactDeliveryHistory WHERE MessageId IS NULL;"));
-        Assert.Equal(1, Scalar(f, "SELECT COUNT(*) FROM ContactDeliveryCandidates WHERE AttemptId IS NULL;"));
+        Assert.Equal(0, Scalar(f, "SELECT COUNT(*) FROM ContactDeliveryHistory;"));
+        Assert.Equal(0, Scalar(f, "SELECT COUNT(*) FROM ContactDeliveryEvidence;"));
+        Assert.Equal(0, Scalar(f, "SELECT COUNT(*) FROM ContactDeliveryCandidates;"));
     }
 
     [Fact]

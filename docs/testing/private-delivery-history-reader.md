@@ -44,8 +44,10 @@ wall-clock даты из-за перевода часов. Порядок commit
 FirstAck сохраняет offset/timezone первого успеха, candidate — offset/timezone
 своей передачи; последующее evidence имеет собственное UTC время ACK.
 
-Retention: clear-history удаляет текст/attempts, MessageId/AttemptId становятся
-null, независимые snapshots/evidence остаются. Данные читаются после удаления
+Retention (изменено по запросу пользователя 05.10.2026): clear-history приватной
+переписки удаляет текст/attempts и аналитику выбранного NodeId/full ContactPublicKey
+одной транзакцией; evidence/candidates каскадируют от delivery. Старая политика
+сохранения после явной очистки отменена. Данные по-прежнему читаются после удаления
 переписок/контактов и reopening базы. NodeId является владельцем всей аналитики;
 удаление собственной ноды может каскадировать её историю. UI графиков/процентов
 успеха отсутствует; список успешных доставок сам по себе не даёт success rate.
@@ -60,7 +62,8 @@ null, независимые snapshots/evidence остаются. Данные �
 - readback failure сохраняет Delivered/null route;
 - late ACK после трёх timeout получает snapshot без нового TX;
 - SQL enrichment failure/retry сохраняет наблюдение без дополнительных команд;
-- clear/conversation/contact removal/reopen сохраняют независимую аналитику.
+- conversation/contact removal/reopen сохраняют независимую аналитику;
+  явная очистка удаляет её только у выбранного контакта/ноды.
 
 Аппаратные дальние испытания ещё предстоят пользователю. P7 (incoming dedup и
 итоговые UI projections) не начат. Хэши пакетов остаются отложенными.

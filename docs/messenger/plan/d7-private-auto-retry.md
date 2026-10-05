@@ -246,7 +246,9 @@ P6: IContactDeliveryHistoryReader возвращает scoped страницы �
 ACK candidates с PC times/offset/zone. После commit нового evidence session-owned
 queue снимает отдельный ContactReadbackAfterAcknowledgement snapshot; ошибка чтения
 оставляет null, SQL recovery не выполняет radio replay. ConfiguredBeforeSend и
-readback не смешиваются. Снимки переживают clear/contact removal. Schema v5 без
+readback не смешиваются. По уточнению пользователя 05.10.2026 очистка переписки
+удаляет и её аналитику, строго по NodeId/full ContactPublicKey; простое удаление
+контакта не каскадирует в снимки. Schema v5 без
 миграции. [Отчёт P6](../../testing/private-delivery-history-reader.md).
 
 ## Данные и миграция
@@ -325,11 +327,13 @@ Read API — постраничный по (NodeId, ContactPublicKey, AckReceive
 индексы под него. Contacts хранит только текущую конфигурацию, массив истории туда
 не добавлять. UI аналитики/графики пока не входит.
 
-Предлагаемая retention: локальная очистка переписки удаляет текст и attempts,
-но не route/time delivery records без текста. Correlation references nullable
-с ON DELETE SET NULL либо независимые audit ids; не CASCADE от Messages/Contacts.
-Удаление собственной ноды может удалить всю её историю. Этот выбор отметить в
-контракте clear-history и тестах; не сохранять текст/секреты в аналитической таблице.
+Retention (уточнение пользователя 05.10.2026): явная очистка приватной переписки
+удаляет текст/attempts и все route/time delivery records, evidence и candidates
+ровно этой пары NodeId/full ContactPublicKey, одной транзакцией. Включаются записи
+без MessageId от прежней политики. Публичная очистка не затрагивает аналитику ЛС.
+Correlation references остаются nullable с ON DELETE SET NULL: обычное удаление
+контакта/переписки само по себе не CASCADE от Messages/Contacts. Удаление собственной
+ноды может удалить всю её историю. Не сохранять текст/секреты в аналитической таблице.
 
 Для будущего «какой путь лучше» нужны и неуспешные попытки/число передач, а не только
 успехи: route snapshots сохраняются у всех attempts. Отдельная долговечная история
@@ -415,8 +419,8 @@ route enrichment/retention; не добавлять запись аналити�
   clear-history и ручной reset не вмешиваются в цикл. Старые owned writes завершаются.
 - 160/161 UTF-8 байт, emoji, обычный firmware attempt; capture draft изменился
   после клика, повтор не забирает новый текст. Два публичных действия без регрессии.
-- Один ACK/дубликаты push/observer → одна запись успеха; route/time сохранены после
-  локальной очистки; неоднозначные route/time candidates сохранены честно.
+- Один ACK/дубликаты push/observer → одна запись успеха; локальная очистка удаляет
+  аналитику только выбранного контакта/ноды; неоднозначные candidates сохранены честно.
 - Приём: T1 с разными attempts объединяется; T2 с тем же текстом — отдельная запись.
   Эмулятор «текст дошёл, ACK потерян» воспроизводит возможный дубликат после fallback;
   фильтр одинакового текста по временному окну не добавлять.
