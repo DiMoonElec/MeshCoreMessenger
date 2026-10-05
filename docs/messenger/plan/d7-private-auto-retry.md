@@ -392,12 +392,13 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | P5 — выполнен | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
 | P6 — выполнен | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
 | P7 — выполнен | Ingress dedup и event aliases (SQLite v6), итоговые UI projections, прежний byte counter 160 | Same timestamp → одно входящее/unread, new timestamp → второе; legacy/V3 TCP, alias replay/reopen/clear, один исходящий пузырёк; [отчёт](../../testing/private-incoming-retries.md) |
-| P8 | Совместная loopback/native приёмка и аппаратные эксперименты пользователя | Полная матрица ниже, обновлённые docs, user confirmation |
+| P8 — автоматическая/native часть выполнена; аппаратная ожидается | Совместная loopback/native приёмка и аппаратные эксперименты пользователя | Library 105/105, Core 384/384, Desktop 328/328; native Light/Dark, 420/960; [отчёт и оставшиеся аппаратные сценарии](../../testing/private-retries-acceptance.md) |
 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,
 route enrichment/retention; не добавлять запись аналитики отдельным ненадёжным callback.
 Новый UI-компонент не нужен: metadata под пузырьком и текущий route header уже есть.
-Лимит остаётся 160, расширенный attempt не входит. P1–P6 завершены; P7–P8 ещё не реализованы.
+Лимит остаётся 160, расширенный attempt не входит. P1–P7 завершены; автоматическая/native часть P8 завершена 05.10.2026.
+Аппаратная приёмка дальней ноды, radio hashes и поведения штатного приёмника остаётся открытой.
 
 ## Обязательная матрица
 

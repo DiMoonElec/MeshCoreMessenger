@@ -81,3 +81,16 @@ Checks Light/Dark × 420/960: command once, post-commit flood metadata, unchange
 history/draft. Screenshots: `$TMPDIR/meshcore-route-reset/`. Core tests separately
 use production route service/library over loopback TCP. See
 [verification report](../../docs/testing/private-route-reset.md).
+
+
+Private send/resend acceptance (native controls, simulated message service, temporary SQLite):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --private-send-only
+```
+
+Light/Dark × 420/960: Enter/Shift+Enter/IME, first-send history materialization,
+Unconfirmed → real “Отправить еще раз” menu → separate pending bubble,
+retained draft and independent late source ACK. Screenshots:
+`$TMPDIR/meshcore-d6-private-send/`. Production retry cycles and protocol ACK
+matching are verified separately over loopback TCP; see [P8 acceptance](../../docs/testing/private-retries-acceptance.md).

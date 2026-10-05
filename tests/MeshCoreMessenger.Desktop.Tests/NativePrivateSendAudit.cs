@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Presenters;
 using Avalonia.Input;
+using Avalonia.Interactivity;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using Avalonia.VisualTree;
@@ -67,8 +68,25 @@ public sealed partial class UiWorkspaceIntegrationTests
                         if (!button.IsEnabled) throw new InvalidOperationException("Pending ACK blocked next send.");
                         var attempt = (await w.Storage.OutgoingMessages.GetAttemptsAsync(w.A.NodeId, bubble.Id)).Single();
                         await w.Storage.OutgoingMessages.TransitionAsync(new(w.A.NodeId, bubble.Id, attempt.Id, attempt.SessionId!.Value,
-                            SendAttemptState.Accepted, SendAttemptState.Delivered, DateTimeOffset.UtcNow, RoundTripMilliseconds: 25));
-                        await UntilAsync(() => bubble.Presentation.State == MessageSendDisplayState.Delivered);
+                            SendAttemptState.Accepted, SendAttemptState.Unconfirmed, DateTimeOffset.UtcNow));
+                        await UntilAsync(() => bubble.CanSendAsNew); await SettleAsync(window);
+                        var message = view.GetVisualDescendants().OfType<MessageView>().Single(v => ReferenceEquals(v.DataContext, bubble));
+                        var anchor = message.GetVisualDescendants().OfType<StackPanel>().Single(p => p.Classes.Contains("message"));
+                        var menu = anchor.ContextMenu!;
+                        menu.Open(anchor); await SettleAsync(window);
+                        var resend = menu.Items.OfType<MenuItem>().Single(item => Equals(item.Header, "Отправить еще раз"));
+                        if (!resend.IsVisible || !resend.IsEnabled) throw new InvalidOperationException("Private resend menu binding failed.");
+                        resend.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent)); menu.Close();
+                        await UntilAsync(() => workspace.Navigation.History.Messages.Count(m => m.Body == bubble.Body) == 2);
+                        await SettleAsync(window);
+                        var fresh = workspace.Navigation.History.Messages.Single(m => m.Body == bubble.Body && m.Id != bubble.Id);
+                        if (sender.Calls != 2 || composer.Text != "Следующее сообщение" || fresh.SendAsNewVisible || window.OwnedWindows.Count != 0)
+                            throw new InvalidOperationException("Private resend changed draft, requested confirmation or failed to add a pending bubble.");
+                        await w.Storage.OutgoingMessages.TransitionAsync(new(w.A.NodeId, bubble.Id, attempt.Id, attempt.SessionId!.Value,
+                            SendAttemptState.Unconfirmed, SendAttemptState.Delivered, DateTimeOffset.UtcNow, RoundTripMilliseconds: 25));
+                        await UntilAsync(() => bubble.Presentation.State == MessageSendDisplayState.Delivered && !bubble.SendAsNewVisible);
+                        if (fresh.Presentation.State != MessageSendDisplayState.AwaitingAck)
+                            throw new InvalidOperationException("Late source ACK changed the new message.");
                         await SettleAsync(window);
                         if (workspace.SelectedConversation!.Id is null || w.Root.ErrorMessage is not null)
                             throw new InvalidOperationException("First private send did not reopen materialized history.");
@@ -79,7 +97,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                             throw new InvalidOperationException("Private composer binding/layout failed.");
                         using var bitmap = new RenderTargetBitmap(new PixelSize((int)window.ClientSize.Width, (int)window.ClientSize.Height));
                         bitmap.Render(window); bitmap.Save(Path.Combine(output, $"{theme}-{width}.png"), PngBitmapEncoderOptions.Default);
-                        Console.WriteLine($"D6 native {theme} {width}: Enter=1 TX, Shift/IME=0 TX; AwaitingAck → Delivered same bubble; first-send history reopened; next send enabled while ACK pending");
+                        Console.WriteLine($"D6 native {theme} {width}: Enter=1 TX, Shift/IME=0 TX; AwaitingAck → Unconfirmed → Delivered same bubble; real resend menu adds pending bubble, preserves draft; late source ACK does not confirm copy");
                     }
                     finally { await w.Root.StopAsync(); window.Close(); }
                 }

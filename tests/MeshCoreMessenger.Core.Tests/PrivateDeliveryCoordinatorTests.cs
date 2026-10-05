@@ -61,6 +61,7 @@ public sealed partial class SessionCommandGatewayTests
     [Theory]
     [InlineData(2, 1)]
     [InlineData(3, 0)]
+    [InlineData(3, 2)]
     public async Task AckFromAnyAttemptStopsFutureFloodTransmissions(int sentCount, int acknowledgedIndex)
     {
         await using var f = await TcpPrivateFixture.CreateAsync(false, 250, autoRetries: true);
@@ -88,6 +89,35 @@ public sealed partial class SessionCommandGatewayTests
         Assert.Equal(new[] {"first","first","first","second","second","second"}, wire.Select(item => item.Text));
         Assert.True(wire[3].Timestamp > wire[0].Timestamp);
         Assert.Equal(6, wire.Select(item => item.ExpectedAck).Distinct().Count());
+    }
+
+    [Theory]
+    [InlineData((byte)0, PrivateRepeatMode.SameTimestampIncrementAttempt)]
+    [InlineData((byte)0, PrivateRepeatMode.NewTimestampResetAttempt)]
+    [InlineData((byte)255, PrivateRepeatMode.SameTimestampIncrementAttempt)]
+    [InlineData((byte)255, PrivateRepeatMode.NewTimestampResetAttempt)]
+    public async Task QueuedMessageUsesRouteAtJobStartAndRetainsItsEnqueuedRetryMode(byte nextRoute, PrivateRepeatMode mode)
+    {
+        await using var f = await TcpPrivateFixture.CreateAsync(false, 500, nextRoute == 0 ? (byte)255 : (byte)0, autoRetries: true);
+        var first = await f.Send("hold queue", 0xA1, 1);
+        await Until(() => f.Server.PrivateTransmissions.Count == 1);
+        var second = await f.Send("queued route change", 0xA1, 2, new(mode));
+        Assert.Null(await f.Storage.OutgoingMessages.GetPrivateCycleAsync(f.Node, second.MessageId, CancellationToken));
+        Assert.Equal(SendAttemptState.Prepared, (await f.Storage.OutgoingMessages.GetAttemptsAsync(f.Node, second.MessageId, CancellationToken)).Single().State);
+        f.Server.ContactRoutes[0xA1] = nextRoute;
+        await f.Server.SendAcknowledgementAsync(f.Server.PrivateTransmissions.First().ExpectedAck);
+        await WaitCycle(f, first.MessageId, PrivateDeliveryState.Delivered);
+        var cycle = await WaitCycle(f, second.MessageId, PrivateDeliveryState.Unconfirmed);
+        await Until(() => f.Deliveries!.PendingCount == 0);
+        var wire = f.Server.PrivateTransmissions.Where(item => item.Text == "queued route change").ToArray();
+        Assert.Equal(nextRoute == 0 ? 5 : 3, cycle.PlannedAttemptCount);
+        Assert.Equal(cycle.PlannedAttemptCount, wire.Length);
+        Assert.Equal(mode, cycle.Policy.RetryMode);
+        Assert.All(wire.Take(3), item => Assert.Equal(nextRoute, item.RouteDescriptor));
+        Assert.Equal(mode == PrivateRepeatMode.NewTimestampResetAttempt ? wire.Length : (nextRoute == 0 ? 2 : 1), wire.Select(item => item.Timestamp).Distinct().Count());
+        Assert.Equal(mode == PrivateRepeatMode.NewTimestampResetAttempt ? Enumerable.Repeat((byte)0, wire.Length) : (nextRoute == 0 ? new byte[] {0,1,2,0,1} : new byte[] {0,1,2}), wire.Select(item => item.Attempt));
+        Assert.Equal(nextRoute == 0 ? 1 : 0, f.Server.RouteResets.Count);
+        Assert.Single(f.Server.PrivateTransmissions, item => item.Text == "hold queue");
     }
 
     [Fact]
