@@ -14,6 +14,7 @@ public sealed partial class SessionCommandGatewayTests
     public async Task TcpTwoIdenticalPrivateMessagesMatchProtocolTagsWithReverseDuplicateAndUnrelatedAcks(bool differentRecipients)
     {
         await using var f = await TcpPrivateFixture.CreateAsync(autoAck: false);
+        f.Server.UseProtocolPrivateAckTags = true;
         var a = await f.Send("Одинаковый текст", 0xA1, 1);
         var b = await f.Send("Одинаковый текст", differentRecipients ? (byte)0xB2 : (byte)0xA1, 2);
         var wire = f.Server.PrivateTransmissions.ToArray();

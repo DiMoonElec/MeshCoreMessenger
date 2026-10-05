@@ -396,9 +396,32 @@ public sealed class MeshCoreClient : IAsyncDisposable
         ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default)
     {
         EnsureReady();
-        var tracker = _ackTracker!;
         var timestamp = NextMessageTimestamp();
-        var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp);
+        return await SendTextAsync(recipientPublicKey, text, timestamp, 0, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Sends plain text once with an application-owned wire timestamp and basic attempt (0–3).</summary>
+    /// <remarks>Does not retry automatically. The cancellation token also governs Delivery.
+    /// A new timestamp changes the received message identity and can produce another message at the peer.</remarks>
+    public Task<TextMessageSendResult> SendTextAsync(
+        Contact recipient, string text, uint timestamp, byte attempt, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipient);
+        return SendTextAsync(recipient.PublicKey, text, timestamp, attempt, cancellationToken);
+    }
+
+    /// <summary>Sends plain text once with an application-owned wire timestamp and basic attempt (0–3).</summary>
+    /// <remarks>The recipient is a full 32-byte key. ACK tags come from MSG_SENT, never a local hash.
+    /// The cancellation token also governs Delivery. Cancellation/timeout does not retract or retry a send.</remarks>
+    public async Task<TextMessageSendResult> SendTextAsync(
+        ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp, byte attempt,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp, attempt);
+        cancellationToken.ThrowIfCancellationRequested();
+        ObserveMessageTimestamp(timestamp);
+        var tracker = _ackTracker!;
         var pending = await tracker.BeginAsync(cancellationToken).ConfigureAwait(false);
         try
         {
@@ -428,17 +451,22 @@ public sealed class MeshCoreClient : IAsyncDisposable
         byte channelIndex, string text, uint timestamp, CancellationToken cancellationToken = default)
     {
         EnsureReady();
-        while (true)
-        {
-            var previous = Interlocked.Read(ref _lastMessageTimestamp);
-            if (previous >= timestamp || Interlocked.CompareExchange(ref _lastMessageTimestamp, timestamp, previous) == previous) break;
-        }
+        ObserveMessageTimestamp(timestamp);
         var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
         await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
             nameof(SendChannelTextAsync), _options.CommandTimeout, linked.Token,
             type => type == PacketType.Ok).ConfigureAwait(false);
         return new ChannelMessageSendResult(channelIndex, timestamp);
+    }
+
+    private void ObserveMessageTimestamp(uint timestamp)
+    {
+        while (true)
+        {
+            var previous = Interlocked.Read(ref _lastMessageTimestamp);
+            if (previous >= timestamp || Interlocked.CompareExchange(ref _lastMessageTimestamp, timestamp, previous) == previous) return;
+        }
     }
 
     private uint NextMessageTimestamp()

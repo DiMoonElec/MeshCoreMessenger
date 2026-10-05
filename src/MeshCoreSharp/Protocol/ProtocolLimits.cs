@@ -12,6 +12,8 @@ public static class ProtocolLimits
     public const int MaxChannelNameUtf8Bytes = ChannelNameSize - 1;
     public const int ChannelSecretSize = 16;
     public const int MaxTextBytes = 160;
+    /// <summary>Largest plain-text attempt that does not require the firmware's extended-attempt payload.</summary>
+    public const byte MaxBasicTextAttempt = 3;
     internal const int ExpectedAckTableSize = 8;
 
     public const int CurrentFirmwareMaxFrameSize = 176;

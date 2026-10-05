@@ -37,7 +37,7 @@ validation rejects oversize, empty, NUL-containing or invalid UTF-16 input rathe
 than relying on firmware truncation. Commands contain no trailing NUL. Received
 MSG_SENT/ACK require their full minimum layouts and tolerate extension bytes.
 
-The ACK digest is a four-byte SHA-256 prefix over timestamp/text/attempt and sender
+The ACK digest is a four-byte SHA-256 prefix over timestamp/text/(attempt & 3) and sender
 public key, with no recipient in the digest. Client-generated monotonically increasing
 timestamps prevent same-second identical-text collisions within the client instance.
 It does not compute the expected tag locally; the authoritative value comes from
@@ -51,3 +51,30 @@ contact selected by its unique six-byte prefix. Firmware returned MSG_SENT with
 tag `0x8E451AF8` and suggested timeout 14178 ms; the matching ACK arrived with
 reported RTT 2775 ms. Packet counters changed TX/direct 0 → 1 and RX 0 → 1.
 See [hardware report](../../testing/serial-private-send-2026-09-25.md).
+
+## Explicit private send API — P1 implemented
+
+The ordinary SendTextAsync overload still sends once with attempt 0 and an automatic
+timestamp. Additional overloads accept a full recipient key or Contact, text, an explicit
+UInt32 timestamp, a byte attempt, and CancellationToken. Both timestamp and attempt
+are required, avoiding ambiguity with existing cancellation-token calls.
+
+Explicit sends accept basic attempts 0–3 with the unchanged 160-byte UTF-8 budget;
+extended attempts are rejected before TX. They preserve the supplied timestamp
+even when it is older than the client's timestamp floor, and advance that floor
+when newer. A later automatic private or channel send gets a newer timestamp.
+No retry, route mutation or durable storage is performed by these overloads.
+MSG_SENT/ACK tracking, subscribe-before-send, cancellation and ACK admission are
+shared with the ordinary send. [P1 verification](../../testing/private-retry-api.md).
+
+## Application private retry cycle — planned
+
+For packet-hash
+inputs, extended attempt, repeated ACK tags and the 158-byte limit see
+[private retry research](private-retry-hashes.md). The application retry policy
+3 flood / 3 known + 2 flood has [completed P1; execution is not yet implemented](../../messenger/plan/d7-private-auto-retry.md).
+The final plan starts a new timestamp/attempt 0 after resetting the known route;
+within each phase it supports preserved timestamp/incremented attempt or a new
+timestamp/attempt 0 per send. Extended attempt 4 is not needed; the policy's text budget
+remains 160 bytes. A new timestamp can create another received message if the
+original reached the peer but its ACK was lost.

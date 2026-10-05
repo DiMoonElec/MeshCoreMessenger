@@ -88,3 +88,18 @@ D6: тот же MessageService подключает личную отправк�
 [D6](../plan/d6-private-send.md).
 
 D7.1, 05.10.2026: в канальном меню «Повторить доставку» создаёт attempt того же message с прежним timestamp; «Отправить как новое» создаёт новое message с новым timestamp. Оба используют сохранённый текст, оставляя текущий draft. [Контракт и проверки](../../testing/channel-repeat-actions.md).
+
+05.10.2026: пользователь запросил автоматические попытки ЛС внутри текущей session
+(3 flood либо 3 known + 2 flood); прежняя политика одноразового D6 теперь baseline.
+Уточнение: known T1/attempt 0…2 → reset → flood T2/attempt 0…1; один локальный MessageId,
+несколько сетевых идентичностей. API выбирает прежний timestamp/attempt + 1 либо новый
+timestamp/attempt 0 внутри фаз. Лимит остаётся 160; новый timestamp может создать
+дубликат у адресата при потерянном ACK. [Итоговый план](../plan/d7-private-auto-retry.md)
+ещё не реализован. В библиотеке остаётся один TX на API вызов, reconnect/startup
+не replay. [Packet hash/attempt/ACK](../../library/protocol/private-retry-hashes.md).
+
+05.10.2026, P1: явные timestamp/attempt 0…3 доступны в библиотеке и Core adapter.
+Core содержит immutable PrivateRetryPolicy и внутренний планировщик 3/3+2 обоих
+режимов. Он только выбирает wire identities/route phases, не выполняет TX/БД/reset.
+MessageService пока не исполняет повторы: P2 storage, P3 ACK и P4 coordinator остаются
+следующими шагами. [Проверки API](../../testing/private-retry-api.md).

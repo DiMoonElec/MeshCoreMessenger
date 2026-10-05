@@ -124,15 +124,17 @@ internal static class CompanionCommands
 
     public static byte[] SyncNextMessage() => [(byte)CommandType.SyncNextMessage];
 
-    public static byte[] SendText(ReadOnlySpan<byte> publicKey, string text, uint timestamp)
+    public static byte[] SendText(ReadOnlySpan<byte> publicKey, string text, uint timestamp, byte attempt = 0)
     {
         if (publicKey.Length != ProtocolLimits.PublicKeySize)
             throw new ArgumentException("A full 32-byte recipient public key is required.", nameof(publicKey));
+        if (attempt > ProtocolLimits.MaxBasicTextAttempt)
+            throw new ArgumentOutOfRangeException(nameof(attempt), "Extended text attempts are not supported.");
         var bytes = TextMessageValidator.EncodeText(text, ProtocolLimits.MaxTextBytes);
         var writer = new PacketWriter();
         writer.WriteByte((byte)CommandType.SendTextMessage);
         writer.WriteByte(0); // Plain text.
-        writer.WriteByte(0); // First attempt; no automatic retries.
+        writer.WriteByte(attempt);
         writer.WriteUInt32LittleEndian(timestamp);
         writer.WriteBytes(publicKey[..ProtocolLimits.MessageContactPrefixSize]);
         writer.WriteBytes(bytes);

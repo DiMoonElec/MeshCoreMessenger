@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using MeshCoreSharp.Protocol;
 
@@ -11,7 +12,8 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private Task? _serverTask;
     private NetworkStream? _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
-    public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck, byte RouteDescriptor = byte.MaxValue);
+    public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck,
+        byte RouteDescriptor = byte.MaxValue, byte Attempt = 0);
     public ConcurrentQueue<PrivateTransmission> PrivateTransmissions { get; } = new();
     public ConcurrentDictionary<byte, byte> ContactRoutes { get; } = new(new[] { new KeyValuePair<byte, byte>(0xA1, 0xFF), new KeyValuePair<byte, byte>(0xB2, 0xFF) });
     public ConcurrentQueue<byte[]> RouteResets { get; } = new();
@@ -26,6 +28,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public bool RejectPrivateSend { get; set; }
     public bool AutoAcknowledgePrivate { get; set; } = true;
     public Func<int, uint> PrivateAckTag { get; set; } = number => 0x10000000u + (uint)number;
+    public bool UseProtocolPrivateAckTags { get; set; }
     public uint PrivateSuggestedTimeoutMilliseconds { get; set; } = 100;
     public Func<Task>? BeforePrivateResponse { get; set; }
 
@@ -132,12 +135,16 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
 
             if (type == CommandType.SendTextMessage)
             {
-                var tag = PrivateAckTag(PrivateTransmissions.Count + 1);
+                if (command.Length < 14 || command[1] != 0 || command[2] > ProtocolLimits.MaxBasicTextAttempt)
+                    throw new InvalidDataException("Expected a basic plain-text send.");
+                var tag = UseProtocolPrivateAckTags ? CalculatePrivateAck(command) : PrivateAckTag(PrivateTransmissions.Count + 1);
+                var route = ContactRoutes[command[7]];
                 PrivateTransmissions.Enqueue(new(BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3)),
-                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag, ContactRoutes[command[7]]));
+                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag, route, command[2]));
                 if (BeforePrivateResponse is not null) await BeforePrivateResponse();
                 var sentResponse = new byte[10];
                 sentResponse[0] = (byte)PacketType.MessageSent;
+                sentResponse[1] = route == byte.MaxValue ? (byte)1 : (byte)0;
                 BinaryPrimitives.WriteUInt32LittleEndian(sentResponse.AsSpan(2), tag);
                 BinaryPrimitives.WriteUInt32LittleEndian(sentResponse.AsSpan(6), PrivateSuggestedTimeoutMilliseconds);
                 await WriteFrameAsync(stream, 0x3E, RejectPrivateSend
@@ -170,6 +177,20 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             };
             await WriteFrameAsync(stream, 0x3E, response);
         }
+    }
+
+    private static uint CalculatePrivateAck(byte[] command)
+    {
+        // BaseChatMesh::composeMsgPacket: timestamp | (attempt & 3) | text | sender public key.
+        // BuildSelfInfo uses the sender key 00..1F; recipient prefix is deliberately absent.
+        var textLength = command.Length - 13;
+        var input = new byte[5 + textLength + ProtocolLimits.PublicKeySize];
+        command.AsSpan(3, 4).CopyTo(input);
+        input[4] = command[2]; // The emulator accepts only basic attempts 0..3.
+        command.AsSpan(13).CopyTo(input.AsSpan(5));
+        for (var index = 0; index < ProtocolLimits.PublicKeySize; index++)
+            input[5 + textLength + index] = (byte)index;
+        return BinaryPrimitives.ReadUInt32LittleEndian(SHA256.HashData(input));
     }
 
     private static byte[] BuildChannel(byte slot)

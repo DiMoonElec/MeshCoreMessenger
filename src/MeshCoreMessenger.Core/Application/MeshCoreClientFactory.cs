@@ -89,6 +89,9 @@ internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionC
 
     public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default) =>
         client.SendTextAsync(recipientPublicKey, text, cancellationToken);
+    public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp,
+        byte attempt, CancellationToken cancellationToken = default) =>
+        client.SendTextAsync(recipientPublicKey, text, timestamp, attempt, cancellationToken);
     public Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, CancellationToken cancellationToken = default) =>
         client.SendChannelTextAsync(slot, text, timestamp, cancellationToken);
     public Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default) =>

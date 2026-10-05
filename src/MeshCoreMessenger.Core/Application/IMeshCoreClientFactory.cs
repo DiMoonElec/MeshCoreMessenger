@@ -31,6 +31,9 @@ public interface ICompanionClient : IAsyncDisposable
     Task DrainMessagesAsync(CancellationToken cancellationToken = default);
     Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, CancellationToken cancellationToken = default) =>
         Task.FromException<TextMessageSendResult>(new NotSupportedException("Text sending is not implemented by this adapter."));
+    Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp,
+        byte attempt, CancellationToken cancellationToken = default) =>
+        Task.FromException<TextMessageSendResult>(new NotSupportedException("Captured text sending is not implemented by this adapter."));
     Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default) =>

@@ -25,6 +25,12 @@ internal static class SendTests
         ("Duplicate expected ACK fails ambiguous deliveries", DuplicateTag),
         ("Blocked user callbacks do not block ACK completion", BlockedCallback),
         ("Contact overload uses the complete contact key", ContactOverload),
+        ("Explicit private attempts preserve timestamp and the 160-byte budget", ExplicitEncoding),
+        ("Explicit private sends reject invalid input before TX and retain cancellation", ExplicitValidationAndCancellation),
+        ("Explicit private attempts match out-of-order and unrelated ACKs", ExplicitMatching),
+        ("Explicit private ACK arriving before SendAsync returns is retained", ExplicitFastAck),
+        ("Explicit private timestamp advances automatic private and channel timestamps", ExplicitTimestampFloor),
+        ("Explicit contact overload forwards timestamp and attempt", ExplicitContactOverload),
     ];
 
     private static readonly byte[] Key = Enumerable.Range(0, 32).Select(i => (byte)i).ToArray();
@@ -343,5 +349,132 @@ internal static class SendTests
         var sent = await sending;
         Check((await sent.Delivery).Status == MessageDeliveryStatus.NotExpected);
         await Throws<ArgumentNullException>(() => client.SendTextAsync((Contact)null!, "test"));
+    }
+
+    private static async Task ExplicitEncoding()
+    {
+        var text = new string('я', 80);
+        for (byte attempt = 0; attempt <= ProtocolLimits.MaxBasicTextAttempt; attempt++)
+        {
+            var frame = CompanionCommands.SendText(Key, text, 0xF2345678, attempt);
+            Check(frame.Length == 173);
+            Check(frame.Take(13).SequenceEqual(new byte[] { 2, 0, attempt, 0x78, 0x56, 0x34, 0xF2, 0, 1, 2, 3, 4, 5 }));
+            Check(Encoding.UTF8.GetString(frame.AsSpan(13)) == text);
+        }
+        foreach (var attempt in new byte[] { 4, 255 })
+            await Throws<ArgumentOutOfRangeException>(() => Task.FromResult(CompanionCommands.SendText(Key, "test", 1, attempt)));
+        await Throws<ArgumentOutOfRangeException>(() => Task.FromResult(CompanionCommands.SendText(Key, text + "x", 1, 2)));
+    }
+
+    private static async Task ExplicitValidationAndCancellation()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        await Throws<ArgumentOutOfRangeException>(() => client.SendTextAsync(Key, "test", uint.MaxValue, 4));
+        await Throws<ArgumentOutOfRangeException>(() => client.SendTextAsync(Key, new string('x', 161), uint.MaxValue, 2));
+        await Throws<ArgumentException>(() => client.SendTextAsync(Key[..6], "test", 1, 1));
+        foreach (var text in new[] { "", "a\0b", "\uD800" })
+            await Throws<ArgumentException>(() => client.SendTextAsync(Key, text, 1, 1));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Throws<OperationCanceledException>(() => client.SendTextAsync(Key, "test", uint.MaxValue, 1, cancelled.Token));
+        Check(!transport.Sent.Reader.TryRead(out _), "Validation/cancellation must not send.");
+
+        using var waiting = new CancellationTokenSource();
+        var sending = client.SendTextAsync(Key, "test", 123, 2, waiting.Token);
+        Check((await Sent(transport))[2] == 2);
+        transport.Emit(SentFrame());
+        var result = await sending;
+        waiting.Cancel();
+        await Throws<OperationCanceledException>(() => result.Delivery);
+        var next = await Accept(client, transport, 0);
+        Check(next.Timestamp < uint.MaxValue, "Rejected inputs must not poison the timestamp floor.");
+        Check((await next.Delivery).Status == MessageDeliveryStatus.NotExpected);
+        Check(!transport.Sent.Reader.TryRead(out _), "One call must never retry itself.");
+    }
+
+    private static async Task ExplicitMatching()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        var results = new List<TextMessageSendResult>();
+        for (byte attempt = 0; attempt < 3; attempt++)
+        {
+            var sending = client.SendTextAsync(Key, "Одинаковый текст", 1_700_000_123, attempt);
+            var frame = await Sent(transport);
+            Check(frame[2] == attempt && BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(3)) == 1_700_000_123);
+            transport.Emit(SentFrame(100u + attempt));
+            results.Add(await sending);
+        }
+        transport.Emit(AckFrame(999));
+        await Time(client, transport);
+        Check(results.All(result => !result.Delivery.IsCompleted));
+        for (var index = 2; index >= 0; index--)
+        {
+            transport.Emit(AckFrame((uint)(100 + index)));
+            Check((await results[index].Delivery).Acknowledgement!.Ack == 100u + index);
+            transport.Emit(AckFrame((uint)(100 + index)));
+            await Time(client, transport);
+            Check(results.Take(index).All(result => !result.Delivery.IsCompleted));
+        }
+    }
+
+    private static async Task ExplicitFastAck()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        var ackSeen = Signal();
+        client.PacketReceived += (_, args) => { if (args.Packet is AckPacket) ackSeen.TrySetResult(); };
+        transport.OnSend = async (frame, ct) =>
+        {
+            Check(frame.Span[2] == 2);
+            Check(BinaryPrimitives.ReadUInt32LittleEndian(frame.Span[3..]) == 1_700_000_123);
+            transport.Emit(SentFrame());
+            transport.Emit(AckFrame());
+            await ackSeen.Task.WaitAsync(ct);
+        };
+        var sent = await client.SendTextAsync(Key, "test", 1_700_000_123, 2);
+        Check((await sent.Delivery).Status == MessageDeliveryStatus.Confirmed);
+    }
+
+    private static async Task ExplicitTimestampFloor()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        foreach (var timestamp in new uint[] { 0xF2345678, 1_700_000_123 })
+        {
+            var sending = client.SendTextAsync(Key, "test", timestamp, 1);
+            Check(BinaryPrimitives.ReadUInt32LittleEndian((await Sent(transport)).AsSpan(3)) == timestamp);
+            transport.Emit(SentFrame(0));
+            var sent = await sending;
+            Check(sent.Timestamp == timestamp && (await sent.Delivery).Status == MessageDeliveryStatus.NotExpected);
+        }
+        var channelSending = client.SendChannelTextAsync(0, "test");
+        var channelTimestamp = BinaryPrimitives.ReadUInt32LittleEndian((await Sent(transport)).AsSpan(3));
+        Check(channelTimestamp > 0xF2345678);
+        transport.Emit([(byte)PacketType.Ok]);
+        Check((await channelSending).Timestamp == channelTimestamp);
+        var automatic = await Accept(client, transport, 0);
+        Check(automatic.Timestamp > channelTimestamp);
+        Check((await automatic.Delivery).Status == MessageDeliveryStatus.NotExpected);
+    }
+
+    private static async Task ExplicitContactOverload()
+    {
+        var transport = new TestTransport();
+        await using var client = Client(transport);
+        await Start(client);
+        var contact = ((ContactPacket)new CompanionPacketDecoder().Decode(Fixtures.Contact())).Contact;
+        var sending = client.SendTextAsync(contact, "contact overload", 0x12345678, 2);
+        var frame = await Sent(transport);
+        Check(frame.AsSpan(7, 6).SequenceEqual(contact.PublicKey.Span[..6]));
+        Check(frame[2] == 2 && BinaryPrimitives.ReadUInt32LittleEndian(frame.AsSpan(3)) == 0x12345678);
+        transport.Emit(SentFrame(0));
+        Check((await (await sending).Delivery).Status == MessageDeliveryStatus.NotExpected);
+        await Throws<ArgumentNullException>(() => client.SendTextAsync((Contact)null!, "test", 1, 1));
     }
 }

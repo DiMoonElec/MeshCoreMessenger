@@ -32,6 +32,7 @@
 - [c10-acceptance](messenger/plan/c10-acceptance.md) — C10: совместная приёмка и 100 000 сообщений.
 - [stage-c-risks](messenger/plan/stage-c-risks.md) — Исторический baseline C1, риски и отложенные возможности.
 - [stage-d](messenger/plan/stage-d.md) — Stage D: отправка и управление контактами/каналами.
+- [d7-private-auto-retry](messenger/plan/d7-private-auto-retry.md) — Автоматические попытки ЛС и история успешных маршрутов: P1 выполнен, далее P2.
 - [stage-e](messenger/plan/stage-e.md) — Stage E: платформенная и release-приёмка.
 - [stage-f](messenger/plan/stage-f.md) — Stage F: отложенные функции и явные ограничения первой версии.
 - [test-matrix](messenger/plan/test-matrix.md) — Обязательные сценарии и методика тестирования.
