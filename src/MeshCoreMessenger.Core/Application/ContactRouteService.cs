@@ -41,11 +41,7 @@ public sealed class ContactRouteService(ISessionCommandGateway gateway, IConvers
             await owned.ResetPathAsync().ConfigureAwait(false);
             try
             {
-                var observedUtc = timeProvider.GetUtcNow();
-                var contact = await owned.GetContactAsync().ConfigureAwait(false);
-                if (!contact.PublicKey.Span.SequenceEqual(request.PublicKey.Span)) throw new InvalidDataException("Contact readback returned a different key.");
-                await store.UpdateContactRouteAsync(owned.Owner.NodeId, owned.Owner.SessionId, contact.PublicKey,
-                    contact.OutPath, contact.OutPathLength, observedUtc, token).ConfigureAwait(false);
+                await OwnedContactRouteReset.ReadAndPersistAsync(owned, store, timeProvider, token).ConfigureAwait(false);
                 return new ContactRouteResetResult(request.NodeId, request.PublicKey, true, null);
             }
             catch (Exception)

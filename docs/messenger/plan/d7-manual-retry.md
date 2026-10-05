@@ -1,3 +1,5 @@
+05.10.2026: P5 [расширенного плана ЛС](d7-private-auto-retry.md) выполнен: 3 known + owned reset/readback + 2 flood, один пузырёк, новый timestamp для fallback. Следующий P6 — route provenance/чтение аналитики. [Проверки P5](../../testing/private-fallback-retries.md).
+
 05.10.2026: P1–P4 [расширенного плана ЛС](d7-private-auto-retry.md) выполнены. Автоматические flood-попытки включены в production, known/reset/fallback — следующий P5. [Проверки P4](../../testing/private-delivery-coordinator.md).
 
 # D7 — восстановление и явный повтор

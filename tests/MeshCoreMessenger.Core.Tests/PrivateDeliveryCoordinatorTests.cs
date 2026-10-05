@@ -208,7 +208,7 @@ public sealed partial class SessionCommandGatewayTests
     public async Task GlobalQueueBoundIsReleasedWithoutSendingOrCreatingHistory()
     {
         await using var f = await Fixture.CreateAsync(); await f.Connect();
-        var coordinator = new PrivateDeliveryCoordinator(f.Storage.OutgoingMessages, f.Outgoing, TimeProvider.System);
+        var coordinator = new PrivateDeliveryCoordinator(f.Storage.OutgoingMessages, f.Outgoing, TimeProvider.System, f.Storage.Directories);
         var leases = new List<SessionCommandLease>();
         var reservations = new List<PrivateDeliveryCoordinator.Reservation>();
         try
@@ -238,7 +238,7 @@ public sealed partial class SessionCommandGatewayTests
         await using var f = await Fixture.CreateAsync(); await f.Connect();
         var time = new RetryTestTimeProvider();
         var drafts = new DraftWriteTracker(f.Storage.Drafts, time);
-        var coordinator = new PrivateDeliveryCoordinator(f.Storage.OutgoingMessages, f.Outgoing, time);
+        var coordinator = new PrivateDeliveryCoordinator(f.Storage.OutgoingMessages, f.Outgoing, time, f.Storage.Directories);
         var sender = new MessageService(f.Gateway, f.Storage.OutgoingMessages, f.Storage.Directories,
             f.Storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, f.Storage.Drafts, f.Operations, coordinator);
         f.Clients.Current!.CapturedPrivateSendAction = (timestamp, attempt, token) => Task.FromResult(new MeshCoreSharp.Models.TextMessageSendResult(
@@ -287,17 +287,6 @@ public sealed partial class SessionCommandGatewayTests
         await f.Writes.FlushAsync(CancellationToken);
         Assert.Equal(afterTx ? 1 : 0, f.Server.PrivateTransmissions.Count);
         Assert.Equal(PrivateDeliveryState.Unknown, (await f.Storage.OutgoingMessages.GetPrivateCycleAsync(f.Node, result.MessageId, CancellationToken))!.State);
-    }
-
-    [Fact]
-    public async Task KnownRouteKeepsOneSendBaselineUntilOwnedResetStage()
-    {
-        await using var f = await TcpPrivateFixture.CreateAsync(false, 100, initialRoute: 0, autoRetries: true);
-        var result = await f.Send("known route", 0xA1, 1);
-        await Until(async () => (await f.Storage.OutgoingMessages.GetAttemptsAsync(f.Node, result.MessageId, CancellationToken)).Single().State == SendAttemptState.Unconfirmed);
-        await Until(() => f.Deliveries!.PendingCount == 0);
-        Assert.Single(f.Server.PrivateTransmissions);
-        Assert.Null(await f.Storage.OutgoingMessages.GetPrivateCycleAsync(f.Node, result.MessageId, CancellationToken));
     }
 
     private sealed class RetryTestTimeProvider : TimeProvider

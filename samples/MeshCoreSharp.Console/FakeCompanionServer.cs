@@ -18,6 +18,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public ConcurrentDictionary<byte, byte> ContactRoutes { get; } = new(new[] { new KeyValuePair<byte, byte>(0xA1, 0xFF), new KeyValuePair<byte, byte>(0xB2, 0xFF) });
     public ConcurrentQueue<byte[]> RouteResets { get; } = new();
     public bool RejectRouteReset { get; set; }
+    public Func<Task>? BeforeRouteResetResponse { get; set; }
     public bool RejectContactsReadback { get; set; }
     public Func<Task>? BeforeContactsResponse { get; set; }
     public ConcurrentQueue<byte[]> SingleContactReads { get; } = new();
@@ -128,6 +129,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 else
                 {
                     ContactRoutes[key[0]] = 0xFF;
+                    if (BeforeRouteResetResponse is not null) await BeforeRouteResetResponse();
                     await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]);
                 }
                 continue;

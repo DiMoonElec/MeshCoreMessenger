@@ -7,7 +7,7 @@ using MeshCoreSharp.Models;
 namespace MeshCoreMessenger.Core.Application;
 
 /// <summary>Bounded session-owned jobs; each attempt uses a fresh lease in the original scope.</summary>
-public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, IDurableOutgoingWrites outgoing, TimeProvider timeProvider)
+public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, IDurableOutgoingWrites outgoing, TimeProvider timeProvider, IDirectoryStore directory)
 {
     public const int MaximumJobs = 32;
     public const int MaximumJobsPerContact = 8;
@@ -91,8 +91,8 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
         messages.MessageCommitted += Changed;
         try
         {
-            var flood = false;
-            for (var index = 0; index < 3; index++)
+            PrivateRetryPlan? plan = null;
+            for (var index = 0; index < (plan?.Steps.Count ?? 1); index++)
             {
                 token.ThrowIfCancellationRequested();
                 SessionCommandLease? attempt = null;
@@ -111,24 +111,28 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                         var route = new PrivateRouteSnapshot(contact.OutPathLength, contact.OutPath, timeProvider.GetUtcNow());
                         if (index == 0)
                         {
-                            flood = route.Kind == PrivateRouteKind.Flood;
-                            if (flood)
-                                await messages.BeginPrivateCycleAsync(new(parent.Owner.NodeId, original.MessageId,
-                                    parent.Owner.SessionId, policy, route, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                            plan = PrivateRetryPlan.Create(route.Kind == PrivateRouteKind.Flood, policy);
+                            await messages.BeginPrivateCycleAsync(new(parent.Owner.NodeId, original.MessageId,
+                                parent.Owner.SessionId, policy, route, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
                         }
-                        // P5 supplies owned reset; do not silently transmit a known route in a flood phase.
-                        if (flood && route.Kind != PrivateRouteKind.Flood) throw new InvalidOperationException("Flood route changed; owned reset is not enabled yet.");
-                        var prepared = original;
-                        PrivateAttemptCapture? capture = null;
-                        if (flood)
+                        var step = plan!.Steps[index];
+                        var flood = step.Phase != PrivateDeliveryPhase.KnownRoute;
+                        if (await IsDeliveredAsync(parent, original.MessageId).ConfigureAwait(false)) return;
+                        if (step.ResetRouteBeforeSend || flood && route.Kind != PrivateRouteKind.Flood)
                         {
-                            var utc = timeProvider.GetUtcNow();
-                            var pc = utc.ToOffset(TimeZoneInfo.Local.GetUtcOffset(utc));
-                            var next = await messages.PreparePrivateAttemptAsync(new(Guid.NewGuid(), parent.Owner.NodeId,
-                                original.MessageId, parent.Owner.SessionId, index, route, pc, TimeZoneInfo.Local.Id), token).ConfigureAwait(false);
-                            prepared = next.Message;
-                            capture = next.Capture;
+                            contact = await OwnedContactRouteReset.ResetAsync(parent, directory, timeProvider, token).ConfigureAwait(false);
+                            route = new(contact.OutPathLength, contact.OutPath, timeProvider.GetUtcNow());
                         }
+                        if (await IsDeliveredAsync(parent, original.MessageId).ConfigureAwait(false)) return;
+                        if ((route.Kind == PrivateRouteKind.Flood) != flood)
+                            throw new InvalidOperationException("Current contact route does not match the delivery phase.");
+                        if (await IsDeliveredAsync(parent, original.MessageId).ConfigureAwait(false)) return;
+                        var utc = timeProvider.GetUtcNow();
+                        var pc = utc.ToOffset(TimeZoneInfo.Local.GetUtcOffset(utc));
+                        var next = await messages.PreparePrivateAttemptAsync(new(Guid.NewGuid(), parent.Owner.NodeId,
+                            original.MessageId, parent.Owner.SessionId, index, route, pc, TimeZoneInfo.Local.Id), token).ConfigureAwait(false);
+                        var prepared = next.Message;
+                        var capture = next.Capture;
                         if (await IsDeliveredAsync(parent, original.MessageId).ConfigureAwait(false)) return;
                         attempt = parent.CreateAttemptLease();
                         await attempt.BindOutgoingAsync(prepared.MessageId, prepared.Attempt.Id).ConfigureAwait(false);
@@ -136,8 +140,7 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                         if (await IsDeliveredAsync(parent, original.MessageId).ConfigureAwait(false)) return;
                         try
                         {
-                            sent = capture is null ? await attempt.SendTextAsync().ConfigureAwait(false)
-                                : await attempt.SendTextAsync(capture.WireMessage.Timestamp, capture.WireAttempt).ConfigureAwait(false);
+                            sent = await attempt.SendTextAsync(capture.WireMessage.Timestamp, capture.WireAttempt).ConfigureAwait(false);
                         }
                         catch (Exception error) when (error is not OutgoingPersistenceException)
                         {
@@ -154,7 +157,7 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                             modeReportedByMsgSent: sent.Accepted.IsFlood,
                             ackDeadlineUtc: sent.Accepted.ExpectedAck == 0 ? null : attempt.EstimateAcknowledgementDeadline(sent.Accepted.SuggestedTimeoutMilliseconds)).ConfigureAwait(false);
                         if (sent.Accepted.ExpectedAck == 0) return;
-                        if (flood && !sent.Accepted.IsFlood)
+                        if (flood != sent.Accepted.IsFlood)
                         {
                             await attempt.TransitionAsync(SendAttemptState.Accepted, SendAttemptState.Unknown,
                                 errorCode: "RouteModeChangedBeforeSend").ConfigureAwait(false);
@@ -189,7 +192,6 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                             return;
                         }
                         await attempt!.TransitionAsync(SendAttemptState.Accepted, SendAttemptState.Unconfirmed).ConfigureAwait(false);
-                        if (!flood) return; // Known route keeps the D6 baseline until P5.
                         break;
                     }
                 }

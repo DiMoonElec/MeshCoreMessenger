@@ -155,7 +155,7 @@ public sealed partial class SessionCommandGatewayTests
             var drafts = new DraftWriteTracker(storage.Drafts, time);
             var operations = new ConversationOperationGuard();
             var clear = new HistoryClearService(storage.HistoryClear, operations, new(storage.ReadStates), outgoing);
-            var deliveries = autoRetries ? new PrivateDeliveryCoordinator(storage.OutgoingMessages, outgoing, time) : null;
+            var deliveries = autoRetries ? new PrivateDeliveryCoordinator(storage.OutgoingMessages, outgoing, time, storage.Directories) : null;
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
                 storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations, deliveries);
             return new() { Server = server, Paths = paths, Storage = storage, Ingress = ingress, Supervisor = supervisor,

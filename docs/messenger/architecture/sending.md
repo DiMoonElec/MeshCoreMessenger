@@ -95,7 +95,7 @@ D7.1, 05.10.2026: в канальном меню «Повторить доста
 несколько сетевых идентичностей. API выбирает прежний timestamp/attempt + 1 либо новый
 timestamp/attempt 0 внутри фаз. Лимит остаётся 160; новый timestamp может создать
 дубликат у адресата при потерянном ACK. [Итоговый план](../plan/d7-private-auto-retry.md)
-реализован по частям P1–P4; исполнитель подключён для исходного flood, known/fallback — P5. В библиотеке остаётся один TX на API вызов, reconnect/startup
+реализован по частям P1–P5; исполнитель подключён для flood и known/fallback. В библиотеке остаётся один TX на API вызов, reconnect/startup
 не replay. [Packet hash/attempt/ACK](../../library/protocol/private-retry-hashes.md).
 
 05.10.2026, P1: явные timestamp/attempt 0…3 доступны в библиотеке и Core adapter.
@@ -120,9 +120,15 @@ PrivateSendRequest.RetryPolicy выбирает оба режима; API воз�
 исходному scope, child не reacquire через текущий gateway. Разные контакты ждут ACK
 одновременно в пределах библиотечного окна, channel send не ждёт private ACK.
 
-Flood даёт максимум три TX; лишь достоверный TimedOut разрешает следующий. Known
-пока сохраняет один TX D6 до P5. Изменение flood на known во время неуспешного job
-останавливает его: owned reset подключается в P5. ERROR, ExpectedAck=0, Unknown,
+P5: flood даёт максимум три TX; known — три TX, затем owned reset/readback и два
+flood TX с новым timestamp. Лишь достоверный TimedOut разрешает следующий.
+Перед TX читается текущий контакт; изменение известного пути сохраняется в capture,
+известный путь в flood-фазе условно сбрасывается. Shared OwnedContactRouteReset
+пользуется исходным lease без повторного exclusive admission. Readback и локальный
+commit обязательны перед fallback; их ошибка прекращает job без replay reset.
+MSG_SENT flood flag сравнивается с фазой в обе стороны: несовпадение даёт Unknown.
+ACK первой фазы прекращает будущие TX, включая ещё не начатый reset. Snapshot —
+настроенный маршрут, а не доказанная трасса пакета. [Проверки P5](../../testing/private-fallback-retries.md). ERROR, ExpectedAck=0, Unknown,
 pause или смена session не запускают повтор. Любой ACK цикла прекращает следующие
 передачи и освобождает текущий waiter, не отменяя другие jobs. Metadata отражает
 общий итог/номер/бюджет, без промежуточной красной ошибки после отдельного timeout.
