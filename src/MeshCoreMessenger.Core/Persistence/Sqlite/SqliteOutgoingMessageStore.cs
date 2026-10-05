@@ -232,12 +232,19 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
                 AckExpectation=CASE WHEN $state=1 THEN $expectation ELSE AckExpectation END,
                 WireTimestamp=CASE WHEN $state IN (1,6) THEN COALESCE($timestamp,WireTimestamp) ELSE WireTimestamp END,
                 ExpectedAck=CASE WHEN $state=1 THEN $ack ELSE ExpectedAck END,
-                RoundTripMilliseconds=COALESCE($rtt,RoundTripMilliseconds), ErrorCode=$error
+                RoundTripMilliseconds=COALESCE($rtt,RoundTripMilliseconds), ErrorCode=$error,
+                PcSentUtc=CASE WHEN $state=6 THEN COALESCE($pcSent,PcSentUtc) ELSE PcSentUtc END,
+                PcSentUtcOffsetMinutes=CASE WHEN $state=6 THEN COALESCE($pcOffset,PcSentUtcOffsetMinutes) ELSE PcSentUtcOffsetMinutes END,
+                PcSentTimeZoneId=CASE WHEN $state=6 THEN COALESCE($pcZone,PcSentTimeZoneId) ELSE PcSentTimeZoneId END,
+                ModeReportedByMsgSent=CASE WHEN $state=1 THEN $mode ELSE ModeReportedByMsgSent END,
+                AckDeadlineUtc=CASE WHEN $state=1 THEN $deadline ELSE AckDeadlineUtc END
             WHERE Id=$id AND State=$expected;
             """, ("$state", (int)transition.State), ("$utc", transition.AtUtc), ("$terminal", terminal),
             ("$expectation", (int)transition.AckExpectation), ("$timestamp", transition.WireTimestamp),
             ("$ack", transition.ExpectedAck?.ToArray()), ("$rtt", transition.RoundTripMilliseconds), ("$error", transition.ErrorCode),
-            ("$id", transition.AttemptId), ("$expected", (int)transition.ExpectedState));
+            ("$id", transition.AttemptId), ("$expected", (int)transition.ExpectedState),
+            ("$pcSent", transition.PcSentTime), ("$pcOffset", transition.PcSentTime?.Offset.TotalMinutes),
+            ("$pcZone", transition.PcSentTimeZoneId), ("$mode", transition.ModeReportedByMsgSent), ("$deadline", transition.AckDeadlineUtc));
         update.ExecuteNonQuery();
         UpdatePrivateCycleOutcome(connection, transaction, transition);
         transaction.Commit();

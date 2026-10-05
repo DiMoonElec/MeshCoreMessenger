@@ -95,7 +95,7 @@ D7.1, 05.10.2026: в канальном меню «Повторить доста
 несколько сетевых идентичностей. API выбирает прежний timestamp/attempt + 1 либо новый
 timestamp/attempt 0 внутри фаз. Лимит остаётся 160; новый timestamp может создать
 дубликат у адресата при потерянном ACK. [Итоговый план](../plan/d7-private-auto-retry.md)
-реализован по частям P1–P3; автоматический исполнитель P4 ещё не подключён. В библиотеке остаётся один TX на API вызов, reconnect/startup
+реализован по частям P1–P4; исполнитель подключён для исходного flood, known/fallback — P5. В библиотеке остаётся один TX на API вызов, reconnect/startup
 не replay. [Packet hash/attempt/ACK](../../library/protocol/private-retry-hashes.md).
 
 05.10.2026, P1: явные timestamp/attempt 0…3 доступны в библиотеке и Core adapter.
@@ -112,3 +112,21 @@ commit. Коллизия между сообщениями оставляет н
 с неполными metadata не становится успехом. Технические статусы сохраняют прежние
 временные ограничения, реальное время ACK аналитики допускает перевод часов назад.
 [Отчёт P3](../../testing/private-delivery-ack-commit.md).
+
+05.10.2026, P4: Desktop DI подключает PrivateDeliveryCoordinator к MessageService.
+PrivateSendRequest.RetryPolicy выбирает оба режима; API возвращает Prepared/Queued
+после принятия job. Текст/политика фиксируются, очередь контакта ограничена (8, всего
+32), отказ до Prepare сохраняет draft. Parent workflow и child attempts принадлежат
+исходному scope, child не reacquire через текущий gateway. Разные контакты ждут ACK
+одновременно в пределах библиотечного окна, channel send не ждёт private ACK.
+
+Flood даёт максимум три TX; лишь достоверный TimedOut разрешает следующий. Known
+пока сохраняет один TX D6 до P5. Изменение flood на known во время неуспешного job
+останавливает его: owned reset подключается в P5. ERROR, ExpectedAck=0, Unknown,
+pause или смена session не запускают повтор. Любой ACK цикла прекращает следующие
+передачи и освобождает текущий waiter, не отменяя другие jobs. Metadata отражает
+общий итог/номер/бюджет, без промежуточной красной ошибки после отдельного timeout.
+
+Конструктор MessageService без optional coordinator сохраняет прежний one-shot
+режим для существующих встраиваний/тестов; production регистрирует coordinator явно.
+[Проверки](../../testing/private-delivery-coordinator.md).

@@ -12,6 +12,8 @@ public interface IDurableOutgoingWrites
     Task<bool> SaveAsync(OutgoingAttemptTransition transition, CancellationToken cancellationToken = default);
     Task SaveAcknowledgementAsync(OutgoingAcknowledgement acknowledgement, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+    Task FinishPrivateCycleAsync(FinishPrivateDeliveryCycle finish, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task FlushAsync(CancellationToken cancellationToken = default);
     Task RetryAsync(CancellationToken cancellationToken = default);
 }
@@ -57,6 +59,13 @@ public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : I
         }
     }
 
+    public async Task FinishPrivateCycleAsync(FinishPrivateDeliveryCycle finish, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_pending) _pending.Enqueue(new PendingWrite(null, finish: finish));
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public Task RetryAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -81,6 +90,11 @@ public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : I
                         if (!_earlyAcks.ContainsKey(key)) _earlyAcks.Add(key, ack);
                         if (_earlyAcks.Count > MaximumEarlyAcknowledgements)
                             _earlyAcks.Remove(_earlyAcks.Keys.First());
+                    }
+                    else if (write.Finish is { } finish && !write.TransitionSaved)
+                    {
+                        write.Applied = await store.FinishPrivateCycleAsync(finish, cancellationToken).ConfigureAwait(false);
+                        write.TransitionSaved = true;
                     }
                     else if (!write.TransitionSaved)
                     {
@@ -108,10 +122,12 @@ public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : I
     {
         lock (_pending) return _pending.TryPeek(out write!);
     }
-    private sealed class PendingWrite(OutgoingAttemptTransition? transition, OutgoingAcknowledgement? acknowledgement = null)
+    private sealed class PendingWrite(OutgoingAttemptTransition? transition, OutgoingAcknowledgement? acknowledgement = null,
+        FinishPrivateDeliveryCycle? finish = null)
     {
         public OutgoingAttemptTransition? Transition { get; } = transition;
         public OutgoingAcknowledgement? Acknowledgement { get; } = acknowledgement;
+        public FinishPrivateDeliveryCycle? Finish { get; } = finish;
         public bool Applied { get; set; }
         public bool TransitionSaved { get; set; }
     }

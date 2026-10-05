@@ -495,6 +495,12 @@ public sealed partial class SessionCommandGatewayTests
         public uint? SentChannelTimestamp { get; private set; }
         public Func<Task>? ChannelSendAction { get; set; }
         public Func<CancellationToken, Task<TextMessageSendResult>>? PrivateSendAction { get; set; }
+        public Func<uint, byte, CancellationToken, Task<TextMessageSendResult>>? CapturedPrivateSendAction { get; set; }
+        public Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new Contact(publicKey.ToArray(), AdvertisementType.Chat, 0, 255, new byte[64], "Peer", 0, 0, 0, 0));
+        }
         public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
         public void Fail()
         {
@@ -562,6 +568,12 @@ public sealed partial class SessionCommandGatewayTests
         {
             cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx); SentText = text;
             return PrivateSendAction?.Invoke(cancellationToken) ?? Task.FromResult(new TextMessageSendResult(42, new(false, 0, 1000), Task.FromResult(new MessageDeliveryResult(MessageDeliveryStatus.NotExpected, null))));
+        }
+        public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> key, string text, uint timestamp, byte attempt, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx); SentText = text;
+            return CapturedPrivateSendAction?.Invoke(timestamp, attempt, cancellationToken)
+                ?? Task.FromException<TextMessageSendResult>(new NotSupportedException());
         }
         public async Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, CancellationToken cancellationToken = default)
         {

@@ -9,6 +9,27 @@ namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class SendPresentationTests
 {
+    [Theory]
+    [InlineData(PrivateDeliveryState.Active, MessageSendDisplayState.Sending)]
+    [InlineData(PrivateDeliveryState.Delivered, MessageSendDisplayState.Delivered)]
+    [InlineData(PrivateDeliveryState.Unconfirmed, MessageSendDisplayState.Failed)]
+    public void PrivateCycleOutcomeOverridesLatestAttemptAndShowsBudget(PrivateDeliveryState state, MessageSendDisplayState expected)
+    {
+        var id = Guid.NewGuid();
+        var message = new HistoryMessageListItem(new HistoryMessage(id, 1, Guid.NewGuid(), MessageDirection.Outgoing,
+            StoredMessageKind.Text, "One bubble", DateTimeOffset.UnixEpoch)
+        {
+            LatestAttempt = new(Guid.NewGuid(), id, Guid.NewGuid(), 2, SendAttemptState.Unconfirmed, AckExpectation.Expected,
+                DateTimeOffset.UnixEpoch, null, null, 1, null, null, null),
+            PrivateDelivery = new(state, 2, 3, null, null),
+        });
+        Assert.Equal(expected, message.Presentation.State);
+        Assert.Equal(3, message.Presentation.AttemptLimit);
+        Assert.Equal(state == PrivateDeliveryState.Unconfirmed, message.IsSendError);
+        if (state == PrivateDeliveryState.Active)
+            Assert.Contains("Отправка (попытка 2/3)", MessageMetadataFormatter.Format("12:00", message.Presentation));
+    }
+
     [Fact]
     public void ExpiringExplanationLeavesCounterAndMultipleReasonsUseBullets()
     {

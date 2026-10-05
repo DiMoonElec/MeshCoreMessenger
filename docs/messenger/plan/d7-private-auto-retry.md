@@ -1,12 +1,12 @@
 # D7.2 — автоматические повторы ЛС и история доставок по маршрутам
 
-**Статус: P1–P3 реализованы и проверены 05.10.2026; P4–P8 ещё не реализованы.**
+**Статус: P1–P4 реализованы и проверены 05.10.2026; P5–P8 ещё не реализованы.**
 Пользователь разрешил реализацию по частям. [Stage D](stage-d.md), [D7](d7-manual-retry.md).
 Основание: [исследование attempt/packet hash/ACK](../../library/protocol/private-retry-hashes.md).
 Это явное расширение прежнего D7: пользователь теперь разрешает ограниченные
 автоматические повторы внутри текущей отправки, не replay после reconnect/restart.
 
-## Текущий checkpoint — P3
+## Текущий checkpoint — P4
 
 Реализованы явные timestamp/attempt в библиотечном SendTextAsync (полный ключ и
 Contact), encoder базовых attempts 0…3 и Core adapter. Старые overloads по-прежнему
@@ -15,12 +15,13 @@ Contact), encoder базовых attempts 0…3 и Core adapter. Старые ov
 В Core добавлены immutable PrivateRetryPolicy/PrivateRepeatMode и внутренний
 PrivateRetryPlan. Планировщик строит 3/5 шагов обоих режимов, разделяет локальный
 AttemptNumber/сетевой WireMessageOrdinal/WireAttempt и требует новую reservation
-для fallback. Он не владеет сессией/БД и не выполняет TX/reset.
+для fallback. Сам планировщик не владеет сессией/БД и не выполняет TX/reset.
 
-Пока политика не передаётся через PrivateSendRequest и не исполняется MessageService:
-это подключается вместе с coordinator в P4. Автоматические повторы в приложении
-ещё не включены; schema v5. Одноразовый D6 использует общий ACK commit P3.
-Следующий шаг — **P4**, session-owned coordinator и исполнение flood-попыток.
+P4 передаёт immutable RetryPolicy через PrivateSendRequest и включает coordinator
+в production Desktop DI. SendPrivateAsync возвращает Queued/Prepared после durable
+принятия job; UI не ждёт MSG_SENT/всех ACK. Исходный flood выполняет до трёх
+передач выбранного режима, известный маршрут пока сохраняет один TX D6. Переход
+known ×3 → owned reset → flood ×2 подключается в **P5**, следующий шаг. Schema v5.
 
 P2 добавил циклы, сетевые идентичности и неизменяемые снимки попыток; durable
 PreparePrivateAttempt резервирует timestamp в одной транзакции с подготовкой.
@@ -33,6 +34,17 @@ Unconfirmed предыдущей. Счётчик общий для ЛС собс
 Проверки P1: Release build 0 warnings/errors; Library 105/105, Core 282/282, Desktop 315/315.
 Проверки P2: Release build 0 warnings/errors; Library 105/105, Core 303/303, Desktop 315/315.
 Проверки P3: Release build 0 warnings/errors; Library 105/105, Core 312/312, Desktop 315/315.
+Проверки P4: Release build 0 warnings/errors; Library 105/105, Core 330/330, Desktop 318/318.
+
+Coordinator P4 держит FIFO по NodeId/session/generation/full contact key: максимум
+32 job всего и 8 одному контакту, reservation до Prepare/transfer draft. Целый job
+принадлежит исходному parent lease; каждый TX — новый child lease того же scope,
+один BindOutgoing и один typed invocation. Ожидание ACK не держит immediate gate.
+Любой durable Delivered пробуждает job и отменяет только текущий attempt waiter.
+Disconnect/caller cancellation/persistence pause прекращают работу без replay.
+История читает общий progress: Sending n/3 между попытками, Delivered имеет
+приоритет над состоянием последней попытки. PC Sending time, фактический flood
+flag и диагностический deadline сохраняются. [Отчёт P4](../../testing/private-delivery-coordinator.md).
 
 P3 объединяет raw ACK, waiter completion и Delivered transition через один commit.
 Все совпадения группируются по MessageId: одна группа подтверждает цикл, несколько
@@ -99,8 +111,8 @@ T1 и T2 по одинаковому тексту/близости времен�
 
 ## API выбора режима повторов
 
-PrivateRetryPolicy/PrivateRepeatMode уже реализованы в P1; передача политики через
-PrivateSendRequest/SendPrivateAsync и исполнение планируются в P4. Для обычного UI
+PrivateRetryPolicy/PrivateRepeatMode реализованы в P1; передача политики через
+PrivateSendRequest/SendPrivateAsync и flood-исполнение подключены в P4. Known/fallback — P5. Для обычного UI
 будет использоваться стандартная политика; новую настройку UI в этот этап не добавлять.
 
 | PrivateRepeatMode | Переход следующей передачи | Следствие у адресата |
@@ -359,7 +371,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | P1 — выполнен | Typed библиотечный send с явными timestamp/attempt; Core contracts RetryMode/Policy; прежний overload одноразовый | Encoder 0–3 и reject расширения, 160/161 bytes, явный timestamp floor, два режима планировщика, MSG_SENT-before-ACK; [отчёт](../../testing/private-retry-api.md) |
 | P2 — выполнен | Миграция cycle/wire-message/attempt/route/history, PreparePrivateAttempt, timestamp allocator | Upgrade v4, backup, legacy, prepare failure = 0 TX, устойчивый allocator, неизменность T1/T2 |
 | P3 — выполнен | Общий commit ACK/message outcome/history; группировка по MessageId и защита collisions | ACK разных фаз/старого timestamp, early/late, idempotent commit, persistence pause/retry без TX |
-| P4 | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
+| P4 — выполнен | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
 | P5 | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
 | P6 | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
 | P7 | Ingress dedup и итоговые UI projections, прежний byte counter 160 | Same timestamp → одно входящее/unread, new timestamp → второе, один исходящий пузырёк |
@@ -368,7 +380,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,
 route enrichment/retention; не добавлять запись аналитики отдельным ненадёжным callback.
 Новый UI-компонент не нужен: metadata под пузырьком и текущий route header уже есть.
-Лимит остаётся 160, расширенный attempt не входит. P1–P3 завершены; P4–P8 ещё не реализованы.
+Лимит остаётся 160, расширенный attempt не входит. P1–P4 завершены; P5–P8 ещё не реализованы.
 
 ## Обязательная матрица
 

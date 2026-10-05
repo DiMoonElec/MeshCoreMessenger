@@ -34,6 +34,7 @@ public sealed record HistoryMessage(
     public long? WireTimestamp { get; init; }
 
     public OutgoingAttemptSnapshot? LatestAttempt { get; init; }
+    public PrivateDeliveryProgress? PrivateDelivery { get; init; }
 
     public MessageResolutionState ResolutionState { get; init; }
 }

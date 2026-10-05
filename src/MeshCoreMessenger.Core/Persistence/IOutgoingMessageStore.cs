@@ -21,6 +21,8 @@ public interface IOutgoingMessageStore
         throw new NotSupportedException();
     Task<PrivateDeliveryCycleSnapshot?> GetPrivateCycleAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
+    Task<bool> FinishPrivateCycleAsync(FinishPrivateDeliveryCycle finish, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<IReadOnlyList<PrivateAttemptCapture>> GetPrivateAttemptCapturesAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
 }

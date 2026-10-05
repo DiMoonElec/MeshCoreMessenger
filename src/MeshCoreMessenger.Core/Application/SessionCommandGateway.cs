@@ -86,6 +86,8 @@ internal sealed class SessionCommandScope(
     internal IOutgoingMessageStore Messages { get; } = messages;
     internal IDurableOutgoingWrites Outgoing { get; } = outgoing;
     internal TimeProvider TimeProvider { get; } = timeProvider;
+    internal DateTimeOffset? EstimateAcknowledgementDeadline(uint suggested) => client.GetAcknowledgementWaitDuration(suggested) is { } wait
+        ? TimeProvider.GetUtcNow().Add(wait) : null;
 
     internal SessionCommandLease Acquire(SessionCommandTarget target, CancellationToken cancellationToken)
     {

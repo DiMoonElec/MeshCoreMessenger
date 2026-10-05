@@ -19,6 +19,15 @@ public sealed record MessagePresentation(
 
 public static class MessageMetadataFormatter
 {
+    public static MessagePresentation FromPrivateDelivery(PrivateDeliveryProgress progress) => new(
+        progress.State switch
+        {
+            PrivateDeliveryState.Prepared or PrivateDeliveryState.Active => MessageSendDisplayState.Sending,
+            PrivateDeliveryState.Delivered => MessageSendDisplayState.Delivered,
+            PrivateDeliveryState.Unconfirmed or PrivateDeliveryState.Failed => MessageSendDisplayState.Failed,
+            _ => MessageSendDisplayState.Unknown,
+        }, AttemptNumber: Math.Max(1, progress.AttemptNumber), AttemptLimit: progress.PlannedAttemptCount, Details: progress.ErrorCode);
+
     public static MessagePresentation FromAttempt(OutgoingAttemptSnapshot attempt) => new(
         attempt.State switch
         {

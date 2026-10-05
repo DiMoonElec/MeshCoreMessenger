@@ -1,3 +1,5 @@
+05.10.2026: P1–P4 [расширенного плана ЛС](d7-private-auto-retry.md) выполнены. Автоматические flood-попытки включены в production, known/reset/fallback — следующий P5. [Проверки P4](../../testing/private-delivery-coordinator.md).
+
 # D7 — восстановление и явный повтор
 
 [Stage D](stage-d.md) · **Статус: D7.1 (каналы) реализован; личный повтор/остальная приёмка не начаты.**

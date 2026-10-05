@@ -71,6 +71,7 @@ public static class AppBootstrap
         services.AddSingleton<ConversationOperationGuard>();
         services.AddSingleton<IHistoryClearService, HistoryClearService>();
         services.AddSingleton<IContactRouteService, ContactRouteService>();
+        services.AddSingleton<PrivateDeliveryCoordinator>();
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<SessionCommandGateway>();
         services.AddSingleton<ISessionCommandGateway>(provider => provider.GetRequiredService<SessionCommandGateway>());

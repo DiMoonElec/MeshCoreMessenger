@@ -153,6 +153,33 @@ internal sealed partial class SqliteOutgoingMessageStore
     public Task<PrivateDeliveryCycleSnapshot?> GetPrivateCycleAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
         reader.ExecuteAsync(connection => ReadPrivateCycle(connection, null, nodeId, messageId), cancellationToken);
 
+    public async Task<bool> FinishPrivateCycleAsync(FinishPrivateDeliveryCycle finish, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(finish);
+        ValidatePrivateIds(finish.NodeId, finish.MessageId, finish.SessionId);
+        if (finish.State is not (PrivateDeliveryState.Unknown or PrivateDeliveryState.Failed))
+            throw new ArgumentException("Only an explicit stop is supported here.", nameof(finish));
+        var commit = await writer.ExecuteAsync(connection =>
+        {
+            using var transaction = connection.BeginTransaction();
+            var cycle = ReadPrivateCycle(connection, transaction, finish.NodeId, finish.MessageId);
+            if (cycle is null) return (OutgoingMessageCommit?)null;
+            if (cycle.SessionId != finish.SessionId) throw new InvalidOperationException("Cycle belongs to another session.");
+            using var command = Command(connection, transaction, """
+                UPDATE PrivateDeliveryCycles SET State=$state,ErrorCode=$error
+                WHERE MessageId=$message AND State IN (0,1);
+                """, ("$state", (int)finish.State), ("$error", finish.ErrorCode), ("$message", finish.MessageId));
+            if (command.ExecuteNonQuery() == 0) return null;
+            using var conversation = Command(connection, transaction, "SELECT ConversationId FROM Messages WHERE Id=$message;", ("$message", finish.MessageId));
+            var result = new OutgoingMessageCommit(finish.NodeId, Guid.Parse((string)conversation.ExecuteScalar()!), finish.MessageId, false);
+            transaction.Commit();
+            return result;
+        }, cancellationToken).ConfigureAwait(false);
+        if (commit is null) return false;
+        Notify(commit);
+        return true;
+    }
+
     public Task<IReadOnlyList<PrivateAttemptCapture>> GetPrivateAttemptCapturesAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
         reader.ExecuteAsync<IReadOnlyList<PrivateAttemptCapture>>(connection =>
         {

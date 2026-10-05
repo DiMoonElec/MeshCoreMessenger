@@ -35,7 +35,9 @@ public sealed record OutgoingAttemptTransition(
     SendAttemptState ExpectedState, SendAttemptState State, DateTimeOffset AtUtc,
     AckExpectation AckExpectation = AckExpectation.LegacyUnknown,
     long? WireTimestamp = null, ReadOnlyMemory<byte>? ExpectedAck = null,
-    int? RoundTripMilliseconds = null, string? ErrorCode = null);
+    int? RoundTripMilliseconds = null, string? ErrorCode = null,
+    DateTimeOffset? PcSentTime = null, string? PcSentTimeZoneId = null, bool? ModeReportedByMsgSent = null,
+    DateTimeOffset? AckDeadlineUtc = null);
 
 /// <summary>Post-commit invalidation, distinct from incoming/unread events. Reread history for current state.</summary>
 public sealed record OutgoingMessageCommit(Guid NodeId, Guid ConversationId, Guid MessageId, bool Inserted);

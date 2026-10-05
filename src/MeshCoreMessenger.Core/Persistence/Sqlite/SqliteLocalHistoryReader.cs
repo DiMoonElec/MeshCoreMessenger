@@ -12,10 +12,12 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
         "m.Id, m.LocalSequence, m.ConversationId, m.Direction, m.MessageKind, m.Text, m.ReceivedUtc, " +
         "m.TextType, m.BinaryDataType, m.WireTimestamp, m.ResolutionState, " +
         "a.Id, a.MessageId, a.SessionId, a.AttemptNumber, a.State, a.AckExpectation, a.StartedUtc, a.AcceptedUtc, " +
-        "a.CompletedUtc, a.WireTimestamp, a.ExpectedAck, a.RoundTripMilliseconds, a.ErrorCode";
+        "a.CompletedUtc, a.WireTimestamp, a.ExpectedAck, a.RoundTripMilliseconds, a.ErrorCode, " +
+        "d.State, d.PreparedAttemptCount, d.PlannedAttemptCount, d.ConfirmedUtc, d.ErrorCode";
     private const string MessagesWithAttempts = """
         Messages AS m LEFT JOIN SendAttempts AS a ON a.MessageId=m.Id AND a.AttemptNumber=(
             SELECT MAX(latest.AttemptNumber) FROM SendAttempts latest WHERE latest.MessageId=m.Id)
+        LEFT JOIN PrivateDeliveryCycles AS d ON d.MessageId=m.Id
         """;
 
     public Task<IReadOnlyList<ConversationSummary>> GetConversationsAsync(
@@ -456,6 +458,9 @@ internal sealed class SqliteLocalHistoryReader(DatabaseReader reader) : ILocalHi
                 WireTimestamp = result.IsDBNull(9) ? null : result.GetInt64(9),
                 ResolutionState = (MessageResolutionState)result.GetInt32(10),
                 LatestAttempt = result.IsDBNull(11) ? null : SqliteOutgoingMessageStore.ReadAttempt(result, 11),
+                PrivateDelivery = result.IsDBNull(24) ? null : new((PrivateDeliveryState)result.GetInt32(24),
+                    result.GetInt32(25), result.GetInt32(26), result.IsDBNull(27) ? null : ParseTimestamp(result.GetString(27)),
+                    result.IsDBNull(28) ? null : result.GetString(28)),
             });
         }
 

@@ -12,9 +12,9 @@ public sealed record ChannelSendRequest(Guid NodeId, Guid SessionId, long Genera
     OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options)
     : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
 public sealed record PrivateSendRequest(Guid NodeId, Guid SessionId, long Generation,
-    OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options)
+    OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options, PrivateRetryPolicy? RetryPolicy = null)
     : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
-public sealed record PrivateSendOutcome(Guid MessageId, SendAttemptState State);
+public sealed record PrivateSendOutcome(Guid MessageId, SendAttemptState State, bool Queued = false);
 public sealed record ChannelRepeatRequest(Guid NodeId, Guid SessionId, long Generation,
     Guid MessageId, int ExpectedAttemptNumber, OutgoingRecipient Recipient);
 public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
@@ -33,10 +33,11 @@ public interface IMessageService
         Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default);
 }
 
-/// <summary>One explicit send, owned by its captured session through the durable final status.</summary>
+/// <summary>Durable admission; configured private jobs and channel commands remain owned by their captured session.</summary>
 public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMessageStore messages,
     IDirectoryStore directories, IConversationDirectoryReader directory, IDraftBuffer drafts,
-    IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations) : IMessageService
+    IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations,
+    PrivateDeliveryCoordinator? privateDeliveries = null) : IMessageService
 {
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
     private long _lastChannelTimestamp;
@@ -81,8 +82,71 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
     public async Task<PrivateSendOutcome> SendPrivateAsync(PrivateSendRequest request,
         Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default)
     {
+        if (privateDeliveries is not null)
+            return await QueuePrivateAsync(request, transferred, cancellationToken).ConfigureAwait(false);
         var outcome = await SendAsync(request, isChannel: false, transferred, cancellationToken).ConfigureAwait(false);
         return new(outcome.MessageId, outcome.State);
+    }
+
+    private async Task<PrivateSendOutcome> QueuePrivateAsync(PrivateSendRequest request, Func<DraftCapture, Task>? transferred,
+        CancellationToken cancellationToken)
+    {
+        if (!await _singleFlight.WaitAsync(0, cancellationToken).ConfigureAwait(false))
+            throw new InvalidOperationException("An outgoing admission is already in progress.");
+        SessionCommandLease? parent = null;
+        PrivateDeliveryCoordinator.Reservation? reservation = null;
+        IDisposable? activity = null;
+        var started = false;
+        try
+        {
+            var recipient = request.Recipient with { Identity = request.Recipient.Identity.ToArray() };
+            var capture = request.Draft with { Target = request.Draft.Target with { Identity = request.Draft.Target.Identity.ToArray() } };
+            if (recipient.Kind != ConversationKind.Contact || capture.Target.Kind != ConversationKind.Contact ||
+                capture.Target.NodeId != request.NodeId || !capture.Target.Identity.AsSpan().SequenceEqual(recipient.Identity.Span))
+                throw new InvalidOperationException("Draft and recipient ownership differ.");
+            var policy = new PrivateRetryPolicy((request.RetryPolicy ?? PrivateRetryPolicy.Default).RetryMode);
+            activity = operations.BeginSend(request.NodeId, ConversationKind.Contact, recipient.Identity);
+            parent = gateway.Acquire(request.NodeId, new ContactCommandTarget(recipient.Identity), cancellationToken);
+            if (parent.Owner.SessionId != request.SessionId || parent.Owner.Generation != request.Generation)
+                throw new InvalidOperationException("The selected session has changed.");
+            reservation = privateDeliveries!.Reserve(parent);
+            var processed = processor.Process(capture.Text, new(false, parent.Owner.SenderName), request.Options);
+            if (!processed.Validation.IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
+                throw new ArgumentException("Message text is empty or invalid.");
+            return await parent.RunAsync(async (owned, token) =>
+            {
+                await owned.ValidateRecipientAsync().ConfigureAwait(false);
+                await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
+                var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
+                var conversation = capture.Target.ConversationId ?? draft?.ConversationId
+                    ?? throw new InvalidOperationException("The conversation has not been materialized.");
+                var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
+                    conversation, recipient, processed.OriginalText, processed.TransmissionText,
+                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                // Register the complete job before any user callback or return to the UI.
+                try { privateDeliveries.Start(owned, prepared, policy, reservation!, activity!); }
+                catch
+                {
+                    await privateDeliveries.AbortPreparedAsync(owned, prepared, "SessionClosedBeforeQueueRegistration").ConfigureAwait(false);
+                    throw;
+                }
+                started = true;
+                if (await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
+                    await transferred(capture).ConfigureAwait(false);
+                return new PrivateSendOutcome(prepared.MessageId, SendAttemptState.Prepared, Queued: true);
+            }).ConfigureAwait(false);
+        }
+        finally
+        {
+            if (!started) { reservation?.Dispose(); activity?.Dispose(); }
+            if (parent is not null)
+            {
+                var completion = parent.DisposeAsync().AsTask();
+                if (started) ObserveFailure(completion);
+                else await completion.ConfigureAwait(false);
+            }
+            _singleFlight.Release();
+        }
     }
 
     private async Task<ChannelSendOutcome> SendAsync(TextSendRequest request, bool isChannel,

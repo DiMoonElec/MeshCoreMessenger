@@ -145,3 +145,20 @@ MSG_SENT любого private Sending той же session evidence ожидае�
 даже если старый tag уже совпал. Это позволяет проверить ещё неизвестную коллизию.
 
 [Проверки P3](../../testing/private-delivery-ack-commit.md).
+
+## Исполнение и progress (P4)
+
+`HistoryMessage.PrivateDelivery` проецирует общий итог, номер и бюджет цикла;
+`LatestAttempt` остаётся снимком конкретной попытки. UI использует итог цикла с
+приоритетом Delivered, а Active остаётся Sending между отдельными тайм-аутами.
+
+Sending commit фиксирует `PcSentUtc`, offset и timezone: это начало локальной
+операции отправки до вызова Companion, не время выхода пакета в эфир. Accepted
+фиксирует `ModeReportedByMsgSent`. `AckDeadlineUtc` — оценка от времени обработки
+MSG_SENT и настроенных min/max/margin; фактический монотонный таймер принадлежит
+библиотеке, повторы разрешает её TimedOut, не сравнение wall-clock deadline.
+Adapters без данных о bounds оставляют deadline NULL. Активный цикл можно остановить
+через durable FinishPrivateCycle (Unknown/Failed); операция не переписывает Delivered.
+Writer Retry повторяет только записи и не возобновляет job.
+
+[Отчёт P4](../../testing/private-delivery-coordinator.md).

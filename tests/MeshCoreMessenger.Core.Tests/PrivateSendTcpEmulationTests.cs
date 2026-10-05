@@ -122,9 +122,11 @@ public sealed partial class SessionCommandGatewayTests
         public required ContactRouteService Routes { get; init; }
         public required DraftWriteTracker Drafts { get; init; }
         public required Guid Node { get; init; }
-        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000, byte initialRoute = 0xFF)
+        public PrivateDeliveryCoordinator? Deliveries { get; init; }
+        public IDurableOutgoingWrites? Writes { get; init; }
+        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000, byte initialRoute = 0xFF, bool autoRetries = false)
         {
-            var server = new FakeCompanionServer { AutoAcknowledgePrivate = autoAck };
+            var server = new FakeCompanionServer { AutoAcknowledgePrivate = autoAck, UseProtocolPrivateAckTags = autoRetries };
             server.ContactRoutes[0xA1] = initialRoute;
             server.Start();
             var paths = new Fixture.Paths(Path.Combine(Path.GetTempPath(), "MeshCore-D6-TCP", Guid.NewGuid().ToString("N")));
@@ -153,19 +155,20 @@ public sealed partial class SessionCommandGatewayTests
             var drafts = new DraftWriteTracker(storage.Drafts, time);
             var operations = new ConversationOperationGuard();
             var clear = new HistoryClearService(storage.HistoryClear, operations, new(storage.ReadStates), outgoing);
+            var deliveries = autoRetries ? new PrivateDeliveryCoordinator(storage.OutgoingMessages, outgoing, time) : null;
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
-                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations);
+                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations, deliveries);
             return new() { Server = server, Paths = paths, Storage = storage, Ingress = ingress, Supervisor = supervisor,
-                Sender = sender, Operations = operations, Clear = clear, Routes = new(gateway, storage.ConversationDirectory, storage.Directories, operations, time), Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
+                Sender = sender, Deliveries = deliveries, Writes = outgoing, Operations = operations, Clear = clear, Routes = new(gateway, storage.ConversationDirectory, storage.Directories, operations, time), Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
         }
-        public async Task<PrivateSendOutcome> Send(string text, byte peer, long revision)
+        public async Task<PrivateSendOutcome> Send(string text, byte peer, long revision, PrivateRetryPolicy? policy = null, CancellationToken? callerToken = null)
         {
             var key = Enumerable.Repeat(peer, 32).ToArray();
             var target = new DraftTarget(Node, null, ConversationKind.Contact, key);
             await Drafts.LoadTextAsync(target, CancellationToken); Drafts.Update(target, text, revision);
             var owner = Supervisor.Snapshot;
             return await Sender.SendPrivateAsync(new(Node, owner.SessionId!.Value, owner.Generation,
-                new(ConversationKind.Contact, key), new(target, text, revision), new()), cancellationToken: CancellationToken);
+                new(ConversationKind.Contact, key), new(target, text, revision), new(), policy), cancellationToken: callerToken ?? CancellationToken);
         }
         public async Task<OutgoingAttemptSnapshot> Read(Guid message) =>
             Assert.Single(await Storage.OutgoingMessages.GetAttemptsAsync(Node, message, CancellationToken));

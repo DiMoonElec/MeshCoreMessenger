@@ -43,6 +43,27 @@ public sealed class SessionCommandLease : IAsyncDisposable
     public bool WasInvoked { get; private set; }
     internal Task Completion => _completion.Task;
 
+    internal SessionCommandLease CreateAttemptLease()
+    {
+        lock (_scope.Gate)
+        {
+            EnsureUsable();
+            _scope.EnsureOpen();
+            Token.ThrowIfCancellationRequested();
+            if (_work.Count == 0) throw new InvalidOperationException("Child attempts require an owned workflow.");
+            return _scope.Acquire(Target, Token);
+        }
+    }
+
+    internal Task CancelAttemptAsync()
+    {
+        // Scope teardown can finish a child before its parent reaches the child's finally block.
+        try { return _lifetime.CancelAsync(); }
+        catch (ObjectDisposedException) { return Task.CompletedTask; }
+    }
+    internal Task ValidateRecipientAsync() => _scope.ValidateSendTargetAsync(this);
+    internal DateTimeOffset? EstimateAcknowledgementDeadline(uint suggested) => _scope.EstimateAcknowledgementDeadline(suggested);
+
     /// <summary>Registers a complete application workflow before it starts, including detached ACK work.</summary>
     public Task<T> RunAsync<T>(Func<SessionCommandLease, CancellationToken, Task<T>> workflow)
     {
@@ -84,7 +105,8 @@ public sealed class SessionCommandLease : IAsyncDisposable
 
     public Task<bool> TransitionAsync(SendAttemptState expectedState, SendAttemptState state,
         AckExpectation expectation = AckExpectation.LegacyUnknown, long? wireTimestamp = null,
-        ReadOnlyMemory<byte>? expectedAck = null, int? roundTripMilliseconds = null, string? errorCode = null) => OwnAsync(async () =>
+        ReadOnlyMemory<byte>? expectedAck = null, int? roundTripMilliseconds = null, string? errorCode = null,
+        bool? modeReportedByMsgSent = null, DateTimeOffset? ackDeadlineUtc = null) => OwnAsync(async () =>
     {
         await _statusGate.WaitAsync().ConfigureAwait(false);
         try
@@ -102,6 +124,7 @@ public sealed class SessionCommandLease : IAsyncDisposable
                 if (state == SendAttemptState.Accepted && !_sendInvoked) throw new InvalidOperationException("Accepted requires an actual send API invocation.");
                 if (state == SendAttemptState.Sending) { _scope.EnsureOpen(); Token.ThrowIfCancellationRequested(); }
                 transition = NewTransition(expectedState, state, expectation, wireTimestamp, expectedAck, roundTripMilliseconds, errorCode);
+                transition = transition with { ModeReportedByMsgSent = modeReportedByMsgSent, AckDeadlineUtc = ackDeadlineUtc };
                 // Retain logical ordering even if this write pauses. Cleanup queues after it, never ahead of it.
                 _plannedState = state;
                 if (state == SendAttemptState.Accepted) _expectation = expectation;
@@ -135,6 +158,18 @@ public sealed class SessionCommandLease : IAsyncDisposable
         if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Private sending requires a contact target.");
         await ValidateTextSendAsync().ConfigureAwait(false);
         return await _scope.Invoke(this, (client, token) => client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
+    }, requireAdmission: true);
+
+    internal Task<TextMessageSendResult> SendTextAsync(uint timestamp, byte attempt) => OwnAsync(async () =>
+    {
+        if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Private sending requires a contact target.");
+        await ValidateTextSendAsync().ConfigureAwait(false);
+        if (_attempt?.WireTimestamp != timestamp) throw new InvalidOperationException("Wire timestamp differs from durable preparation.");
+        var captures = await _scope.Messages.GetPrivateAttemptCapturesAsync(Owner.NodeId, _message!.MessageId, Token).ConfigureAwait(false);
+        if (captures.SingleOrDefault(item => item.AttemptId == _attempt.Id)?.WireAttempt != attempt)
+            throw new InvalidOperationException("Wire attempt differs from durable preparation.");
+        return await _scope.Invoke(this, (client, token) => client.SendTextAsync(contact.PublicKey,
+            _message!.TransmissionText, timestamp, attempt, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 
     public Task<ChannelMessageSendResult> SendChannelTextAsync(uint? timestamp = null) => OwnAsync(async () =>
@@ -306,6 +341,8 @@ public sealed class SessionCommandLease : IAsyncDisposable
         var now = _scope.TimeProvider.GetUtcNow();
         if (now > _lastUtc) _lastUtc = now;
         return new(Owner.NodeId, _message!.MessageId, _attempt!.Id, Owner.SessionId, expected, state,
-            _lastUtc, expectation, wireTimestamp, expectedAck, roundTripMilliseconds, errorCode);
+            _lastUtc, expectation, wireTimestamp, expectedAck, roundTripMilliseconds, errorCode,
+            state == SendAttemptState.Sending && Target is ContactCommandTarget ? now.ToOffset(TimeZoneInfo.Local.GetUtcOffset(now)) : null,
+            state == SendAttemptState.Sending && Target is ContactCommandTarget ? TimeZoneInfo.Local.Id : null);
     }
 }

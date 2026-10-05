@@ -1208,7 +1208,9 @@ public sealed class HistoryMessageListItem : ObservableObject
         CopyText = message.Text ?? Body;
         ReceivedTime = message.ReceivedUtc.ToLocalTime().ToString("g");
         _isSearchMatch = isSearchMatch;
-        if (IsOutgoing && message.LatestAttempt is { } attempt)
+        if (IsOutgoing && message.PrivateDelivery is { } progress)
+            _presentation = MessageMetadataFormatter.FromPrivateDelivery(progress);
+        else if (IsOutgoing && message.LatestAttempt is { } attempt)
             _presentation = MessageMetadataFormatter.FromAttempt(attempt);
     }
 

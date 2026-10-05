@@ -55,3 +55,9 @@ public sealed record PrivateAttemptCapture(Guid PreparationId, Guid AttemptId, P
     byte WireAttempt, PrivateRouteSnapshot Route, DateTimeOffset PreparedPcUtc, int PcUtcOffsetMinutes, string PcTimeZoneId);
 
 public sealed record PreparedPrivateAttempt(PreparedOutgoingMessage Message, PrivateAttemptCapture Capture);
+
+public sealed record FinishPrivateDeliveryCycle(Guid NodeId, Guid MessageId, Guid SessionId,
+    PrivateDeliveryState State, string? ErrorCode);
+
+public sealed record PrivateDeliveryProgress(PrivateDeliveryState State, int AttemptNumber, int PlannedAttemptCount,
+    DateTimeOffset? ConfirmedUtc, string? ErrorCode);

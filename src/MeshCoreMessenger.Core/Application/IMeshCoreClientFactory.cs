@@ -34,6 +34,8 @@ public interface ICompanionClient : IAsyncDisposable
     Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp,
         byte attempt, CancellationToken cancellationToken = default) =>
         Task.FromException<TextMessageSendResult>(new NotSupportedException("Captured text sending is not implemented by this adapter."));
+    /// <summary>Configured library wait duration for diagnostic deadlines; the library owns the actual monotonic timer.</summary>
+    TimeSpan? GetAcknowledgementWaitDuration(uint suggestedMilliseconds) => null;
     Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, CancellationToken cancellationToken = default) =>

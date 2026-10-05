@@ -18,12 +18,15 @@ public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
             ConnectionTransportKind.Serial => new SerialMeshCoreTransport(mapping.SerialOptions!),
             _ => throw new ArgumentOutOfRangeException(nameof(profile), "Unknown connection transport."),
         };
-        return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions));
+        return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions), mapping.ClientOptions);
     }
 }
 
-internal sealed class MeshCoreClientAdapter(MeshCoreClient client) : ICompanionClient
+internal sealed class MeshCoreClientAdapter(MeshCoreClient client, MeshCoreClientOptions? options = null) : ICompanionClient
 {
+    public TimeSpan? GetAcknowledgementWaitDuration(uint suggestedMilliseconds) => options is null ? null
+        : TimeSpan.FromMilliseconds(Math.Clamp(suggestedMilliseconds + options.AckTimeoutMargin.TotalMilliseconds,
+            options.MinimumAckTimeout.TotalMilliseconds, options.MaximumAckTimeout.TotalMilliseconds));
     public Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
         client.GetContactAsync(publicKey, cancellationToken);
     public MeshCoreConnectionState State => client.State;
