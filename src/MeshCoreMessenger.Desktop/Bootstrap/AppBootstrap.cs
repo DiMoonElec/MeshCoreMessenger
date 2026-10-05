@@ -37,6 +37,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.OutgoingMessages);
         services.AddSingleton(storage.History);
+        services.AddSingleton(storage.ContactDeliveries);
         services.AddSingleton(storage.HistoryClear);
         services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.Drafts);

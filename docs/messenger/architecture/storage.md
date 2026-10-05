@@ -119,7 +119,7 @@ read watermark. Debounce инъецируется, каждый запрос и�
 `ContactDeliveryHistory`, `ContactDeliveryEvidence`, `ContactDeliveryCandidates` —
 фундамент аналитики успешных доставок. Их снимки переживают очистку переписки:
 ссылки на удалённые сообщения/попытки становятся NULL. Запись общего результата
-ACK реализована в P3, чтение и learned-route enrichment — в P6. Сам P2 создавал
+ACK реализована в P3, чтение и learned-route enrichment реализованы в P6. Сам P2 создавал
 только схему, без записей успеха. Активные циклы при startup/restore получают Unknown без TX;
 очистка блокируется на протяжении активного цикла, включая паузы между попытками.
 
@@ -162,3 +162,13 @@ Adapters без данных о bounds оставляют deadline NULL. Акт�
 Writer Retry повторяет только записи и не возобновляет job.
 
 [Отчёт P4](../../testing/private-delivery-coordinator.md).
+
+
+05.10.2026, P6: LocalStorage.ContactDeliveries/IContactDeliveryHistoryReader читает
+scoped страницы history с ACK evidence и candidate snapshots без текста/секретов.
+Контакт определяется полным ключом собственной ноды; курсор связан с этой identity.
+ConfiguredBeforeSend и ContactReadbackAfterAcknowledgement представлены отдельно.
+После атомарного ACK commit readback исходной session дополняет точный EvidenceId;
+первый snapshot immutable, SQL retry идемпотентен и не вызывает радио/повтор чтения.
+Удаление текста/контакта не удаляет независимую route history. Используются поля v5,
+новая миграция не требуется. [Проверки P6](../../testing/private-delivery-history-reader.md).

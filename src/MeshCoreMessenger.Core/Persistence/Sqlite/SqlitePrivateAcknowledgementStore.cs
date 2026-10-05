@@ -87,6 +87,7 @@ internal sealed partial class SqliteOutgoingMessageStore
         using (var lookup = Command(connection, transaction, "SELECT Id FROM ContactDeliveryHistory WHERE MessageId=$message;", ("$message", message)))
             deliveryId = Guid.Parse((string)lookup.ExecuteScalar()!);
         var evidenceId = Guid.NewGuid();
+        DeliveryRouteReadbackRequest? readback = null;
         using (var insert = Command(connection, transaction, """
             INSERT INTO ContactDeliveryEvidence (Id,DeliveryId,AckTag,AckReceivedUtc,RoundTripMilliseconds,Attribution)
             VALUES ($id,$delivery,$tag,$utc,$rtt,$attribution) ON CONFLICT(DeliveryId,AckTag) DO NOTHING;
@@ -96,6 +97,7 @@ internal sealed partial class SqliteOutgoingMessageStore
             if (insert.ExecuteNonQuery() != 0)
             {
                 changed = true;
+                readback = new(evidenceId, ack.NodeId, ack.SessionId, key);
                 foreach (var capture in captures.Where(item => candidates.Any(candidate => candidate.Id == item.AttemptId)))
                 {
                     var attempt = candidates.Single(item => item.Id == capture.AttemptId);
@@ -113,7 +115,7 @@ internal sealed partial class SqliteOutgoingMessageStore
                 }
             }
         }
-        return (true, changed ? new(ack.NodeId, matches[0].Conversation, message, false) : null);
+        return (true, changed ? new(ack.NodeId, matches[0].Conversation, message, false) { RouteReadback = readback } : null);
     }
 
     private static void UpdatePrivateCycleOutcome(SqliteConnection connection, SqliteTransaction transaction,

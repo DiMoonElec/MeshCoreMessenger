@@ -40,7 +40,10 @@ public sealed record OutgoingAttemptTransition(
     DateTimeOffset? AckDeadlineUtc = null);
 
 /// <summary>Post-commit invalidation, distinct from incoming/unread events. Reread history for current state.</summary>
-public sealed record OutgoingMessageCommit(Guid NodeId, Guid ConversationId, Guid MessageId, bool Inserted);
+public sealed record OutgoingMessageCommit(Guid NodeId, Guid ConversationId, Guid MessageId, bool Inserted)
+{
+    public DeliveryRouteReadbackRequest? RouteReadback { get; init; }
+}
 
 /// <summary>Persisted immutable send capture. TransmissionText is never reprocessed on a lease.</summary>
 public sealed record StoredOutgoingMessage(Guid MessageId, Guid NodeId, Guid ConversationId, Guid? SessionId,

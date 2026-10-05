@@ -33,8 +33,10 @@ public sealed partial class SessionCommandGatewayTests
         Assert.Equal(session, f.Supervisor.Snapshot.SessionId);
         Assert.Equal(ConnectionSupervisorState.Online, f.Supervisor.Snapshot.State);
         Assert.Equal(directoryReads, f.Server.ContactsReadCount);
-        Assert.Equal(2, f.Server.SingleContactReads.Count);
-        Assert.Equal(new byte[] { 0xA1, 0xA1 }, notifications.ToArray());
+        await Until(async () => (await f.Storage.ContactDeliveries.GetPageAsync(f.Node, RouteRequest(f).PublicKey, cancellationToken: CancellationToken))
+            .Items.Single().Evidence.Single().LearnedRoute is not null);
+        Assert.Equal(3, f.Server.SingleContactReads.Count);
+        Assert.Equal(new byte[] { 0xA1, 0xA1, 0xA1 }, notifications.ToArray());
         Assert.Single(f.Server.PrivateTransmissions);
         Assert.Equal(byte.MaxValue, f.Server.PrivateTransmissions.Single().RouteDescriptor);
         Assert.Equal(byte.MaxValue, (await f.Storage.ConversationDirectory.GetContactDetailsAsync(f.Node, RouteRequest(f, 0xB2).PublicKey, CancellationToken))!.OutPathLength);
@@ -65,7 +67,9 @@ public sealed partial class SessionCommandGatewayTests
         }
         finally { release.TrySetResult(); }
         await WaitRoute(f, 0xA1, 0x42);
-        Assert.Equal(2, f.Server.SingleContactReads.Count);
+        await Until(async () => (await f.Storage.ContactDeliveries.GetPageAsync(f.Node, RouteRequest(f).PublicKey, cancellationToken: CancellationToken))
+            .Items.Single().Evidence.Single().LearnedRoute is not null);
+        Assert.Equal(3, f.Server.SingleContactReads.Count);
         Assert.Single(f.Server.PrivateTransmissions);
     }
 

@@ -5,6 +5,8 @@ namespace MeshCoreMessenger.Core.Application;
 
 public interface IDurableOutgoingWrites
 {
+    event EventHandler<DeliveryRouteReadbackRequest>? RouteReadbackRequested { add { } remove { } }
+    Task SaveLearnedRouteAsync(LearnedDeliveryRoute observation, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     bool IsPaused { get; }
     int PendingCount { get; }
     event EventHandler? Paused;
@@ -19,8 +21,28 @@ public interface IDurableOutgoingWrites
 }
 
 /// <summary>Retains failed status writes in order. Retry writes SQLite only; it never replays a command.</summary>
-public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : IDurableOutgoingWrites
+public sealed class OutgoingAttemptWriteTracker : IDurableOutgoingWrites
 {
+    private readonly IOutgoingMessageStore store;
+    public OutgoingAttemptWriteTracker(IOutgoingMessageStore store)
+    {
+        this.store = store;
+        store.MessageCommitted += (_, commit) =>
+        {
+            if (commit.RouteReadback is not { } request) return;
+            foreach (EventHandler<DeliveryRouteReadbackRequest> handler in RouteReadbackRequested?.GetInvocationList() ?? [])
+                try { handler(this, request); } catch { /* Optional readback cannot undo ACK success. */ }
+        };
+    }
+    public event EventHandler<DeliveryRouteReadbackRequest>? RouteReadbackRequested;
+    public async Task SaveLearnedRouteAsync(LearnedDeliveryRoute observation, CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var copy = observation with { Target = observation.Target with { ContactPublicKey = observation.Target.ContactPublicKey.ToArray() },
+            Route = new(observation.Route.Descriptor, observation.Route.Path, observation.Route.ObservedUtc) };
+        lock (_pending) _pending.Enqueue(new PendingWrite(null, learned: copy));
+        await FlushAsync(cancellationToken).ConfigureAwait(false);
+    }
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly Queue<PendingWrite> _pending = new();
     private readonly Dictionary<(Guid Node, Guid Session, uint Tag), OutgoingAcknowledgement> _earlyAcks = new();
@@ -91,6 +113,11 @@ public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : I
                         if (_earlyAcks.Count > MaximumEarlyAcknowledgements)
                             _earlyAcks.Remove(_earlyAcks.Keys.First());
                     }
+                    else if (write.Learned is { } learned && !write.TransitionSaved)
+                    {
+                        write.Applied = await store.EnrichDeliveryRouteAsync(learned, cancellationToken).ConfigureAwait(false);
+                        write.TransitionSaved = true;
+                    }
                     else if (write.Finish is { } finish && !write.TransitionSaved)
                     {
                         write.Applied = await store.FinishPrivateCycleAsync(finish, cancellationToken).ConfigureAwait(false);
@@ -123,11 +150,12 @@ public sealed class OutgoingAttemptWriteTracker(IOutgoingMessageStore store) : I
         lock (_pending) return _pending.TryPeek(out write!);
     }
     private sealed class PendingWrite(OutgoingAttemptTransition? transition, OutgoingAcknowledgement? acknowledgement = null,
-        FinishPrivateDeliveryCycle? finish = null)
+        FinishPrivateDeliveryCycle? finish = null, LearnedDeliveryRoute? learned = null)
     {
         public OutgoingAttemptTransition? Transition { get; } = transition;
         public OutgoingAcknowledgement? Acknowledgement { get; } = acknowledgement;
         public FinishPrivateDeliveryCycle? Finish { get; } = finish;
+        public LearnedDeliveryRoute? Learned { get; } = learned;
         public bool Applied { get; set; }
         public bool TransitionSaved { get; set; }
     }

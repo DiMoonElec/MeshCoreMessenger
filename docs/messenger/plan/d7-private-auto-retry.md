@@ -1,12 +1,12 @@
 # D7.2 — автоматические повторы ЛС и история доставок по маршрутам
 
-**Статус: P1–P5 реализованы и проверены 05.10.2026; P6–P8 ещё не реализованы.**
+**Статус: P1–P6 реализованы и проверены 05.10.2026; P7–P8 ещё не реализованы.**
 Пользователь разрешил реализацию по частям. [Stage D](stage-d.md), [D7](d7-manual-retry.md).
 Основание: [исследование attempt/packet hash/ACK](../../library/protocol/private-retry-hashes.md).
 Это явное расширение прежнего D7: пользователь теперь разрешает ограниченные
 автоматические повторы внутри текущей отправки, не replay после reconnect/restart.
 
-## Текущий checkpoint — P5
+## Текущий checkpoint — P6
 
 Реализованы явные timestamp/attempt в библиотечном SendTextAsync (полный ключ и
 Contact), encoder базовых attempts 0…3 и Core adapter. Старые overloads по-прежнему
@@ -24,7 +24,7 @@ P4 передаёт immutable RetryPolicy через PrivateSendRequest и вк�
 после reset создаётся новое сетевое сообщение при прежнем локальном MessageId.
 Маршрут читается перед каждым TX, смена known-пути сохраняется в capture, а известный
 путь в flood-фазе условно сбрасывается. Ошибка reset/readback/local commit останавливает
-job без повторной mutation. Schema v5; следующий **P6** — чтение истории и provenance.
+job без повторной mutation. Schema v5; P6 добавляет чтение истории и provenance; следующий **P7** — incoming dedup.
 [Отчёт P5](../../testing/private-fallback-retries.md).
 
 P2 добавил циклы, сетевые идентичности и неизменяемые снимки попыток; durable
@@ -33,13 +33,14 @@ PreparePrivateAttempt резервирует timestamp в одной транз�
 Unconfirmed предыдущей. Счётчик общий для ЛС собственной ноды и переживает
 перезапуск/очистку переписки. Настоящее время ПК, UTC offset и timezone хранятся
 отдельно от wire timestamp. После startup активный цикл становится Unknown без TX.
-Созданы таблицы истории доставок; чтение и обогащение маршрута — в P6. [Отчёт P2](../../testing/private-delivery-storage.md).
+Созданы таблицы истории доставок; чтение и обогащение маршрута реализованы в P6. [Отчёт P2](../../testing/private-delivery-storage.md).
 
 Проверки P1: Release build 0 warnings/errors; Library 105/105, Core 282/282, Desktop 315/315.
 Проверки P2: Release build 0 warnings/errors; Library 105/105, Core 303/303, Desktop 315/315.
 Проверки P3: Release build 0 warnings/errors; Library 105/105, Core 312/312, Desktop 315/315.
 Проверки P4: Release build 0 warnings/errors; Library 105/105, Core 330/330, Desktop 318/318.
 Проверки P5: Release build 0 warnings/errors; Library 105/105, Core 345/345, Desktop 318/318.
+Проверки P6: Release build 0 warnings/errors; Library 105/105, Core 354/354, Desktop 318/318.
 
 Coordinator P4 держит FIFO по NodeId/session/generation/full contact key: максимум
 32 job всего и 8 одному контакту, reservation до Prepare/transfer draft. Целый job
@@ -241,6 +242,13 @@ Unknown/потере transport response, смене session, persistence pause, 
 Тайм-аут берётся из MSG_SENT с существующими bounds/margin; delay отменяемый,
 тестируется TimeProvider. Ни RX loop, ни global command gate на нём не блокируются.
 
+P6: IContactDeliveryHistoryReader возвращает scoped страницы успехов и все
+ACK candidates с PC times/offset/zone. После commit нового evidence session-owned
+queue снимает отдельный ContactReadbackAfterAcknowledgement snapshot; ошибка чтения
+оставляет null, SQL recovery не выполняет radio replay. ConfiguredBeforeSend и
+readback не смешиваются. Снимки переживают clear/contact removal. Schema v5 без
+миграции. [Отчёт P6](../../testing/private-delivery-history-reader.md).
+
 ## Данные и миграция
 
 Ниже — исходные требования к данным; схема v5 реализована в P2, общий ACK commit
@@ -378,14 +386,14 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | P3 — выполнен | Общий commit ACK/message outcome/history; группировка по MessageId и защита collisions | ACK разных фаз/старого timestamp, early/late, idempotent commit, persistence pause/retry без TX |
 | P4 — выполнен | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
 | P5 — выполнен | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
-| P6 | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
+| P6 — выполнен | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
 | P7 | Ingress dedup и итоговые UI projections, прежний byte counter 160 | Same timestamp → одно входящее/unread, new timestamp → второе, один исходящий пузырёк |
 | P8 | Совместная loopback/native приёмка и аппаратные эксперименты пользователя | Полная матрица ниже, обновлённые docs, user confirmation |
 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,
 route enrichment/retention; не добавлять запись аналитики отдельным ненадёжным callback.
 Новый UI-компонент не нужен: metadata под пузырьком и текущий route header уже есть.
-Лимит остаётся 160, расширенный attempt не входит. P1–P5 завершены; P6–P8 ещё не реализованы.
+Лимит остаётся 160, расширенный attempt не входит. P1–P6 завершены; P7–P8 ещё не реализованы.
 
 ## Обязательная матрица
 

@@ -133,11 +133,14 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         }
 
         _ingestor.Failed -= OnIngestFailed;
+        if (_outgoing is not null) _outgoing.RouteReadbackRequested -= OnRouteReadbackRequested;
         await StopAsync(CancellationToken.None).ConfigureAwait(false);
         _routeRefresh?.Dispose();
         _drainSignal.Dispose();
         _retrySignal.Dispose();
     }
+
+    private void OnRouteReadbackRequested(object? sender, DeliveryRouteReadbackRequest request) => _routeRefresh?.Enqueue(request);
 
     private void Start(CompanionSession session)
     {
@@ -163,7 +166,8 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
             _workerStop = new CancellationTokenSource();
             _eventStop = new CancellationTokenSource();
             _state = ReceiveCoordinatorState.Synchronizing;
-            _routeRefresh = new ContactRouteRefreshQueue(_directories, session, _initial.Task);
+            _routeRefresh = new ContactRouteRefreshQueue(_directories, session, _initial.Task, _outgoing);
+            if (_outgoing is not null) _outgoing.RouteReadbackRequested += OnRouteReadbackRequested;
             var workerToken = _workerStop.Token;
             var eventToken = _eventStop.Token;
             _eventPump = Task.Run(() => PumpEventsAsync(session, eventToken));

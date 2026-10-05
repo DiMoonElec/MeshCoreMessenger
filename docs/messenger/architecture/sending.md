@@ -136,3 +136,11 @@ pause или смена session не запускают повтор. Любой
 Конструктор MessageService без optional coordinator сохраняет прежний one-shot
 режим для существующих встраиваний/тестов; production регистрирует coordinator явно.
 [Проверки](../../testing/private-delivery-coordinator.md).
+
+
+P6: только новый committed ACK evidence публикует запрос post-ACK route readback.
+Существующая session-owned route queue выполняет typed GetContact вне push pump и
+сохраняет snapshot через durable outgoing writer. Late ACK после окончания job
+обрабатывается тем же механизмом. Ошибка чтения не отменяет Delivered; неуспешная
+SQL запись удерживается для SQL-only recovery. Snapshot означает маршрут контакта
+после подтверждения, не доказанный путь успешного TX. [Отчёт P6](../../testing/private-delivery-history-reader.md).
