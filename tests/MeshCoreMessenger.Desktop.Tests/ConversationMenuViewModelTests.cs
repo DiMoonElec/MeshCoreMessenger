@@ -8,14 +8,14 @@ namespace MeshCoreMessenger.Desktop.Tests;
 public sealed class ConversationMenuViewModelTests
 {
     [Fact]
-    public void OnlyPrivateMenuExposesRoutePlaceholders()
+    public void OnlyPrivateMenuExposesRouteResetAndMenusHaveNoTestActions()
     {
         var clear = new HistoryClearViewModel(() => null, null, _ => Task.CompletedTask);
         var publicMenu = new ConversationMenuViewModel(MessengerNavigationTab.Channels, clear);
         var privateMenu = new ConversationMenuViewModel(MessengerNavigationTab.Personal, clear);
         Assert.DoesNotContain(publicMenu.Items, i => i.Action is ConversationMenuAction.ResetRoute or ConversationMenuAction.SetRoute);
         Assert.Contains(privateMenu.Items, i => i.Action == ConversationMenuAction.ResetRoute);
-        Assert.Contains(privateMenu.Items, i => i.Action == ConversationMenuAction.SetRoute);
+        Assert.DoesNotContain(publicMenu.Items.Concat(privateMenu.Items), i => i.Action is ConversationMenuAction.Search or ConversationMenuAction.Share or ConversationMenuAction.SetRoute);
         Assert.Contains(publicMenu.Items, i => i.Action == ConversationMenuAction.ClearHistory);
         Assert.Contains(privateMenu.Items, i => i.Action == ConversationMenuAction.ClearHistory);
     }

@@ -2,6 +2,13 @@
 
 Начальная реализация C# библиотеки для MeshCore Companion Protocol.
 
+## Настольный Messenger
+
+Первая локальная итерация: [инструкция пользователя](docs/messenger/user-guide.md),
+[результаты проверки и ограничения](docs/testing/first-iteration-closure.md).
+На macOS `bash tools/publish-macos.sh` собирает self-contained `.app`/`.zip`
+для локального запуска без .NET SDK.
+
 ## Структура
 
 - `src/MeshCoreSharp` — единственный библиотечный проект; результат сборки `MeshCoreSharp.dll`.

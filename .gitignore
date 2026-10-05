@@ -6,3 +6,4 @@
 *.suo
 .DS_Store
 tmp/
+artifacts/

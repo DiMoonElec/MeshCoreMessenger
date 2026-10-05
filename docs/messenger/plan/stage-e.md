@@ -2,6 +2,8 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
+05.10.2026: выполнена ограниченная [локальная macOS часть](../../testing/first-iteration-closure.md): self-contained app/zip с ad-hoc подписью, startup/reopen/данные на копии БД и [инструкция](../user-guide.md). Полные критерии A–E, Windows/SDK-free hardware machine и неподтверждённые аппаратные сценарии остаются открытыми.
+
 ## E. Приёмка первой пригодной к использованию версии
 
 - [ ] Пройти матрицу ниже на macOS и Windows; записать firmware, ОС, архитектуру,

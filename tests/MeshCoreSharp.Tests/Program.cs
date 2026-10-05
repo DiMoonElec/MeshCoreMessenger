@@ -10,68 +10,67 @@ using MeshCoreSharp.Runtime.Transactions;
 
 if (args.Length == 2 && args[0] == "--serial-contact-restore-send-test")
 {
-    await HardwareContactRestoreSendTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareContactRestoreSendTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-contact-mutation-test")
 {
-    await HardwareContactMutationTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareContactMutationTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-channel-config-test")
 {
-    await HardwareChannelConfigurationTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareChannelConfigurationTest.RunAsync(args[1]));
 }
 
-if (args.Length == 2 && args[0] == "--serial-private-send-test")
+if (args.Length is 2 or 3 && args[0] == "--serial-private-send-test")
 {
-    await HardwarePrivateMessageTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwarePrivateMessageTest.RunAsync(args[1], args.Length == 3 ? args[2] : null));
 }
 
 if (args.Length == 2 && args[0] == "--serial-message-drain-test")
 {
-    await HardwareMessageDrainTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareMessageDrainTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-message-drain-live-test")
 {
-    await HardwareMessageDrainTest.RunAsync(args[1], waitForNotification: true);
-    return 0;
+    return await RunHardwareAsync(() => HardwareMessageDrainTest.RunAsync(args[1], waitForNotification: true));
 }
 
 if (args.Length == 2 && args[0] == "--serial-no-reset-test")
 {
-    await HardwareSerialNoResetTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareSerialNoResetTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-advert-test")
 {
-    await HardwareAdvertisementTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareAdvertisementTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-send-test")
 {
-    await HardwareSendTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareSendTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-read-only")
 {
-    await HardwareReadOnlyTest.RunAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => HardwareReadOnlyTest.RunAsync(args[1]));
 }
 
 if (args.Length == 2 && args[0] == "--serial-pty")
 {
-    await SerialTests.PtySmokeAsync(args[1]);
-    return 0;
+    return await RunHardwareAsync(() => SerialTests.PtySmokeAsync(args[1]));
+}
+
+static async Task<int> RunHardwareAsync(Func<Task> action)
+{
+    try { await action(); return 0; }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"HARDWARE TEST FAILED: {error.Message}");
+        return 1;
+    }
 }
 
 var tests = new (string Name, Func<Task> Run)[]

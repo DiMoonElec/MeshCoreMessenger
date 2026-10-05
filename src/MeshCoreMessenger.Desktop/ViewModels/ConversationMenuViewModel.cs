@@ -46,12 +46,9 @@ public sealed class ConversationMenuViewModel
         {
             new(ConversationMenuAction.Details, kind == MessengerNavigationTab.Personal ? "О контакте" : "О канале",
                 details ?? new RelayCommand(() => { }, () => false)),
-            Placeholder(ConversationMenuAction.Search, "Поиск (тест)"),
-            Placeholder(ConversationMenuAction.Share, "Поделиться (тест)"),
         };
         if (kind == MessengerNavigationTab.Personal)
         {
-            items.Add(Placeholder(ConversationMenuAction.SetRoute, "Задать маршрут (тест)"));
             _routeItem = new(ConversationMenuAction.ResetRoute, "Сбросить маршрут", _routeReset.Command);
             items.Add(_routeItem);
             _routeReset.PropertyChanged += (_, args) =>
@@ -78,9 +75,6 @@ public sealed class ConversationMenuViewModel
         _historyClear.PropertyChanged += OnHistoryClearChanged;
         UpdateAvailability();
     }
-
-    private static ConversationMenuItemViewModel Placeholder(ConversationMenuAction action, string header) =>
-        new(action, header, new RelayCommand(() => { }));
 
     private void RequestHistoryClear()
     {

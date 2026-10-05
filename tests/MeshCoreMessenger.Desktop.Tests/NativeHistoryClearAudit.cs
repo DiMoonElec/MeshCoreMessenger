@@ -46,7 +46,7 @@ public sealed partial class UiWorkspaceIntegrationTests
                             .Where(property => typeof(Popup).IsAssignableFrom(property.PropertyType))
                             .Select(property => property.GetValue(flyout)).OfType<Popup>().Single();
                         var menuItems = popup.Child!.GetLogicalDescendants().OfType<MenuItem>().ToArray();
-                        if (menuItems.Length != (privateChat ? 6 : 4) ||
+                        if (menuItems.Length != (privateChat ? 3 : 2) ||
                             menuItems.Any(i => Equals(i.Header, "Сбросить маршрут")) != privateChat)
                             throw new InvalidOperationException("Public/Private menu composition failed.");
                         if (privateChat && menuItems.Single(i => Equals(i.Header, "Сбросить маршрут")).IsEffectivelyEnabled)

@@ -7,14 +7,17 @@ using MeshCoreSharp.Protocol.Commands;
 using MeshCoreSharp.Transport;
 using MeshCoreSharp.Transport.Serial;
 
-/// <summary>Opt-in test that sends exactly one private message to the contact seen in the advert test.</summary>
+/// <summary>Opt-in test that sends exactly one private message to a unique, explicitly selected contact prefix.</summary>
 internal static class HardwarePrivateMessageTest
 {
     private static readonly byte[] RecipientPrefix = Convert.FromHexString("DF73015A6BB9");
     private const string Text = "Тестовая личная отправка при разработке MeshCoreSharp. Ответ не требуется";
 
-    public static async Task RunAsync(string portName)
+    public static async Task RunAsync(string portName, string? recipientPrefixHex = null)
     {
+        var expectedPrefix = recipientPrefixHex is null ? RecipientPrefix.ToArray() : Convert.FromHexString(recipientPrefixHex);
+        if (expectedPrefix.Length != ProtocolLimits.MessageContactPrefixSize)
+            throw new ArgumentException("Recipient prefix must contain exactly six bytes.", nameof(recipientPrefixHex));
         using var stop = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var transport = new SinglePrivateSendTransport(new SerialMeshCoreTransport(new SerialMeshCoreTransportOptions
         {
@@ -22,7 +25,7 @@ internal static class HardwarePrivateMessageTest
             DtrEnable = true,
             RtsEnable = true,
             OpenDelay = TimeSpan.FromSeconds(2),
-        }));
+        }), expectedPrefix);
         await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions
         {
             ApplicationName = "MeshCoreSharp.PrivateSendTest",
@@ -36,14 +39,14 @@ internal static class HardwarePrivateMessageTest
             var self = await client.StartAsync(stop.Token);
             var contacts = await client.GetContactsAsync(stop.Token);
             var matches = contacts.Where(contact =>
-                contact.PublicKey.Span.StartsWith(RecipientPrefix)).ToArray();
+                contact.PublicKey.Span.StartsWith(expectedPrefix)).ToArray();
             if (matches.Length != 1)
                 throw new InvalidOperationException(
-                    $"Expected exactly one contact with prefix {Convert.ToHexString(RecipientPrefix)}, found {matches.Length}; nothing was sent.");
+                    $"Expected exactly one contact with prefix {Convert.ToHexString(expectedPrefix)}, found {matches.Length}; nothing was sent.");
 
             var target = matches[0];
             Console.WriteLine($"NODE: {self.Name}; TX={(sbyte)self.TxPowerDbm} dBm");
-            Console.WriteLine($"TARGET: name={target.Name}; key prefix={Convert.ToHexString(RecipientPrefix)}; path=0x{target.OutPathLength:X2}");
+            Console.WriteLine($"TARGET: name={target.Name}; key prefix={Convert.ToHexString(expectedPrefix)}; path=0x{target.OutPathLength:X2}");
             var before = await client.GetPacketStatsAsync(stop.Token);
             Console.WriteLine($"BEFORE: TX={before.Sent}, flood={before.SentFlood}, direct={before.SentDirect}, RX={before.Received}");
 
@@ -83,7 +86,7 @@ internal static class HardwarePrivateMessageTest
         }
     }
 
-    private sealed class SinglePrivateSendTransport(IMeshCoreTransport inner) : IMeshCoreTransport
+    private sealed class SinglePrivateSendTransport(IMeshCoreTransport inner, ReadOnlyMemory<byte> requiredPrefix) : IMeshCoreTransport
     {
         private byte[]? _recipientPrefix;
         private int _sendAttempts;
@@ -99,7 +102,7 @@ internal static class HardwarePrivateMessageTest
 
         public void AllowRecipient(ReadOnlySpan<byte> publicKey)
         {
-            if (publicKey.Length != ProtocolLimits.PublicKeySize || !publicKey.StartsWith(RecipientPrefix))
+            if (publicKey.Length != ProtocolLimits.PublicKeySize || !publicKey.StartsWith(requiredPrefix.Span))
                 throw new InvalidOperationException("Resolved contact does not match the expected sender prefix.");
             _recipientPrefix = publicKey[..ProtocolLimits.MessageContactPrefixSize].ToArray();
         }
