@@ -1,12 +1,12 @@
 # D7.2 — автоматические повторы ЛС и история доставок по маршрутам
 
-**Статус: P1 реализован и проверен 05.10.2026; P2–P8 ещё не реализованы.**
+**Статус: P1/P2 реализованы и проверены 05.10.2026; P3–P8 ещё не реализованы.**
 Пользователь разрешил реализацию по частям. [Stage D](stage-d.md), [D7](d7-manual-retry.md).
 Основание: [исследование attempt/packet hash/ACK](../../library/protocol/private-retry-hashes.md).
 Это явное расширение прежнего D7: пользователь теперь разрешает ограниченные
 автоматические повторы внутри текущей отправки, не replay после reconnect/restart.
 
-## Текущий checkpoint — P1
+## Текущий checkpoint — P2
 
 Реализованы явные timestamp/attempt в библиотечном SendTextAsync (полный ключ и
 Contact), encoder базовых attempts 0…3 и Core adapter. Старые overloads по-прежнему
@@ -19,10 +19,20 @@ AttemptNumber/сетевой WireMessageOrdinal/WireAttempt и требует н
 
 Пока политика не передаётся через PrivateSendRequest и не исполняется MessageService:
 это подключается вместе с coordinator в P4. Автоматические повторы в приложении
-ещё не включены; schema остаётся v4, UI/доставка/late ACK работают по прежнему D6.
-Следующий шаг — **P2**, миграция и durable prepare/reservation, затем P3 matching.
+ещё не включены; schema обновлена до v5, UI/доставка/late ACK работают по прежнему D6.
+Следующий шаг — **P3**, общий commit ACK/message outcome/истории доставок.
 
-Release build: 0 warnings/errors. Library 105/105; Core 282/282; Desktop 315/315.
+P2 добавил циклы, сетевые идентичности и неизменяемые снимки попыток; durable
+PreparePrivateAttempt резервирует timestamp в одной транзакции с подготовкой.
+Повтор операции идемпотентен, следующая попытка разрешена только после
+Unconfirmed предыдущей. Счётчик общий для ЛС собственной ноды и переживает
+перезапуск/очистку переписки. Настоящее время ПК, UTC offset и timezone хранятся
+отдельно от wire timestamp. После startup активный цикл становится Unknown без TX.
+Созданы таблицы истории доставок, но запись успеха подключается в P3; чтение и
+обогащение маршрута — в P6. [Отчёт P2](../../testing/private-delivery-storage.md).
+
+Проверки P1: Release build 0 warnings/errors; Library 105/105, Core 282/282, Desktop 315/315.
+Проверки P2: Release build 0 warnings/errors; Library 105/105, Core 303/303, Desktop 315/315.
 Новая TCP-эмуляция использует формулу ACK прошивки и явные одиночные вызовы,
 а не готовый retry coordinator. [Отчёт P1](../../testing/private-retry-api.md).
 
@@ -125,7 +135,7 @@ timestamp floor, чтобы следующий обычный вызов не п
 | SqliteOutgoingMessageStore | ACK сейчас требует ровно одно совпадение, даже завершённые attempts участвуют в collision check. Нужна группировка по логическому сообщению |
 | SqliteLocalHistoryReader | Сейчас показывает последнюю попытку. Нужен итог сообщения поверх attempts, иначе поздний ACK старой попытки не исправит пузырёк |
 | Contacts/DirectoryService/ContactRouteRefreshQueue | Хранят только текущий путь и обновляют его по PATH_UPDATED/readback. Истории маршрутов нет |
-| DatabaseMigrator | Текущая схема v4. Нужна следующая миграция с backup и консервативным восстановлением старых данных |
+| DatabaseMigrator | P2: схема v5, backup до миграции; legacy попытки сохраняются без вымышленных снимков |
 | SqliteIncomingMessageStore | Идемпотентность только по EventId. Разные попытки ЛС могут стать разными входящими записями |
 
 Companion-библиотека остаётся одним MeshCoreSharp.dll, без БД/авторетрай-политики.
@@ -336,7 +346,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | Шаг | Scope | Проверка перед переходом |
 | --- | --- | --- |
 | P1 — выполнен | Typed библиотечный send с явными timestamp/attempt; Core contracts RetryMode/Policy; прежний overload одноразовый | Encoder 0–3 и reject расширения, 160/161 bytes, явный timestamp floor, два режима планировщика, MSG_SENT-before-ACK; [отчёт](../../testing/private-retry-api.md) |
-| P2 | Миграция cycle/wire-message/attempt/route/history, PreparePrivateAttempt, timestamp allocator | Upgrade v4, backup, legacy, prepare failure = 0 TX, устойчивый allocator, неизменность T1/T2 |
+| P2 — выполнен | Миграция cycle/wire-message/attempt/route/history, PreparePrivateAttempt, timestamp allocator | Upgrade v4, backup, legacy, prepare failure = 0 TX, устойчивый allocator, неизменность T1/T2 |
 | P3 | Общий commit ACK/message outcome/history; группировка по MessageId и защита collisions | ACK разных фаз/старого timestamp, early/late, idempotent commit, persistence pause/retry без TX |
 | P4 | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
 | P5 | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
@@ -347,7 +357,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,
 route enrichment/retention; не добавлять запись аналитики отдельным ненадёжным callback.
 Новый UI-компонент не нужен: metadata под пузырьком и текущий route header уже есть.
-Лимит остаётся 160, расширенный attempt не входит. P1 завершён; P2–P8 ещё не реализованы.
+Лимит остаётся 160, расширенный attempt не входит. P1/P2 завершены; P3–P8 ещё не реализованы.
 
 ## Обязательная матрица
 

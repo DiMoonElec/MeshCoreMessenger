@@ -168,6 +168,7 @@ public sealed partial class OutgoingMessageStoreTests
         using (var connection = fixture.Open())
         {
             // Get the exact original table definition from the supported v2 migration.
+            DropPrivateDeliverySchema(connection);
             using var schema = SqliteDatabase.CreateConnection(":memory:", SqliteOpenMode.ReadWriteCreate);
             schema.Open();
             DatabaseMigrator.ApplyPending(schema, targetVersion: 2);
@@ -233,6 +234,7 @@ public sealed partial class OutgoingMessageStoreTests
         await fixture.Storage.DisposeAsync();
         using (var connection = fixture.Open())
         {
+            DropPrivateDeliverySchema(connection);
             using var command = connection.CreateCommand();
             command.CommandText = """
                 ALTER TABLE Messages DROP COLUMN TransmissionText;

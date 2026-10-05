@@ -1,3 +1,5 @@
+05.10.2026: завершён **P2** [автоматических повторов ЛС](d7-private-auto-retry.md): SQLite v5, циклы/сетевые идентичности, атомарный PreparePrivateAttempt и устойчивый timestamp floor, снимки маршрута/времени ПК. После перезапуска цикл Unknown без replay. Таблицы аналитики созданы; запись подтверждённого успеха и общий ACK commit — следующий P3. Автоматические повторы в MessageService ещё не включены. [Отчёт P2](../../testing/private-delivery-storage.md).
+
 # План реализации MeshCoreMessenger
 
 05.10.2026: завершён **P1** [автоматических повторов ЛС](d7-private-auto-retry.md): библиотечный SendTextAsync с явными timestamp/attempt 0…3, Core adapter, immutable policy двух режимов и планировщик 3/3+2. Первая часть не включает automatic TX: MessageService остаётся одноразовым, schema v4; следующий шаг P2 (БД/prepare/reservation). Release build без warnings/errors; Library 105/105, Core 282/282, Desktop 315/315. [Отчёт P1](../../testing/private-retry-api.md).

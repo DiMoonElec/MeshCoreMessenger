@@ -41,6 +41,8 @@ public sealed class LocalStorageTests
             "SchemaMigrations", "Settings", "ConnectionProfiles", "Nodes", "Sessions",
             "Contacts", "Channels", "ChannelBindings", "Conversations", "Messages",
             "SendAttempts", "Drafts",
+            "PrivateTimestampFloors", "PrivateDeliveryCycles", "PrivateWireMessages",
+            "ContactDeliveryHistory", "ContactDeliveryEvidence", "ContactDeliveryCandidates",
         ];
         Assert.All(expectedTables, table => Assert.Contains(table, tables));
     }

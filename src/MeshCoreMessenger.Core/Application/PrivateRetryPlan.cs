@@ -2,8 +2,6 @@ using MeshCoreMessenger.Core.Domain;
 
 namespace MeshCoreMessenger.Core.Application;
 
-internal enum PrivateDeliveryPhase { KnownRoute, Flood, FallbackFlood }
-
 /// <summary>A single planned TX. This is a schedule, not permission to transmit or change the node.</summary>
 internal sealed record PrivateRetryStep(
     int AttemptNumber, int WireMessageOrdinal, PrivateDeliveryPhase Phase, byte WireAttempt,

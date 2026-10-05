@@ -5,7 +5,7 @@ using MeshCoreSharp;
 
 namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
-internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, DatabaseReader reader) : IOutgoingMessageStore
+internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, DatabaseReader reader) : IOutgoingMessageStore
 {
     public event EventHandler<OutgoingMessageCommit>? MessageCommitted;
 
@@ -204,6 +204,15 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
             using var kind = Command(connection, transaction, "SELECT Kind FROM Conversations WHERE Id=$id;", ("$id", conversationId));
             if (Convert.ToInt32(kind.ExecuteScalar()) != (int)ConversationKind.Contact) throw new InvalidOperationException("Channel sends cannot await ACK.");
         }
+        if (transition.State is SendAttemptState.Sending or SendAttemptState.Accepted && transition.WireTimestamp is { } timestamp)
+        {
+            using var kind = Command(connection, transaction, "SELECT Kind FROM Conversations WHERE Id=$id;", ("$id", conversationId));
+            if (Convert.ToInt32(kind.ExecuteScalar()) == (int)ConversationKind.Contact)
+            {
+                if (timestamp is < 0 or > uint.MaxValue) throw new ArgumentOutOfRangeException(nameof(transition));
+                ObservePrivateTimestamp(connection, transaction, transition.NodeId, timestamp);
+            }
+        }
         var terminal = transition.State is SendAttemptState.Delivered or SendAttemptState.Unconfirmed or SendAttemptState.Failed or SendAttemptState.Unknown ||
             transition.State == SendAttemptState.Accepted && transition.AckExpectation == AckExpectation.NotExpected;
         using var update = Command(connection, transaction, """
@@ -344,6 +353,11 @@ internal sealed class SqliteOutgoingMessageStore(DatabaseWorker writer, Database
                 SELECT m.Id FROM Messages m JOIN Conversations c ON c.Id=m.ConversationId WHERE c.Kind=1);
             """, ("$utc", DateTimeOffset.UtcNow));
         command.ExecuteNonQuery();
+        using var cycles = Command(connection, transaction, """
+            UPDATE PrivateDeliveryCycles SET State=5, ErrorCode='StartupRecovery'
+            WHERE State IN (0,1);
+            """);
+        cycles.ExecuteNonQuery();
         transaction.Commit();
     }
 

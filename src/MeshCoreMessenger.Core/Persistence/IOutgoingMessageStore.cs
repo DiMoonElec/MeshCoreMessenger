@@ -15,4 +15,12 @@ public interface IOutgoingMessageStore
     Task<StoredOutgoingMessage> GetAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<OutgoingAttemptSnapshot>> GetAttemptsAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default);
     Task<long> GetLatestChannelTimestampAsync(Guid nodeId, CancellationToken cancellationToken = default) => Task.FromResult(0L);
+    Task<PrivateDeliveryCycleSnapshot> BeginPrivateCycleAsync(BeginPrivateDeliveryCycle cycle, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<PreparedPrivateAttempt> PreparePrivateAttemptAsync(PreparePrivateAttempt attempt, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<PrivateDeliveryCycleSnapshot?> GetPrivateCycleAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
+    Task<IReadOnlyList<PrivateAttemptCapture>> GetPrivateAttemptCapturesAsync(Guid nodeId, Guid messageId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
 }

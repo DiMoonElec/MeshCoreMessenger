@@ -44,12 +44,16 @@ internal sealed class SqliteHistoryClearStore(DatabaseWorker writer, DatabaseRea
                    EXISTS(SELECT 1 FROM Messages m JOIN SendAttempts a ON a.MessageId=m.Id
                           WHERE m.ConversationId=c.Id AND
                           (a.State=$sending OR (a.State=$accepted AND a.AckExpectation<>$notExpected)))
+                   OR EXISTS(SELECT 1 FROM Messages m JOIN PrivateDeliveryCycles d ON d.MessageId=m.Id
+                             WHERE m.ConversationId=c.Id AND d.State IN ($preparedCycle,$activeCycle))
             FROM Conversations c LEFT JOIN Channels ch ON ch.Id=c.ChannelId
             WHERE c.Id=$conversation AND c.NodeId=$node;
             """);
         command.Parameters.AddWithValue("$sending", (int)SendAttemptState.Sending);
         command.Parameters.AddWithValue("$accepted", (int)SendAttemptState.Accepted);
         command.Parameters.AddWithValue("$notExpected", (int)AckExpectation.NotExpected);
+        command.Parameters.AddWithValue("$preparedCycle", (int)PrivateDeliveryState.Prepared);
+        command.Parameters.AddWithValue("$activeCycle", (int)PrivateDeliveryState.Active);
         using var row = command.ExecuteReader();
         if (!row.Read()) throw new KeyNotFoundException("Переписка не принадлежит выбранной ноде.");
         return new(nodeId, conversationId, (ConversationKind)row.GetInt32(0), (byte[])row.GetValue(1), row.GetInt64(2), row.GetBoolean(3));

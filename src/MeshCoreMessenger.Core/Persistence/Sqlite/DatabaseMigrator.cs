@@ -4,7 +4,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private static readonly Migration[] Migrations =
     [
@@ -12,6 +12,7 @@ internal static class DatabaseMigrator
         new(2, "Incoming message metadata", IncomingMessageMetadataSql),
         new(3, "Durable outgoing messages", OutgoingMessagesSql),
         new(4, "Contact route descriptors", ContactRoutesSql),
+        new(5, "Private delivery cycles and route evidence", PrivateDeliverySql),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
@@ -271,6 +272,116 @@ internal static class DatabaseMigrator
     private const string ContactRoutesSql = """
         ALTER TABLE Contacts ADD COLUMN OutPathLength INTEGER CHECK (OutPathLength IS NULL OR OutPathLength BETWEEN 0 AND 255);
         ALTER TABLE Contacts ADD COLUMN RouteObservedUtc TEXT;
+        """;
+
+    private const string PrivateDeliverySql = """
+        CREATE TABLE PrivateTimestampFloors (
+            NodeId TEXT NOT NULL PRIMARY KEY REFERENCES Nodes(Id) ON DELETE CASCADE,
+            LastTimestamp INTEGER NOT NULL CHECK (LastTimestamp BETWEEN 0 AND 4294967295)
+        );
+        INSERT INTO PrivateTimestampFloors (NodeId,LastTimestamp)
+        SELECT c.NodeId, MAX(a.WireTimestamp) FROM SendAttempts a JOIN Messages m ON m.Id=a.MessageId
+        JOIN Conversations c ON c.Id=m.ConversationId
+        WHERE c.Kind=0 AND m.Direction=1 AND a.WireTimestamp BETWEEN 0 AND 4294967295
+        GROUP BY c.NodeId;
+
+        CREATE TABLE PrivateDeliveryCycles (
+            MessageId TEXT NOT NULL PRIMARY KEY REFERENCES Messages(Id) ON DELETE CASCADE,
+            NodeId TEXT NOT NULL REFERENCES Nodes(Id) ON DELETE CASCADE,
+            SessionId TEXT REFERENCES Sessions(Id) ON DELETE SET NULL,
+            ContactPublicKey BLOB NOT NULL CHECK (length(ContactPublicKey)=32),
+            RetryMode INTEGER NOT NULL CHECK (RetryMode IN (0,1)),
+            InitialRouteKind INTEGER NOT NULL CHECK (InitialRouteKind BETWEEN 0 AND 2),
+            PlannedAttemptCount INTEGER NOT NULL CHECK (PlannedAttemptCount IN (3,5)),
+            PreparedAttemptCount INTEGER NOT NULL DEFAULT 0 CHECK (PreparedAttemptCount BETWEEN 0 AND PlannedAttemptCount),
+            CurrentPhase INTEGER CHECK (CurrentPhase BETWEEN 0 AND 2),
+            State INTEGER NOT NULL DEFAULT 0 CHECK (State BETWEEN 0 AND 5),
+            StartedUtc TEXT NOT NULL,
+            ConfirmedUtc TEXT,
+            ErrorCode TEXT,
+            PolicyVersion INTEGER NOT NULL DEFAULT 1 CHECK (PolicyVersion=1),
+            CHECK ((InitialRouteKind=0 AND PlannedAttemptCount=3) OR (InitialRouteKind<>0 AND PlannedAttemptCount=5))
+        );
+        CREATE INDEX IX_PrivateDeliveryCycles_Node_State ON PrivateDeliveryCycles(NodeId,State);
+
+        CREATE TABLE PrivateWireMessages (
+            Id TEXT NOT NULL PRIMARY KEY,
+            MessageId TEXT NOT NULL REFERENCES PrivateDeliveryCycles(MessageId) ON DELETE CASCADE,
+            Ordinal INTEGER NOT NULL CHECK (Ordinal BETWEEN 1 AND 5),
+            Phase INTEGER NOT NULL CHECK (Phase BETWEEN 0 AND 2),
+            WireTimestamp INTEGER NOT NULL CHECK (WireTimestamp BETWEEN 0 AND 4294967295),
+            UNIQUE (MessageId,Ordinal)
+        );
+        CREATE TRIGGER TR_PrivateWireMessages_Immutable BEFORE UPDATE ON PrivateWireMessages
+        BEGIN SELECT RAISE(ABORT,'Private wire identity is immutable'); END;
+
+        ALTER TABLE SendAttempts ADD COLUMN PrivatePreparationId TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN WireMessageId TEXT REFERENCES PrivateWireMessages(Id) ON DELETE CASCADE;
+        ALTER TABLE SendAttempts ADD COLUMN WireAttempt INTEGER CHECK (WireAttempt BETWEEN 0 AND 3);
+        ALTER TABLE SendAttempts ADD COLUMN RouteDescriptor INTEGER CHECK (RouteDescriptor BETWEEN 0 AND 255);
+        ALTER TABLE SendAttempts ADD COLUMN RoutePath BLOB CHECK (length(RoutePath)<=64);
+        ALTER TABLE SendAttempts ADD COLUMN RouteObservedUtc TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN PcPreparedUtc TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN PcUtcOffsetMinutes INTEGER CHECK (PcUtcOffsetMinutes BETWEEN -840 AND 840);
+        ALTER TABLE SendAttempts ADD COLUMN PcTimeZoneId TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN PcSentUtc TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN PcSentUtcOffsetMinutes INTEGER CHECK (PcSentUtcOffsetMinutes BETWEEN -840 AND 840);
+        ALTER TABLE SendAttempts ADD COLUMN PcSentTimeZoneId TEXT;
+        ALTER TABLE SendAttempts ADD COLUMN ModeReportedByMsgSent INTEGER CHECK (ModeReportedByMsgSent IN (0,1));
+        ALTER TABLE SendAttempts ADD COLUMN AckDeadlineUtc TEXT;
+        CREATE UNIQUE INDEX UX_SendAttempts_PrivatePreparation ON SendAttempts(PrivatePreparationId) WHERE PrivatePreparationId IS NOT NULL;
+        CREATE INDEX IX_SendAttempts_PrivateAck ON SendAttempts(SessionId,ExpectedAck) WHERE WireMessageId IS NOT NULL;
+        CREATE TRIGGER TR_SendAttempts_PrivateCaptureImmutable BEFORE UPDATE ON SendAttempts
+        WHEN OLD.WireMessageId IS NOT NULL AND (
+            NEW.WireMessageId IS NOT OLD.WireMessageId OR NEW.WireAttempt IS NOT OLD.WireAttempt OR
+            NEW.WireTimestamp IS NOT OLD.WireTimestamp OR NEW.PrivatePreparationId IS NOT OLD.PrivatePreparationId OR
+            NEW.RouteDescriptor IS NOT OLD.RouteDescriptor OR NEW.RoutePath IS NOT OLD.RoutePath OR
+            NEW.RouteObservedUtc IS NOT OLD.RouteObservedUtc OR NEW.PcPreparedUtc IS NOT OLD.PcPreparedUtc OR
+            NEW.PcUtcOffsetMinutes IS NOT OLD.PcUtcOffsetMinutes OR NEW.PcTimeZoneId IS NOT OLD.PcTimeZoneId)
+        BEGIN SELECT RAISE(ABORT,'Private attempt capture is immutable'); END;
+
+        CREATE TABLE ContactDeliveryHistory (
+            Id TEXT NOT NULL PRIMARY KEY,
+            NodeId TEXT NOT NULL REFERENCES Nodes(Id) ON DELETE CASCADE,
+            ContactPublicKey BLOB NOT NULL CHECK (length(ContactPublicKey)=32),
+            MessageId TEXT UNIQUE REFERENCES Messages(Id) ON DELETE SET NULL,
+            SessionId TEXT REFERENCES Sessions(Id) ON DELETE SET NULL,
+            FirstAckReceivedUtc TEXT NOT NULL,
+            PcUtcOffsetMinutes INTEGER NOT NULL CHECK (PcUtcOffsetMinutes BETWEEN -840 AND 840),
+            PcTimeZoneId TEXT NOT NULL CHECK (length(PcTimeZoneId)>0),
+            WasLate INTEGER NOT NULL CHECK (WasLate IN (0,1)),
+            Attribution INTEGER NOT NULL CHECK (Attribution BETWEEN 0 AND 2)
+        );
+        CREATE INDEX IX_ContactDeliveryHistory_Contact_Time ON ContactDeliveryHistory(NodeId,ContactPublicKey,FirstAckReceivedUtc,Id);
+        CREATE TABLE ContactDeliveryEvidence (
+            Id TEXT NOT NULL PRIMARY KEY,
+            DeliveryId TEXT NOT NULL REFERENCES ContactDeliveryHistory(Id) ON DELETE CASCADE,
+            AckTag BLOB NOT NULL CHECK (length(AckTag)=4),
+            AckReceivedUtc TEXT NOT NULL,
+            RoundTripMilliseconds INTEGER CHECK (RoundTripMilliseconds BETWEEN 0 AND 4294967295),
+            Attribution INTEGER NOT NULL CHECK (Attribution BETWEEN 0 AND 2),
+            LearnedRouteDescriptor INTEGER CHECK (LearnedRouteDescriptor BETWEEN 0 AND 255),
+            LearnedRoutePath BLOB CHECK (length(LearnedRoutePath)<=64),
+            LearnedRouteObservedUtc TEXT,
+            UNIQUE (DeliveryId,AckTag)
+        );
+        CREATE TABLE ContactDeliveryCandidates (
+            EvidenceId TEXT NOT NULL REFERENCES ContactDeliveryEvidence(Id) ON DELETE CASCADE,
+            AttemptNumber INTEGER NOT NULL CHECK (AttemptNumber>0),
+            AttemptId TEXT REFERENCES SendAttempts(Id) ON DELETE SET NULL,
+            WireMessageOrdinal INTEGER NOT NULL CHECK (WireMessageOrdinal BETWEEN 1 AND 5),
+            WireTimestamp INTEGER NOT NULL CHECK (WireTimestamp BETWEEN 0 AND 4294967295),
+            WireAttempt INTEGER NOT NULL CHECK (WireAttempt BETWEEN 0 AND 3),
+            Phase INTEGER NOT NULL CHECK (Phase BETWEEN 0 AND 2),
+            SentUtc TEXT,
+            PcUtcOffsetMinutes INTEGER CHECK (PcUtcOffsetMinutes BETWEEN -840 AND 840),
+            PcTimeZoneId TEXT,
+            RouteDescriptor INTEGER CHECK (RouteDescriptor BETWEEN 0 AND 255),
+            RoutePath BLOB CHECK (length(RoutePath)<=64),
+            RouteObservedUtc TEXT,
+            ModeReportedByMsgSent INTEGER CHECK (ModeReportedByMsgSent IN (0,1)),
+            PRIMARY KEY (EvidenceId,AttemptNumber)
+        );
         """;
 
     private const string OutgoingMessagesSql = """
