@@ -163,6 +163,21 @@ public sealed partial class UiWorkspaceIntegrationTests
                 SendAttemptState.Sending, SendAttemptState.Accepted, DateTimeOffset.UtcNow, AckExpectation.Expected, 42, new byte[] { 1, 0, 0, 0 }), cancellationToken);
             return new(prepared.MessageId, SendAttemptState.Accepted);
         }
+        public async Task<PrivateSendOutcome> SendPrivateAsNewAsync(PrivateResendRequest request, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            var source = await w.Storage.OutgoingMessages.GetAsync(request.NodeId, request.MessageId, cancellationToken);
+            if (Gate is not null) await Gate.WaitAsync(cancellationToken);
+            var prepared = await w.Storage.OutgoingMessages.PrepareAsync(new(Guid.NewGuid(), request.NodeId, request.SessionId,
+                source.ConversationId, source.Recipient, source.OriginalText, source.OriginalText, 160, DateTimeOffset.UtcNow,
+                source.MessageId), cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, prepared.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Prepared, SendAttemptState.Sending, DateTimeOffset.UtcNow), cancellationToken);
+            await w.Storage.OutgoingMessages.TransitionAsync(new(request.NodeId, prepared.MessageId, prepared.Attempt.Id, request.SessionId,
+                SendAttemptState.Sending, SendAttemptState.Accepted, DateTimeOffset.UtcNow, AckExpectation.Expected, 43,
+                new byte[] { 2, 0, 0, 0 }), cancellationToken);
+            return new(prepared.MessageId, SendAttemptState.Accepted);
+        }
         public async Task<ChannelSendOutcome> SendChannelAsync(ChannelSendRequest request, Func<DraftCapture, Task>? transferred = null, CancellationToken cancellationToken = default)
         {
             Calls++; LastSlot = request.Recipient.Slot;

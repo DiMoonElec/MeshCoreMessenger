@@ -19,7 +19,7 @@ public sealed record OutgoingRecipient(
 public sealed record PrepareOutgoingMessage(
     Guid OperationId, Guid NodeId, Guid SessionId, Guid ConversationId,
     OutgoingRecipient Recipient, string OriginalText, string TransmissionText,
-    int MaxUtf8Bytes, DateTimeOffset PreparedUtc);
+    int MaxUtf8Bytes, DateTimeOffset PreparedUtc, Guid? PrivateResendSourceId = null);
 
 public sealed record OutgoingAttemptSnapshot(
     Guid Id, Guid MessageId, Guid? SessionId, int AttemptNumber, SendAttemptState State,

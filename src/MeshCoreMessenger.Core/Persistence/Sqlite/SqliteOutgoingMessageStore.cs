@@ -75,6 +75,7 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
             }
         }
         EnsureOwnership(connection, transaction, message);
+        if (message.PrivateResendSourceId is { } source) EnsurePrivateResendSource(connection, transaction, message, source);
         using (var insert = Command(connection, transaction, """
             INSERT INTO Messages (Id, ConversationId, SessionId, Direction, MessageKind, Text, TransmissionText,
                                   ReceivedUtc, OriginalChannelSlot, ChannelBindingId, ResolutionState)
@@ -94,6 +95,29 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
         var attempt = ReadAttempts(connection, transaction, message.NodeId, message.OperationId)[0];
         transaction.Commit();
         return (new(message.OperationId, sequenceId, attempt), true);
+    }
+
+    private static void EnsurePrivateResendSource(SqliteConnection connection, SqliteTransaction transaction,
+        PrepareOutgoingMessage message, Guid source)
+    {
+        using var command = Command(connection, transaction, """
+            SELECT c.NodeId,m.ConversationId,c.Kind,c.ContactPublicKey,m.Direction,m.MessageKind,m.Text,
+                   d.State,(SELECT State FROM SendAttempts WHERE MessageId=m.Id ORDER BY AttemptNumber DESC LIMIT 1),
+                   EXISTS(SELECT 1 FROM SendAttempts WHERE MessageId=m.Id AND State=$delivered)
+            FROM Messages m JOIN Conversations c ON c.Id=m.ConversationId
+            LEFT JOIN PrivateDeliveryCycles d ON d.MessageId=m.Id WHERE m.Id=$source;
+            """, ("$source", source), ("$delivered", (int)SendAttemptState.Delivered));
+        using var row = command.ExecuteReader();
+        if (!row.Read() || message.Recipient.Kind != ConversationKind.Contact ||
+            row.GetString(0) != message.NodeId.ToString("D") || row.GetString(1) != message.ConversationId.ToString("D") ||
+            row.GetInt32(2) != (int)ConversationKind.Contact || !((byte[])row.GetValue(3)).AsSpan().SequenceEqual(message.Recipient.Identity.Span) ||
+            row.GetInt32(4) != (int)MessageDirection.Outgoing || row.GetInt32(5) != (int)StoredMessageKind.Text ||
+            row.GetString(6) != message.OriginalText || row.GetBoolean(9))
+            throw new InvalidOperationException("Исходное личное сообщение удалено или больше не доступно для повторной отправки.");
+        var eligible = !row.IsDBNull(7)
+            ? (PrivateDeliveryState)row.GetInt32(7) is PrivateDeliveryState.Unconfirmed or PrivateDeliveryState.Failed
+            : !row.IsDBNull(8) && (SendAttemptState)row.GetInt32(8) is SendAttemptState.Unconfirmed or SendAttemptState.Failed;
+        if (!eligible) throw new InvalidOperationException("Повтор доступен только для недоставленного личного сообщения.");
     }
 
     private static void EnsureOwnership(SqliteConnection connection, SqliteTransaction transaction, PrepareOutgoingMessage message)

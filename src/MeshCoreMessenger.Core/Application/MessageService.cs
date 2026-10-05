@@ -15,12 +15,16 @@ public sealed record PrivateSendRequest(Guid NodeId, Guid SessionId, long Genera
     OutgoingRecipient Recipient, DraftCapture Draft, OutgoingTextOptions Options, PrivateRetryPolicy? RetryPolicy = null)
     : TextSendRequest(NodeId, SessionId, Generation, Recipient, Draft, Options);
 public sealed record PrivateSendOutcome(Guid MessageId, SendAttemptState State, bool Queued = false);
+public sealed record PrivateResendRequest(Guid NodeId, Guid SessionId, long Generation, Guid MessageId,
+    OutgoingTextOptions Options, PrivateRetryPolicy? RetryPolicy = null);
 public sealed record ChannelRepeatRequest(Guid NodeId, Guid SessionId, long Generation,
     Guid MessageId, int ExpectedAttemptNumber, OutgoingRecipient Recipient);
 public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
 
 public interface IMessageService
 {
+    Task<PrivateSendOutcome> SendPrivateAsNewAsync(PrivateResendRequest request, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<ChannelSendOutcome> SendChannelAsNewAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
@@ -88,8 +92,21 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
         return new(outcome.MessageId, outcome.State);
     }
 
+    public async Task<PrivateSendOutcome> SendPrivateAsNewAsync(PrivateResendRequest request, CancellationToken cancellationToken = default)
+    {
+        if (privateDeliveries is null) throw new NotSupportedException("Private resend requires the private delivery coordinator.");
+        var stored = await messages.GetAsync(request.NodeId, request.MessageId, cancellationToken).ConfigureAwait(false);
+        if (stored.Recipient.Kind != ConversationKind.Contact)
+            throw new InvalidOperationException("Only outgoing private text can be sent again.");
+        var capture = new DraftCapture(new(request.NodeId, stored.ConversationId, ConversationKind.Contact,
+            stored.Recipient.Identity.ToArray()), stored.OriginalText, 0);
+        var send = new PrivateSendRequest(request.NodeId, request.SessionId, request.Generation, stored.Recipient,
+            capture, request.Options, request.RetryPolicy);
+        return await QueuePrivateAsync(send, null, cancellationToken, stored.MessageId).ConfigureAwait(false);
+    }
+
     private async Task<PrivateSendOutcome> QueuePrivateAsync(PrivateSendRequest request, Func<DraftCapture, Task>? transferred,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, Guid? privateResendSourceId = null)
     {
         if (!await _singleFlight.WaitAsync(0, cancellationToken).ConfigureAwait(false))
             throw new InvalidOperationException("An outgoing admission is already in progress.");
@@ -116,13 +133,13 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             return await parent.RunAsync(async (owned, token) =>
             {
                 await owned.ValidateRecipientAsync().ConfigureAwait(false);
-                await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
-                var draft = await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false);
+                if (privateResendSourceId is null) await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
+                var draft = privateResendSourceId is null ? await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false) : null;
                 var conversation = capture.Target.ConversationId ?? draft?.ConversationId
                     ?? throw new InvalidOperationException("The conversation has not been materialized.");
                 var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                     conversation, recipient, processed.OriginalText, processed.TransmissionText,
-                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow(), privateResendSourceId), token).ConfigureAwait(false);
                 // Register the complete job before any user callback or return to the UI.
                 try { privateDeliveries.Start(owned, prepared, policy, reservation!, activity!); }
                 catch
@@ -131,7 +148,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                     throw;
                 }
                 started = true;
-                if (await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
+                if (privateResendSourceId is null && await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
                     await transferred(capture).ConfigureAwait(false);
                 return new PrivateSendOutcome(prepared.MessageId, SendAttemptState.Prepared, Queued: true);
             }).ConfigureAwait(false);

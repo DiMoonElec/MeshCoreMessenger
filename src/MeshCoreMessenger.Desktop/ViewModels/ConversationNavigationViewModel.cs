@@ -1251,9 +1251,11 @@ public sealed class HistoryMessageListItem : ObservableObject
         OnPropertyChanged(nameof(RetryVisible)); OnPropertyChanged(nameof(CanRetry));
         OnPropertyChanged(nameof(RetryRequiresConfirmation)); OnPropertyChanged(nameof(RetryLabel));
     }
-    internal void SetSendAsNewAction(System.Windows.Input.ICommand command, bool visible, bool enabled)
+    public string SendAsNewLabel { get; private set; } = "Отправить как новое";
+    internal void SetSendAsNewAction(System.Windows.Input.ICommand command, bool visible, bool enabled, string label = "Отправить как новое")
     {
         SendAsNewCommand = command; _sendAsNewVisible = visible; _sendAsNewEnabled = enabled;
+        SendAsNewLabel = label; OnPropertyChanged(nameof(SendAsNewLabel));
         OnPropertyChanged(nameof(SendAsNewVisible)); OnPropertyChanged(nameof(CanSendAsNew));
     }
     public string RetryLabel => _retryCommand is not null ? "Повторить доставку" : "Повторить отправку";

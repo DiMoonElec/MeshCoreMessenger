@@ -14,7 +14,7 @@
           <MenuItem Header="Сведения о сообщении" CommandParameter="{Binding}" IsVisible="{Binding HasDetails}" Click="OnDetails" />
           <MenuItem Header="{Binding RetryLabel}" CommandParameter="{Binding}" IsVisible="{Binding RetryVisible}"
                     IsEnabled="{Binding CanRetry}" Click="OnRetry" />
-          <MenuItem Header="Отправить как новое" CommandParameter="{Binding}" IsVisible="{Binding SendAsNewVisible}"
+          <MenuItem Header="{Binding SendAsNewLabel}" CommandParameter="{Binding}" IsVisible="{Binding SendAsNewVisible}"
                     IsEnabled="{Binding CanSendAsNew}" Click="OnSendAsNew" />
         </ContextMenu>
       </StackPanel.ContextMenu>

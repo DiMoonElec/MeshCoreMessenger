@@ -26,6 +26,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private readonly ILogger<MainWindowViewModel> _logger;
     private readonly ComposerContextCoordinator[] _composerContexts;
     private readonly ChannelRepeatCoordinator _channelRepeats;
+    private readonly PrivateResendCoordinator _privateResends;
     private readonly IOutgoingMessageStore? _outgoingMessages;
     private readonly IDirectoryStore? _directoryUpdates;
     private readonly ConcurrentQueue<OutgoingMessageCommit> _pendingOutgoing = new();
@@ -128,6 +129,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
             new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
         _channelRepeats = new(Chats.Public, supervisor, messageService, outgoingMessages, dispatcher, Track, _lifetimeCancellation.Token, logger);
+        _privateResends = new(Chats.Private, supervisor, messageService, dispatcher, Track, _lifetimeCancellation.Token, logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
@@ -400,6 +402,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         Shell.PropertyChanged -= OnShellPropertyChanged;
         Chats.PropertyChanged -= OnNavigationPropertyChanged;
         _channelRepeats.Dispose();
+        _privateResends.Dispose();
         _lifetimeCancellation.Cancel();
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
