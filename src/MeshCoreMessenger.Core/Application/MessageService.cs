@@ -220,7 +220,6 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
     private static async Task RecordDeliveryAsync(SessionCommandLease lease, TextMessageSendResult sent, CancellationToken token)
     {
         SendAttemptState state;
-        int? roundTrip = null;
         string? errorCode = null;
         try
         {
@@ -232,8 +231,14 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 _ => SendAttemptState.Unknown,
             };
             if (state == SendAttemptState.Delivered)
-                roundTrip = checked((int)delivery.Acknowledgement!.RoundTripTimeMilliseconds);
-            if (state == SendAttemptState.Unknown) errorCode = "UnexpectedDeliveryResult";
+            {
+                await lease.RecordAcknowledgementAsync(delivery.Acknowledgement!.Ack,
+                    delivery.Acknowledgement.RoundTripTimeMilliseconds).ConfigureAwait(false);
+                if (await lease.IsDeliveryCommittedAsync().ConfigureAwait(false)) return;
+                state = SendAttemptState.Unknown;
+                errorCode = "AmbiguousAcknowledgement";
+            }
+            if (state == SendAttemptState.Unknown) errorCode ??= "UnexpectedDeliveryResult";
         }
         catch (Exception error)
         {
@@ -241,7 +246,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             errorCode = error.GetType().Name;
         }
         if (!await lease.TransitionAsync(SendAttemptState.Accepted, state,
-            roundTripMilliseconds: roundTrip, errorCode: errorCode).ConfigureAwait(false) &&
+            errorCode: errorCode).ConfigureAwait(false) &&
             !await lease.IsDeliveryCommittedAsync().ConfigureAwait(false))
             throw new InvalidOperationException("Delivery status changed before its result was committed.");
     }

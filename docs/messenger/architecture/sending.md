@@ -95,11 +95,20 @@ D7.1, 05.10.2026: в канальном меню «Повторить доста
 несколько сетевых идентичностей. API выбирает прежний timestamp/attempt + 1 либо новый
 timestamp/attempt 0 внутри фаз. Лимит остаётся 160; новый timestamp может создать
 дубликат у адресата при потерянном ACK. [Итоговый план](../plan/d7-private-auto-retry.md)
-ещё не реализован. В библиотеке остаётся один TX на API вызов, reconnect/startup
+реализован по частям P1–P3; автоматический исполнитель P4 ещё не подключён. В библиотеке остаётся один TX на API вызов, reconnect/startup
 не replay. [Packet hash/attempt/ACK](../../library/protocol/private-retry-hashes.md).
 
 05.10.2026, P1: явные timestamp/attempt 0…3 доступны в библиотеке и Core adapter.
 Core содержит immutable PrivateRetryPolicy и внутренний планировщик 3/3+2 обоих
 режимов. Он только выбирает wire identities/route phases, не выполняет TX/БД/reset.
-MessageService пока не исполняет повторы: P2 storage, P3 ACK и P4 coordinator остаются
-следующими шагами. [Проверки API](../../testing/private-retry-api.md).
+MessageService пока не исполняет повторы: P2 storage и P3 ACK выполнены, следующий
+шаг — P4 coordinator. [Проверки API](../../testing/private-retry-api.md).
+
+05.10.2026, P3: waiter Confirmed больше не записывает Delivered в обход raw ACK
+matching. Оба источника сохраняют evidence через durable tracker и общий writer
+commit. Коллизия между сообщениями оставляет неопределённый итог; коллизия внутри
+цикла подтверждает общий MessageId без угадывания попытки. Поздний ACK известной
+попытки имеет приоритет над timeout/cleanup остальных. Протокольный collision fault
+с неполными metadata не становится успехом. Технические статусы сохраняют прежние
+временные ограничения, реальное время ACK аналитики допускает перевод часов назад.
+[Отчёт P3](../../testing/private-delivery-ack-commit.md).

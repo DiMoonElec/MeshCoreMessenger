@@ -1,12 +1,12 @@
 # D7.2 — автоматические повторы ЛС и история доставок по маршрутам
 
-**Статус: P1/P2 реализованы и проверены 05.10.2026; P3–P8 ещё не реализованы.**
+**Статус: P1–P3 реализованы и проверены 05.10.2026; P4–P8 ещё не реализованы.**
 Пользователь разрешил реализацию по частям. [Stage D](stage-d.md), [D7](d7-manual-retry.md).
 Основание: [исследование attempt/packet hash/ACK](../../library/protocol/private-retry-hashes.md).
 Это явное расширение прежнего D7: пользователь теперь разрешает ограниченные
 автоматические повторы внутри текущей отправки, не replay после reconnect/restart.
 
-## Текущий checkpoint — P2
+## Текущий checkpoint — P3
 
 Реализованы явные timestamp/attempt в библиотечном SendTextAsync (полный ключ и
 Contact), encoder базовых attempts 0…3 и Core adapter. Старые overloads по-прежнему
@@ -19,8 +19,8 @@ AttemptNumber/сетевой WireMessageOrdinal/WireAttempt и требует н
 
 Пока политика не передаётся через PrivateSendRequest и не исполняется MessageService:
 это подключается вместе с coordinator в P4. Автоматические повторы в приложении
-ещё не включены; schema обновлена до v5, UI/доставка/late ACK работают по прежнему D6.
-Следующий шаг — **P3**, общий commit ACK/message outcome/истории доставок.
+ещё не включены; schema v5. Одноразовый D6 использует общий ACK commit P3.
+Следующий шаг — **P4**, session-owned coordinator и исполнение flood-попыток.
 
 P2 добавил циклы, сетевые идентичности и неизменяемые снимки попыток; durable
 PreparePrivateAttempt резервирует timestamp в одной транзакции с подготовкой.
@@ -28,11 +28,22 @@ PreparePrivateAttempt резервирует timestamp в одной транз�
 Unconfirmed предыдущей. Счётчик общий для ЛС собственной ноды и переживает
 перезапуск/очистку переписки. Настоящее время ПК, UTC offset и timezone хранятся
 отдельно от wire timestamp. После startup активный цикл становится Unknown без TX.
-Созданы таблицы истории доставок, но запись успеха подключается в P3; чтение и
-обогащение маршрута — в P6. [Отчёт P2](../../testing/private-delivery-storage.md).
+Созданы таблицы истории доставок; чтение и обогащение маршрута — в P6. [Отчёт P2](../../testing/private-delivery-storage.md).
 
 Проверки P1: Release build 0 warnings/errors; Library 105/105, Core 282/282, Desktop 315/315.
 Проверки P2: Release build 0 warnings/errors; Library 105/105, Core 303/303, Desktop 315/315.
+Проверки P3: Release build 0 warnings/errors; Library 105/105, Core 312/312, Desktop 315/315.
+
+P3 объединяет raw ACK, waiter completion и Delivered transition через один commit.
+Все совпадения группируются по MessageId: одна группа подтверждает цикл, несколько
+групп не подтверждают никого. При нескольких кандидатах одного сообщения попытки
+не переписываются произвольно: аналитика сохраняет всех кандидатов. Итог цикла,
+первый успех и добавочные evidence пишутся атомарно и идемпотентно; ReceivedUtc
+хранится как фактическое время ПК, независимо от технического CompletedUtc.
+ACK буферизуется по порядку writer до завершения регистрации всех Sending/MSG_SENT.
+Библиотечный protocol fault, оставивший неполные collision metadata, не считается
+однозначным успехом. Legacy доставка записывается с Unknown attribution без
+вымышленного маршрута. [Отчёт P3](../../testing/private-delivery-ack-commit.md).
 Новая TCP-эмуляция использует формулу ACK прошивки и явные одиночные вызовы,
 а не готовый retry coordinator. [Отчёт P1](../../testing/private-retry-api.md).
 
@@ -215,8 +226,8 @@ Unknown/потере transport response, смене session, persistence pause, 
 
 ## Данные и миграция
 
-Ниже — предлагаемые поля/таблицы, не существующая реализация. Окончательные имена
-выбрать при миграции после проверки всех SQL projections/check constraints.
+Ниже — исходные требования к данным; схема v5 реализована в P2, общий ACK commit
+и запись успешной доставки — в P3. Конкретные SQL-имена описаны в отчётах частей.
 
 ### Цикл и attempts
 
@@ -347,7 +358,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 | --- | --- | --- |
 | P1 — выполнен | Typed библиотечный send с явными timestamp/attempt; Core contracts RetryMode/Policy; прежний overload одноразовый | Encoder 0–3 и reject расширения, 160/161 bytes, явный timestamp floor, два режима планировщика, MSG_SENT-before-ACK; [отчёт](../../testing/private-retry-api.md) |
 | P2 — выполнен | Миграция cycle/wire-message/attempt/route/history, PreparePrivateAttempt, timestamp allocator | Upgrade v4, backup, legacy, prepare failure = 0 TX, устойчивый allocator, неизменность T1/T2 |
-| P3 | Общий commit ACK/message outcome/history; группировка по MessageId и защита collisions | ACK разных фаз/старого timestamp, early/late, idempotent commit, persistence pause/retry без TX |
+| P3 — выполнен | Общий commit ACK/message outcome/history; группировка по MessageId и защита collisions | ACK разных фаз/старого timestamp, early/late, idempotent commit, persistence pause/retry без TX |
 | P4 | Session-owned coordinator, per-contact queue, три flood TX, оба RetryMode, progress и отмена | Virtual time, stop on any ACK, timeout ×3, два сообщения одному контакту, UI один пузырёк, no replay |
 | P5 | Owned reset/readback, known ×3 + flood ×2, новое сетевое сообщение после reset | Reset после третьего timeout, T1/0…2 → T2/0…1, два режима, route mutation guard, late ACK T1 |
 | P6 | Route provenance/learned snapshot, аналитический read API, retention | Single/ambiguous route success, PC time/zone/clock change, clear/contact remove |
@@ -357,7 +368,7 @@ MessageId отправителя на wire нет. Обещать receiver-side 
 P2 уже создаёт фундамент history, P3 атомарно пишет успех, P6 завершает чтение,
 route enrichment/retention; не добавлять запись аналитики отдельным ненадёжным callback.
 Новый UI-компонент не нужен: metadata под пузырьком и текущий route header уже есть.
-Лимит остаётся 160, расширенный attempt не входит. P1/P2 завершены; P3–P8 ещё не реализованы.
+Лимит остаётся 160, расширенный attempt не входит. P1–P3 завершены; P4–P8 ещё не реализованы.
 
 ## Обязательная матрица
 

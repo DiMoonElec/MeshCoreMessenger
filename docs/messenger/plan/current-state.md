@@ -1,3 +1,5 @@
+05.10.2026: завершён **P3** [автоматических повторов ЛС](d7-private-auto-retry.md): общий ACK commit для push/waiter/Delivered transition, группировка по MessageId и защита cross-message collisions, атомарный итог цикла и история успешной доставки с candidate route snapshots. Late ACK не зависит от перевода часов ПК назад. Release build без warnings/errors; Library 105/105, Core 312/312, Desktop 315/315. Автоповторы ещё не включены; следующий P4 — session-owned coordinator. [Отчёт P3](../../testing/private-delivery-ack-commit.md).
+
 05.10.2026: завершён **P2** [автоматических повторов ЛС](d7-private-auto-retry.md): SQLite v5, циклы/сетевые идентичности, атомарный PreparePrivateAttempt и устойчивый timestamp floor, снимки маршрута/времени ПК. После перезапуска цикл Unknown без replay. Таблицы аналитики созданы; запись подтверждённого успеха и общий ACK commit — следующий P3. Автоматические повторы в MessageService ещё не включены. [Отчёт P2](../../testing/private-delivery-storage.md).
 
 # План реализации MeshCoreMessenger

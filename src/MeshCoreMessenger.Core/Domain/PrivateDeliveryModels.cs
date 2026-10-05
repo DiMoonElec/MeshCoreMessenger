@@ -5,6 +5,7 @@ namespace MeshCoreMessenger.Core.Domain;
 public enum PrivateDeliveryPhase { KnownRoute = 0, Flood = 1, FallbackFlood = 2 }
 public enum PrivateRouteKind { Flood = 0, Direct = 1, Path = 2 }
 public enum PrivateDeliveryState { Prepared = 0, Active = 1, Delivered = 2, Unconfirmed = 3, Failed = 4, Unknown = 5 }
+public enum DeliveryAttribution { SingleAttempt = 0, MultipleCandidates = 1, Unknown = 2 }
 
 /// <summary>Configured contact route observed before TX, not a proven radio trace. Unused path bytes are discarded.</summary>
 public sealed record PrivateRouteSnapshot

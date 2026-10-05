@@ -102,6 +102,25 @@ public sealed partial class SessionCommandGatewayTests
     }
 
     [Fact]
+    public async Task ConfirmedLibraryWaitersCannotBypassCrossMessageTagCollision()
+    {
+        await using var f = await Fixture.CreateAsync(); await f.Connect();
+        var drafts = new DraftWriteTracker(f.Storage.Drafts, TimeProvider.System);
+        var sender = Sender(f, drafts);
+        var deliveries = new[] { DeliveryGate(), DeliveryGate() };
+        var count = 0;
+        f.Clients.Current!.PrivateSendAction = _ => Task.FromResult(new TextMessageSendResult(
+            (uint)++count, new(false, 1, 1000), deliveries[count - 1].Task));
+        var first = await sender.SendPrivateAsync(await PrivateRequest(f, drafts, "first", 1), cancellationToken: CancellationToken);
+        var second = await sender.SendPrivateAsync(await PrivateRequest(f, drafts, "second", 2), cancellationToken: CancellationToken);
+        foreach (var delivery in deliveries) delivery.SetResult(new(MessageDeliveryStatus.Confirmed, new(1, 30)));
+        await WaitState(f, f.NodeId, first.MessageId, SendAttemptState.Unknown);
+        await WaitState(f, f.NodeId, second.MessageId, SendAttemptState.Unknown);
+        Assert.Equal(2, f.Clients.Current.Tx);
+        Assert.Equal("AmbiguousAcknowledgement", (await Attempt(f, f.NodeId, first.MessageId)).ErrorCode);
+    }
+
+    [Fact]
     public async Task SecondPrivateSendDoesNotWaitForFirstAckAndReverseCompletionUpdatesExactAttempt()
     {
         await using var f = await Fixture.CreateAsync(); await f.Connect();

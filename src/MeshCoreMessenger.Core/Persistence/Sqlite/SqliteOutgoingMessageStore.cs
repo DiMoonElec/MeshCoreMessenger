@@ -213,6 +213,16 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
                 ObservePrivateTimestamp(connection, transaction, transition.NodeId, timestamp);
             }
         }
+        if (transition.State == SendAttemptState.Delivered)
+        {
+            if (attempt.ExpectedAck is not { } expectedAck || expectedAck.Length != sizeof(uint))
+                throw new InvalidOperationException("Delivery requires persisted ACK evidence.");
+            var tag = System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(expectedAck.Span);
+            var outcome = CommitAcknowledgement(connection, transaction, new(transition.NodeId, transition.SessionId,
+                tag, (uint)(transition.RoundTripMilliseconds ?? 0), transition.AtUtc));
+            transaction.Commit();
+            return outcome.Commit;
+        }
         var terminal = transition.State is SendAttemptState.Delivered or SendAttemptState.Unconfirmed or SendAttemptState.Failed or SendAttemptState.Unknown ||
             transition.State == SendAttemptState.Accepted && transition.AckExpectation == AckExpectation.NotExpected;
         using var update = Command(connection, transaction, """
@@ -229,6 +239,7 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
             ("$ack", transition.ExpectedAck?.ToArray()), ("$rtt", transition.RoundTripMilliseconds), ("$error", transition.ErrorCode),
             ("$id", transition.AttemptId), ("$expected", (int)transition.ExpectedState));
         update.ExecuteNonQuery();
+        UpdatePrivateCycleOutcome(connection, transaction, transition);
         transaction.Commit();
         return new(transition.NodeId, conversationId, transition.MessageId, false);
     }
@@ -238,52 +249,14 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
         ArgumentNullException.ThrowIfNull(acknowledgement);
         if (acknowledgement.NodeId == Guid.Empty || acknowledgement.SessionId == Guid.Empty || acknowledgement.Tag == 0)
             throw new ArgumentException("ACK requires an identified node, session and nonzero tag.", nameof(acknowledgement));
-        var tag = new byte[sizeof(uint)];
-        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(tag, acknowledgement.Tag);
-        var outcome = await writer.ExecuteAsync<(bool Handled, OutgoingMessageCommit? Commit)>(connection =>
+        if (acknowledgement.PcUtcOffsetMinutes is < -840 or > 840 || string.IsNullOrWhiteSpace(acknowledgement.PcTimeZoneId))
+            throw new ArgumentException("ACK requires PC offset and timezone.", nameof(acknowledgement));
+        var outcome = await writer.ExecuteAsync(connection =>
         {
             using var transaction = connection.BeginTransaction();
-            using var query = Command(connection, transaction, """
-                SELECT a.Id,m.Id,m.ConversationId,a.State,a.StartedUtc,a.AcceptedUtc,a.CompletedUtc
-                FROM SendAttempts a JOIN Messages m ON m.Id=a.MessageId
-                JOIN Conversations c ON c.Id=m.ConversationId
-                WHERE c.NodeId=$node AND c.Kind=0 AND m.Direction=1 AND a.SessionId=$session
-                  AND a.AckExpectation=2 AND a.ExpectedAck=$tag;
-                """, ("$node", acknowledgement.NodeId), ("$session", acknowledgement.SessionId), ("$tag", tag));
-            using var rows = query.ExecuteReader();
-            if (!rows.Read())
-            {
-                rows.Close();
-                using var sending = Command(connection, transaction, """
-                    SELECT 1 FROM SendAttempts a JOIN Messages m ON m.Id=a.MessageId
-                    JOIN Conversations c ON c.Id=m.ConversationId
-                    WHERE c.NodeId=$node AND c.Kind=0 AND a.SessionId=$session AND a.State=6
-                      AND a.StartedUtc<=$utc LIMIT 1;
-                    """, ("$node", acknowledgement.NodeId), ("$session", acknowledgement.SessionId),
-                    ("$utc", acknowledgement.ReceivedUtc.ToUniversalTime()));
-                // Buffer only when an in-flight command has not recorded its authoritative tag yet.
-                return (sending.ExecuteScalar() is null, null);
-            }
-            var attemptId = rows.GetString(0);
-            var messageId = Guid.Parse(rows.GetString(1));
-            var conversationId = Guid.Parse(rows.GetString(2));
-            var state = (SendAttemptState)rows.GetInt32(3);
-            var started = DateTimeOffset.Parse(rows.GetString(4));
-            var completed = rows.IsDBNull(6) ? started : DateTimeOffset.Parse(rows.GetString(6));
-            var accepted = rows.IsDBNull(5) ? started : DateTimeOffset.Parse(rows.GetString(5));
-            // Even a completed attempt participates in collision detection. Never choose the newest match.
-            if (rows.Read() || acknowledgement.ReceivedUtc < started ||
-                state is not (SendAttemptState.Accepted or SendAttemptState.Unconfirmed)) return (true, null);
-            rows.Close();
-            var at = new[] { acknowledgement.ReceivedUtc, completed, accepted }.Max();
-            using var update = Command(connection, transaction, """
-                UPDATE SendAttempts SET State=2,CompletedUtc=$utc,RoundTripMilliseconds=$rtt,ErrorCode=NULL
-                WHERE Id=$id AND State=$state;
-                """, ("$id", attemptId), ("$state", (int)state), ("$utc", at),
-                ("$rtt", acknowledgement.RoundTripMilliseconds <= int.MaxValue ? (int?)acknowledgement.RoundTripMilliseconds : null));
-            update.ExecuteNonQuery();
+            var result = CommitAcknowledgement(connection, transaction, acknowledgement);
             transaction.Commit();
-            return (true, new OutgoingMessageCommit(acknowledgement.NodeId, conversationId, messageId, false));
+            return result;
         }, cancellationToken).ConfigureAwait(false);
         if (outcome.Commit is { } commit) Notify(commit);
         return outcome.Handled;

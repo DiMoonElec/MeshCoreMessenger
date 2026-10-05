@@ -46,8 +46,11 @@ public sealed partial class OutgoingMessageStoreTests
         {
             await f.Move(p, SendAttemptState.Prepared, SendAttemptState.Sending);
             await f.Accept(p, AckExpectation.Expected);
+            if (p == first && firstState == SendAttemptState.Delivered)
+                await f.Move(first, SendAttemptState.Accepted, firstState);
         }
-        await f.Move(first, SendAttemptState.Accepted, firstState);
+        if (firstState != SendAttemptState.Delivered)
+            await f.Move(first, SendAttemptState.Accepted, firstState);
         await f.Move(second, SendAttemptState.Accepted, SendAttemptState.Unconfirmed);
         var ack = new OutgoingAcknowledgement(f.NodeId, f.SessionId, 0x04030201, 100, request.PreparedUtc.AddSeconds(2));
         Assert.True(await f.Storage.OutgoingMessages.ConfirmAcknowledgementAsync(ack, CancellationToken));
@@ -106,7 +109,7 @@ public sealed partial class OutgoingMessageStoreTests
     }
 
     [Fact]
-    public async Task DeletedHistoryAndEvidenceOlderThanAttemptCannotConfirmAnything()
+    public async Task ClockRollbackDoesNotRejectAckAndDeletedHistoryIsNotRecreated()
     {
         await using var f = await Fixture.CreateAsync();
         var request = f.Request();
@@ -116,7 +119,7 @@ public sealed partial class OutgoingMessageStoreTests
         await f.Move(p, SendAttemptState.Accepted, SendAttemptState.Unconfirmed);
         var ack = new OutgoingAcknowledgement(f.NodeId, f.SessionId, 0x04030201, 100, request.PreparedUtc.AddSeconds(-1));
         Assert.True(await f.Storage.OutgoingMessages.ConfirmAcknowledgementAsync(ack, CancellationToken));
-        Assert.Equal(SendAttemptState.Unconfirmed, Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, p.MessageId, CancellationToken)).State);
+        Assert.Equal(SendAttemptState.Delivered, Assert.Single(await f.Storage.OutgoingMessages.GetAttemptsAsync(f.NodeId, p.MessageId, CancellationToken)).State);
         f.Execute("DELETE FROM Messages;");
         await f.Storage.OutgoingMessages.ConfirmAcknowledgementAsync(ack with { ReceivedUtc = request.PreparedUtc.AddSeconds(2) }, CancellationToken);
         Assert.Empty(await f.Storage.History.GetMessagesAsync(f.NodeId, f.ConversationId, null, 10, CancellationToken));

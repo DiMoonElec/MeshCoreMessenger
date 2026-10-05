@@ -119,8 +119,29 @@ read watermark. Debounce инъецируется, каждый запрос и�
 `ContactDeliveryHistory`, `ContactDeliveryEvidence`, `ContactDeliveryCandidates` —
 фундамент аналитики успешных доставок. Их снимки переживают очистку переписки:
 ссылки на удалённые сообщения/попытки становятся NULL. Запись общего результата
-ACK появится в P3, чтение и learned-route enrichment — в P6. В P2 записи успеха
-ещё не создаются. Активные циклы при startup/restore получают Unknown без TX;
+ACK реализована в P3, чтение и learned-route enrichment — в P6. Сам P2 создавал
+только схему, без записей успеха. Активные циклы при startup/restore получают Unknown без TX;
 очистка блокируется на протяжении активного цикла, включая паузы между попытками.
 
 [План](../plan/d7-private-auto-retry.md), [проверки P2](../../testing/private-delivery-storage.md).
+
+## Общий commit ACK (P3)
+
+Все источники подтверждения проходят одно сопоставление NodeId/SessionId/tag.
+Completed/Unknown попытки с известным тегом участвуют в collision check. Один
+MessageId подтверждается на уровне цикла; несколько MessageId не подтверждаются.
+При одной точно определённой попытке её статус становится Delivered; при нескольких
+кандидатах подтверждается цикл, а отдельная попытка и успешный путь не угадываются.
+Unknown с библиотечным protocol fault не подтверждается: при ACK collision второй
+MSG_SENT мог не вернуться в Core.
+
+В одной транзакции обновляются итог цикла, успешная доставка и evidence/candidates.
+Успех уникален по MessageId, evidence — по delivery/tag. Повтор ACK не заменяет
+первое время/RTT/маршрут. Следующий ACK другой попытки добавляет evidence. Legacy
+сохраняется с Unknown attribution без вымышленных маршрутов/сетевого attempt.
+Настоящие PC AckReceivedUtc, offset и timezone отделены от технического CompletedUtc
+с прежними CHECK constraints. ACK admission использует writer order: при незаписанном
+MSG_SENT любого private Sending той же session evidence ожидает его регистрации,
+даже если старый tag уже совпал. Это позволяет проверить ещё неизвестную коллизию.
+
+[Проверки P3](../../testing/private-delivery-ack-commit.md).

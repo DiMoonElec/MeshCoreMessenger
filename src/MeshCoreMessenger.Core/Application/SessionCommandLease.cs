@@ -117,8 +117,18 @@ public sealed class SessionCommandLease : IAsyncDisposable
     {
         if (_attempt is null || _message is null) return false;
         var attempts = await _scope.Messages.GetAttemptsAsync(Owner.NodeId, _message.MessageId, CancellationToken.None).ConfigureAwait(false);
-        return attempts.Any(attempt => attempt.Id == _attempt.Id && attempt.State == SendAttemptState.Delivered);
+        if (attempts.Any(attempt => attempt.State == SendAttemptState.Delivered)) return true;
+        var cycle = await _scope.Messages.GetPrivateCycleAsync(Owner.NodeId, _message.MessageId, CancellationToken.None).ConfigureAwait(false);
+        return cycle?.State == PrivateDeliveryState.Delivered;
     }
+
+    internal Task RecordAcknowledgementAsync(uint tag, uint roundTrip) => OwnAsync(async () =>
+    {
+        var utc = _scope.TimeProvider.GetUtcNow();
+        await _scope.Outgoing.SaveAcknowledgementAsync(new(Owner.NodeId, Owner.SessionId, tag, roundTrip, utc,
+            (int)TimeZoneInfo.Local.GetUtcOffset(utc).TotalMinutes, TimeZoneInfo.Local.Id), CancellationToken.None).ConfigureAwait(false);
+        return true;
+    }, requireAdmission: false);
 
     public Task<TextMessageSendResult> SendTextAsync() => OwnAsync(async () =>
     {

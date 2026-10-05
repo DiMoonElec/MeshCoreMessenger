@@ -4,7 +4,8 @@ public enum AckExpectation { LegacyUnknown = 0, NotExpected = 1, Expected = 2 }
 
 /// <summary>ACK evidence captured from one identified Companion session.</summary>
 public sealed record OutgoingAcknowledgement(Guid NodeId, Guid SessionId, uint Tag,
-    uint RoundTripMilliseconds, DateTimeOffset ReceivedUtc);
+    uint RoundTripMilliseconds, DateTimeOffset ReceivedUtc,
+    int PcUtcOffsetMinutes = 0, string PcTimeZoneId = "UTC");
 
 /// <summary>Immutable captured recipient; channel identity is a fingerprint, never a secret.</summary>
 public sealed record OutgoingRecipient(

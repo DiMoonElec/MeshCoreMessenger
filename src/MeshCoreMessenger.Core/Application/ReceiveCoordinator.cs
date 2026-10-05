@@ -302,7 +302,9 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                             try
                             {
                                 await _outgoing.SaveAcknowledgementAsync(new(_nodeId, item.SessionId, ack.Ack,
-                                    ack.RoundTripTimeMilliseconds, item.OccurredUtc), cancellationToken).ConfigureAwait(false);
+                                    ack.RoundTripTimeMilliseconds, item.OccurredUtc,
+                                    (int)TimeZoneInfo.Local.GetUtcOffset(item.OccurredUtc).TotalMinutes,
+                                    TimeZoneInfo.Local.Id), cancellationToken).ConfigureAwait(false);
                             }
                             catch (OutgoingPersistenceException) { /* The writer retains ACK evidence and pauses commands. */ }
                         }
