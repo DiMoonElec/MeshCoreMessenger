@@ -234,6 +234,42 @@ public sealed class DesktopPreferencesTests
         Assert.Equal(normal, restoredNormal);
     }
 
+    [Theory]
+    [InlineData(DesktopStartupWindowMode.LastState, DesktopWindowPresentation.Tray)]
+    [InlineData(DesktopStartupWindowMode.Minimized, DesktopWindowPresentation.Minimized)]
+    [InlineData(DesktopStartupWindowMode.Tray, DesktopWindowPresentation.Open)]
+    public async Task StartupModeAndPresentationSurviveFlushAndIndependentStateChange(DesktopStartupWindowMode mode, DesktopWindowPresentation state)
+    {
+        var store = new FakeSettingsStore(); var preferences = new DesktopPreferences(store);
+        await preferences.LoadAsync(CancellationToken);
+        preferences.SetStartupWindowMode(mode); preferences.SetLastWindowPresentation(state);
+        await preferences.FlushAsync(CancellationToken);
+        var reopened = new DesktopPreferences(store); await reopened.LoadAsync(CancellationToken);
+        Assert.Equal(mode, reopened.Snapshot.StartupWindowMode); Assert.Equal(state, reopened.Snapshot.LastWindowPresentation);
+        reopened.SetLastWindowPresentation(DesktopWindowPresentation.Minimized);
+        await reopened.FlushAsync(CancellationToken);
+        var again = new DesktopPreferences(store); await again.LoadAsync(CancellationToken);
+        Assert.Equal(DesktopWindowPresentation.Minimized, again.Snapshot.LastWindowPresentation);
+        Assert.Equal(mode, again.Snapshot.StartupWindowMode);
+    }
+    [Fact]
+    public async Task InvalidStartupPreferencesFallBackAndFailedSaveRetainsDirtyState()
+    {
+        var store = new FakeSettingsStore();
+        store.Values[DesktopPreferences.StartupWindowModeSettingKey] = "999";
+        store.Values[DesktopPreferences.LastWindowPresentationSettingKey] = "invalid";
+        var preferences = new DesktopPreferences(store); await preferences.LoadAsync(CancellationToken);
+        Assert.Equal(DesktopStartupWindowMode.LastState, preferences.Snapshot.StartupWindowMode);
+        Assert.Equal(DesktopWindowPresentation.Open, preferences.Snapshot.LastWindowPresentation);
+        preferences.SetStartupWindowMode(DesktopStartupWindowMode.Tray);
+        store.Failures.Enqueue(new IOException());
+        await Assert.ThrowsAsync<DesktopPreferencesPersistenceException>(() => preferences.FlushAsync(CancellationToken));
+        preferences.SetStartupWindowMode(DesktopStartupWindowMode.Minimized);
+        await preferences.RetryAsync(CancellationToken);
+        var restarted = new DesktopPreferences(store); await restarted.LoadAsync(CancellationToken);
+        Assert.Equal(DesktopStartupWindowMode.Minimized, restarted.Snapshot.StartupWindowMode);
+    }
+
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
     private sealed class FakeSettingsStore : ISettingsStore

@@ -29,6 +29,16 @@
       <Border Classes="settings-card">
         <StackPanel Classes="settings-fields">
           <TextBlock Classes="settings-heading" Text="Поведение окна" />
+          <TextBlock Classes="settings-label" Text="После запуска" />
+          <ComboBox ItemsSource="{Binding StartupWindowModeOptions}"
+                    SelectedItem="{Binding SelectedStartupWindowMode, Mode=TwoWay}"
+                    AutomationProperties.Name="Состояние окна после запуска">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DesktopStartupWindowModeOption">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
           <TextBlock Classes="settings-label" Text="При закрытии окна" />
           <ComboBox ItemsSource="{Binding CloseBehaviorOptions}"
                     SelectedItem="{Binding SelectedCloseBehavior, Mode=TwoWay}"

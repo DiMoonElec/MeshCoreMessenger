@@ -16,6 +16,20 @@ public enum DesktopCloseBehavior
     ExitApplication,
 }
 
+public enum DesktopStartupWindowMode
+{
+    LastState,
+    Minimized,
+    Tray,
+}
+
+public enum DesktopWindowPresentation
+{
+    Open,
+    Minimized,
+    Tray,
+}
+
 public sealed record WindowPlacement(
     double X,
     double Y,
@@ -28,7 +42,9 @@ public sealed record DesktopPreferencesSnapshot(
     WindowPlacement? WindowPlacement,
     DesktopCloseBehavior CloseBehavior = DesktopCloseBehavior.MinimizeToTray,
     bool NotifyPrivateMessages = true,
-    bool NotifyChannelMessages = true);
+    bool NotifyChannelMessages = true,
+    DesktopStartupWindowMode StartupWindowMode = DesktopStartupWindowMode.LastState,
+    DesktopWindowPresentation LastWindowPresentation = DesktopWindowPresentation.Open);
 
 internal interface IDurableDesktopPreferences
 {
@@ -46,6 +62,13 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
     internal const string NotifyPrivateSettingKey = "desktop.notifications.private";
     internal const string NotifyChannelsSettingKey = "desktop.notifications.channels";
 
+    internal const string StartupWindowModeSettingKey = "desktop.startup-window-mode";
+    internal const string LastWindowPresentationSettingKey = "desktop.last-window-presentation";
+
+    private DesktopStartupWindowMode _startupWindowMode;
+    private long _startupWindowModeRevision, _persistedStartupWindowModeRevision;
+    private DesktopWindowPresentation _lastWindowPresentation;
+    private long _lastWindowPresentationRevision, _persistedLastWindowPresentationRevision;
     private readonly object _gate = new();
     private readonly SemaphoreSlim _flushGate = new(1, 1);
     private DesktopThemePreference _theme;
@@ -85,6 +108,8 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
         var closeText = await settings.GetAsync(CloseBehaviorSettingKey, cancellationToken).ConfigureAwait(false);
         var privateText = await settings.GetAsync(NotifyPrivateSettingKey, cancellationToken).ConfigureAwait(false);
         var channelsText = await settings.GetAsync(NotifyChannelsSettingKey, cancellationToken).ConfigureAwait(false);
+        var startupWindowModeText = await settings.GetAsync(StartupWindowModeSettingKey, cancellationToken).ConfigureAwait(false);
+        var lastWindowPresentationText = await settings.GetAsync(LastWindowPresentationSettingKey, cancellationToken).ConfigureAwait(false);
         var theme = Enum.TryParse<DesktopThemePreference>(themeText, ignoreCase: true, out var parsedTheme) &&
             Enum.IsDefined(parsedTheme)
                 ? parsedTheme
@@ -93,6 +118,10 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
 
         lock (_gate)
         {
+            _startupWindowMode = Enum.TryParse<DesktopStartupWindowMode>(startupWindowModeText, true, out var startupWindowMode) && Enum.IsDefined(startupWindowMode) ? startupWindowMode : DesktopStartupWindowMode.LastState;
+            _startupWindowModeRevision = _persistedStartupWindowModeRevision = 0;
+            _lastWindowPresentation = Enum.TryParse<DesktopWindowPresentation>(lastWindowPresentationText, true, out var lastWindowPresentation) && Enum.IsDefined(lastWindowPresentation) ? lastWindowPresentation : DesktopWindowPresentation.Open;
+            _lastWindowPresentationRevision = _persistedLastWindowPresentationRevision = 0;
             _theme = theme;
             _windowPlacement = placement;
             _closeBehavior = Enum.TryParse<DesktopCloseBehavior>(closeText, true, out var close) && Enum.IsDefined(close)
@@ -141,6 +170,28 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
         }
     }
 
+    public void SetStartupWindowMode(DesktopStartupWindowMode value)
+    {
+        if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        lock (_gate)
+        {
+            if (_startupWindowMode == value) return;
+            _startupWindowMode = value;
+            _startupWindowModeRevision++;
+        }
+    }
+
+    public void SetLastWindowPresentation(DesktopWindowPresentation value)
+    {
+        if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+        lock (_gate)
+        {
+            if (_lastWindowPresentation == value) return;
+            _lastWindowPresentation = value;
+            _lastWindowPresentationRevision++;
+        }
+    }
+
     public void SetCloseBehavior(DesktopCloseBehavior behavior)
     {
         if (!Enum.IsDefined(behavior)) throw new ArgumentOutOfRangeException(nameof(behavior));
@@ -174,7 +225,7 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
 
     // Called with _gate held, so every flush captures one consistent in-memory snapshot.
     private DesktopPreferencesSnapshot CreateSnapshot() =>
-        new(_theme, _windowPlacement, _closeBehavior, _notifyPrivateMessages, _notifyChannelMessages);
+        new(_theme, _windowPlacement, _closeBehavior, _notifyPrivateMessages, _notifyChannelMessages, _startupWindowMode, _lastWindowPresentation);
 
     public Task RetryAsync(CancellationToken cancellationToken = default) => FlushAsync(cancellationToken);
 
@@ -186,6 +237,8 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
             while (true)
             {
                 DesktopPreferencesSnapshot snapshot;
+                long startupWindowModeRevision;
+                long lastWindowPresentationRevision;
                 long themeRevision;
                 long placementRevision;
                 long closeRevision;
@@ -194,12 +247,16 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
                 lock (_gate)
                 {
                     snapshot = CreateSnapshot();
+                    startupWindowModeRevision = _startupWindowModeRevision;
+                    lastWindowPresentationRevision = _lastWindowPresentationRevision;
                     themeRevision = _themeRevision;
                     placementRevision = _placementRevision;
                     closeRevision = _closeRevision;
                     privateRevision = _privateRevision;
                     channelsRevision = _channelsRevision;
-                    if (themeRevision <= _persistedThemeRevision &&
+                    if (startupWindowModeRevision <= _persistedStartupWindowModeRevision &&
+                        lastWindowPresentationRevision <= _persistedLastWindowPresentationRevision &&
+                        themeRevision <= _persistedThemeRevision &&
                         placementRevision <= _persistedPlacementRevision &&
                         closeRevision <= _persistedCloseRevision &&
                         privateRevision <= _persistedPrivateRevision &&
@@ -238,6 +295,16 @@ public sealed class DesktopPreferences(ISettingsStore settings) : IDurableDeskto
                         }
                     }
 
+                    if (startupWindowModeRevision > _persistedStartupWindowModeRevision)
+                    {
+                        await settings.SetAsync(StartupWindowModeSettingKey, snapshot.StartupWindowMode.ToString(), cancellationToken).ConfigureAwait(false);
+                        lock (_gate) _persistedStartupWindowModeRevision = startupWindowModeRevision;
+                    }
+                    if (lastWindowPresentationRevision > _persistedLastWindowPresentationRevision)
+                    {
+                        await settings.SetAsync(LastWindowPresentationSettingKey, snapshot.LastWindowPresentation.ToString(), cancellationToken).ConfigureAwait(false);
+                        lock (_gate) _persistedLastWindowPresentationRevision = lastWindowPresentationRevision;
+                    }
                     if (closeRevision > _persistedCloseRevision)
                     {
                         await settings.SetAsync(CloseBehaviorSettingKey, snapshot.CloseBehavior.ToString(), cancellationToken).ConfigureAwait(false);

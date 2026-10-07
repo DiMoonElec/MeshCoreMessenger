@@ -202,6 +202,30 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
     }
 
+    public IReadOnlyList<DesktopStartupWindowModeOption> StartupWindowModeOptions { get; } =
+    [
+        new(DesktopStartupWindowMode.LastState, "Как последний раз"),
+        new(DesktopStartupWindowMode.Minimized, "Свёрнуто"),
+        new(DesktopStartupWindowMode.Tray, "Свёрнуто в трей"),
+    ];
+    public DesktopStartupWindowModeOption SelectedStartupWindowMode
+    {
+        get => StartupWindowModeOptions.Single(option => option.Value == _preferences.Snapshot.StartupWindowMode);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (Volatile.Read(ref _stopped) != 0 || value.Value == _preferences.Snapshot.StartupWindowMode) return;
+            _preferences.SetStartupWindowMode(value.Value);
+            OnPropertyChanged(); RequestPreferencesSave();
+        }
+    }
+    internal DesktopWindowPresentation LastWindowPresentation => _preferences.Snapshot.LastWindowPresentation;
+    internal void UpdateWindowPresentation(DesktopWindowPresentation value)
+    {
+        if (Volatile.Read(ref _stopped) != 0 || value == _preferences.Snapshot.LastWindowPresentation) return;
+        _preferences.SetLastWindowPresentation(value); RequestPreferencesSave();
+    }
+
     public bool NotifyPrivateMessages
     {
         get => _preferences.Snapshot.NotifyPrivateMessages;
@@ -392,6 +416,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             await _preferences.LoadAsync(linkedCancellation.Token);
             OnPropertyChanged(nameof(SelectedTheme));
             OnPropertyChanged(nameof(SelectedCloseBehavior));
+            OnPropertyChanged(nameof(SelectedStartupWindowMode));
             OnPropertyChanged(nameof(NotifyPrivateMessages));
             OnPropertyChanged(nameof(NotifyChannelMessages));
             OnPropertyChanged(nameof(SavedWindowPlacement));
@@ -1103,3 +1128,5 @@ public sealed class KnownNodeListItem
     public string HeaderLabel { get; }
     public string SelectorLabel { get; }
 }
+
+public sealed record DesktopStartupWindowModeOption(DesktopStartupWindowMode Value, string Title);

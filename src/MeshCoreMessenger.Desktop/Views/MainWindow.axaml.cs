@@ -29,6 +29,9 @@ public sealed partial class MainWindow : Window
     private bool _shutdownRequestActive;
     private bool _placementInitialized;
     private bool _closed;
+    private DesktopWindowPresentation? _startupPresentation;
+    private bool _startupPresentationApplied;
+    private bool _applyingStartupPresentation;
     private WindowState _activationRestoreState = WindowState.Normal;
     private WindowPlacement? _normalPlacement;
     private MainWindowViewModel? _subscribedViewModel;
@@ -56,10 +59,12 @@ public sealed partial class MainWindow : Window
             {
                 if (WindowState != WindowState.Minimized) _activationRestoreState = WindowState;
                 CaptureWindowPlacement();
-                if (WindowState == WindowState.Minimized && CanActivateExistingWindow && _canHideToTray?.Invoke() == true) Hide();
+                if (!_applyingStartupPresentation && WindowState == WindowState.Minimized && CanActivateExistingWindow && _canHideToTray?.Invoke() == true) Hide();
             }
+            if (eventArgs.Property == WindowStateProperty || eventArgs.Property == IsVisibleProperty)
+                CaptureWindowPresentation();
         };
-        Opened += (_, _) => ApplySavedWindowPlacement();
+        Opened += (_, _) => { ApplySavedWindowPlacement(); ApplyStartupPresentation(); };
     }
 
     public MainWindow(IDesktopShutdownCoordinator shutdown)
@@ -99,11 +104,45 @@ public sealed partial class MainWindow : Window
         _exitApplication = exitApplication;
     }
 
+    internal void ConfigureStartupPresentation()
+    {
+        if (DataContext is MainWindowViewModel root)
+            _startupPresentation = ResolveStartupPresentation(root.SelectedStartupWindowMode.Value, root.LastWindowPresentation);
+    }
+
+    internal static DesktopWindowPresentation ResolveStartupPresentation(DesktopStartupWindowMode mode, DesktopWindowPresentation last) => mode switch
+    {
+        DesktopStartupWindowMode.Minimized => DesktopWindowPresentation.Minimized,
+        DesktopStartupWindowMode.Tray => DesktopWindowPresentation.Tray,
+        _ => last,
+    };
+
+    private void ApplyStartupPresentation()
+    {
+        if (_startupPresentationApplied || _startupPresentation is not { } presentation) return;
+        _applyingStartupPresentation = true;
+        try
+        {
+            if (presentation == DesktopWindowPresentation.Tray && _canHideToTray?.Invoke() == true) Hide();
+            else if (presentation != DesktopWindowPresentation.Open) WindowState = WindowState.Minimized;
+        }
+        finally { _applyingStartupPresentation = false; _startupPresentationApplied = true; }
+        CaptureWindowPresentation();
+    }
+
+    private void CaptureWindowPresentation()
+    {
+        if (!_startupPresentationApplied || _applyingStartupPresentation || !CanActivateExistingWindow || DataContext is not MainWindowViewModel root) return;
+        root.UpdateWindowPresentation(!IsVisible ? DesktopWindowPresentation.Tray : WindowState == WindowState.Minimized
+            ? DesktopWindowPresentation.Minimized : DesktopWindowPresentation.Open);
+    }
+
     internal void RequestExit()
     {
         VerifyAccess();
         if (_closed || _shutdownAccepted || _shutdown is null) return;
         CaptureWindowPlacement();
+        CaptureWindowPresentation();
         if (_shutdownRequestActive)
         {
             return;

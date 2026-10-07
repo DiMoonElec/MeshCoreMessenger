@@ -32,6 +32,7 @@ public sealed partial class App : Application
             desktop.MainWindow = window;
             var activation = Services.GetRequiredService<DesktopActivationCoordinator>();
             var tray = new DesktopTrayLifecycle(this, desktop, window, activation, logger);
+            window.ConfigureStartupPresentation();
             var activatable = this.TryGetFeature<IActivatableLifetime>();
             EventHandler<ActivatedEventArgs> onActivated = (_, args) =>
             {
