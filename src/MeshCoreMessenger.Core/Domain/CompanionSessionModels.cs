@@ -63,4 +63,5 @@ public sealed record CompanionSessionEvent
     public ReadOnlyMemory<byte>? RouteContactKey { get; init; }
     public AdvertisementInfo? Advertisement { get; init; }
     internal TaskCompletionSource? BarrierCompletion { get; init; }
+    internal IncomingSynchronization? ReceptionBoundary { get; init; }
 }

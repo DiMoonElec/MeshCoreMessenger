@@ -30,6 +30,8 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
     private readonly TaskCompletionSource<Exception> _failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private CompanionSession? _session;
     private Guid _nodeId;
+    private IncomingSynchronization? _initialReception;
+    private bool _liveReception;
     private int _directoriesReady;
     private int _initialSucceeded;
     private int _drainPending;
@@ -82,6 +84,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         }
 
         workerStop?.Cancel();
+        _initialReception?.Abort();
         eventStop?.Cancel();
         _retrySignal.Release();
         _drainSignal.Release();
@@ -102,6 +105,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         }
 
         workerStop.Cancel();
+        _initialReception?.Abort();
         _retrySignal.Release();
         _drainSignal.Release();
         if (_worker is not null)
@@ -163,6 +167,7 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
 
             _session = session;
             _nodeId = nodeId;
+            _initialReception = new(session.SessionId, nodeId);
             _workerStop = new CancellationTokenSource();
             _eventStop = new CancellationTokenSource();
             _state = ReceiveCoordinatorState.Synchronizing;
@@ -202,6 +207,8 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                 await ExecuteWithIngestRetryAsync(
                     () => DrainUntilQuiescentAsync(session, cancellationToken), cancellationToken).ConfigureAwait(false);
             }
+            await session.QueueReceptionBoundaryAsync(_initialReception!, cancellationToken).ConfigureAwait(false);
+            await ExecuteWithIngestRetryAsync(() => WaitForReceptionCompletionAsync(cancellationToken), cancellationToken).ConfigureAwait(false);
             _state = ReceiveCoordinatorState.Online;
             Volatile.Write(ref _initialSucceeded, 1);
             _initial.TrySetResult();
@@ -317,6 +324,15 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
                         RequestDrain();
                         break;
                     case CompanionSessionEventKind.EventBarrier:
+                        if (item.ReceptionBoundary is { } boundary)
+                        {
+                            lock (_gate)
+                            {
+                                // All preceding events retain Initial context; the marker also follows their commits.
+                                _ = _ingestor.CompleteSynchronizationAsync(boundary);
+                                _liveReception = true;
+                            }
+                        }
                         item.BarrierCompletion?.TrySetResult();
                         break;
                 }
@@ -366,9 +382,16 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         }
     }
 
-    private Task EnqueueAsync(CompanionSessionEvent item, ChannelBindingRecord? binding, byte[]? unknownIdentity, CancellationToken cancellationToken) =>
-        _ingestor.EnqueueAsync(new IncomingMessageEnvelope(
-            Guid.NewGuid(), item.SessionId, _nodeId, item.Message!, item.OccurredUtc, binding, unknownIdentity), cancellationToken);
+    private Task EnqueueAsync(CompanionSessionEvent item, ChannelBindingRecord? binding, byte[]? unknownIdentity, CancellationToken cancellationToken)
+    {
+        lock (_gate)
+        {
+            // Unbounded ingress WriteAsync accepts synchronously; no SQLite work is awaited under this lock.
+            return _ingestor.EnqueueAsync(new IncomingMessageEnvelope(
+                Guid.NewGuid(), item.SessionId, _nodeId, item.Message!, item.OccurredUtc, binding, unknownIdentity)
+            { InitialSynchronization = _liveReception ? null : _initialReception }, cancellationToken);
+        }
+    }
 
     private async Task DrainUntilQuiescentAsync(CompanionSession session, CancellationToken cancellationToken)
     {
@@ -385,6 +408,15 @@ public sealed class ReceiveCoordinator : IAsyncDisposable
         await session.DrainMessagesAsync(cancellationToken).ConfigureAwait(false);
         await session.FlushEventsForConsumerAsync(cancellationToken).ConfigureAwait(false);
         await FlushIngestOrThrowAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task WaitForReceptionCompletionAsync(CancellationToken cancellationToken)
+    {
+        var completion = _initialReception!.Completion.WaitAsync(cancellationToken);
+        var ready = await Task.WhenAny(completion, _ingestFailure.Task).ConfigureAwait(false);
+        if (ready != completion)
+            throw new ReceiveIngestException(await _ingestFailure.Task.ConfigureAwait(false));
+        if (!await completion.ConfigureAwait(false)) throw new OperationCanceledException(cancellationToken);
     }
 
     private async Task FlushIngestOrThrowAsync(CancellationToken cancellationToken)

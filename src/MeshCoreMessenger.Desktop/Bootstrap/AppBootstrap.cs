@@ -4,6 +4,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
+using MeshCoreMessenger.Desktop.Notifications;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
@@ -41,6 +42,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.IncomingMessages);
         services.AddSingleton(storage.OutgoingMessages);
         services.AddSingleton(storage.History);
+        services.AddSingleton(storage.MessageDetails);
         services.AddSingleton(storage.ContactDeliveries);
         services.AddSingleton(storage.HistoryClear);
         services.AddSingleton(storage.ReadStates);
@@ -93,11 +95,17 @@ public static class AppBootstrap
         if (activation is not null) services.AddSingleton(activation);
         else services.AddSingleton<DesktopActivationCoordinator>();
         services.AddSingleton<IMessageCommitNotifications, MessageCommitNotifications>();
+        services.AddSingleton<DesktopNotificationVisibility>();
+        services.AddSingleton<IMessageNotificationVisibility>(provider => provider.GetRequiredService<DesktopNotificationVisibility>());
+        services.AddSingleton<INotificationRequestPolicy, MessageNotificationPolicy>();
+        services.AddSingleton<IDesktopNotificationAdapter, UnavailableNotificationAdapter>();
+        services.AddSingleton<DesktopNotificationService>();
+        services.AddSingleton<IDesktopNotificationService>(provider => provider.GetRequiredService<DesktopNotificationService>());
+        services.AddSingleton<MessageNotificationCoordinator>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();
-        services.AddSingleton<IDesktopUiLifetime>(provider =>
-            provider.GetRequiredService<MainWindowViewModel>());
+        services.AddSingleton<IDesktopUiLifetime, NotificationDesktopUiLifetime>();
         services.AddSingleton<DesktopShutdownCoordinator>();
         services.AddSingleton<IDesktopShutdownCoordinator>(provider =>
             provider.GetRequiredService<DesktopShutdownCoordinator>());

@@ -24,6 +24,7 @@ public sealed class LocalStorage : IAsyncDisposable
         IncomingMessages = new SqliteIncomingMessageStore(writer);
         OutgoingMessages = new SqliteOutgoingMessageStore(writer, reader);
         History = new SqliteLocalHistoryReader(reader);
+        MessageDetails = new SqliteMessageDetailsReader(reader);
         ContactDeliveries = new SqliteContactDeliveryHistoryReader(reader);
         HistoryClear = new SqliteHistoryClearStore(writer, reader);
         ReadStates = new SqliteConversationReadStateStore(writer, reader);
@@ -39,6 +40,7 @@ public sealed class LocalStorage : IAsyncDisposable
     public IIncomingMessageStore IncomingMessages { get; }
     public IOutgoingMessageStore OutgoingMessages { get; }
     public ILocalHistoryReader History { get; }
+    public IMessageDetailsReader MessageDetails { get; }
     public IContactDeliveryHistoryReader ContactDeliveries { get; }
     public IHistoryClearStore HistoryClear { get; }
     public IConversationReadStateStore ReadStates { get; }

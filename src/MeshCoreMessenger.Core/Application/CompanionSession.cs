@@ -105,6 +105,17 @@ public sealed class CompanionSession : IAsyncDisposable
         await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Orders the reception phase change with the existing single event consumer.</summary>
+    internal async Task QueueReceptionBoundaryAsync(IncomingSynchronization context, CancellationToken cancellationToken)
+    {
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await _events.Writer.WriteAsync(NewEvent(CompanionSessionEventKind.EventBarrier) with
+        {
+            BarrierCompletion = completion, ReceptionBoundary = context,
+        }, cancellationToken).ConfigureAwait(false);
+        await completion.Task.WaitAsync(cancellationToken).ConfigureAwait(false);
+    }
+
     public async Task<CompanionSessionStartResult> StartAsync(CancellationToken cancellationToken = default)
     {
         // A persisted attempt must always be closed, including when the caller supplies an

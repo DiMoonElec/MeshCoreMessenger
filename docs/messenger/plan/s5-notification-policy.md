@@ -1,12 +1,14 @@
 # S5 — очередь и простая политика уведомлений
 
-[Stage S](stage-s.md) · **Статус: не начат.**
+[Stage S](stage-s.md) · **Статус: реализован; автоматические и macOS native policy проверки пройдены. Native показ — S6.**
+
+07.10.2026: по согласованию пользователя выделены общий сервис запросов любых событий и отдельный MessageNotificationCoordinator/Policy. Реализован S5; [отчёт и ограничения](../../testing/s5-notification-policy.md).
 
 **Цель:** уведомления основаны на сохранённом входящем, не мешают приёму/commit
 и не превращают backlog в серию баннеров.
 
-**Scope:** отдельный Desktop notification coordinator и fake platform adapter.
-Подписка на IMessageCommitNotifications быстро копирует DTO в ограниченную очередь;
+**Scope:** общий DesktopNotificationService/NotificationRequest и отдельный MessageNotificationCoordinator/Policy, fake platform adapter. Другие источники могут отправлять готовые запросы; их события пока не подключаются.
+Подписка на IMessageCommitNotifications быстро объединяет DTO в ограниченных pending группах;
 чтение проекций/вызов платформы выполняются вне синхронного callback MessageIngestor.
 Новая запись требует Inserted=true. Не подписываться на raw RX/ACK как источник сообщений.
 

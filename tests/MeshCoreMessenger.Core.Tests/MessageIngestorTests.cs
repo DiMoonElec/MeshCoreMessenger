@@ -120,6 +120,37 @@ public sealed class MessageIngestorTests
         Assert.Single(store.Stored);
     }
 
+    [Fact]
+    public async Task ReceptionContextSurvivesStorageRetryAndBoundaryFollowsCommit()
+    {
+        var store = new ControlledStore { FailuresRemaining = 1 };
+        await using var ingestor = new MessageIngestor(store, TimeProvider.System);
+        var session = Guid.NewGuid(); var node = Guid.NewGuid();
+        var batch = new IncomingSynchronization(session, node);
+        var received = DateTimeOffset.UtcNow;
+        IncomingMessageCommitEvent? observed = null;
+        ingestor.MessageCommitted += (_, commit) =>
+        {
+            Assert.False(batch.Completion.IsCompleted);
+            observed = commit;
+        };
+        var failed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        ingestor.Failed += (_, _) => failed.TrySetResult();
+        await ingestor.EnqueueAsync(new(Guid.NewGuid(), session, node, Channel("old node timestamp"), received, null, null)
+            { InitialSynchronization = batch }, CancellationToken);
+        var boundary = ingestor.CompleteSynchronizationAsync(batch);
+        await failed.Task.WaitAsync(CancellationToken);
+        Assert.False(boundary.IsCompleted);
+        await ingestor.RetryAsync(CancellationToken);
+        await boundary.WaitAsync(CancellationToken);
+        Assert.NotNull(observed);
+        Assert.Same(batch, observed.InitialSynchronization);
+        Assert.Equal(session, observed.SessionId);
+        Assert.Equal(received, observed.ReceivedUtc);
+        Assert.Equal(IncomingMessageCategory.Channel, observed.Category);
+        Assert.True(await batch.Completion);
+    }
+
     private static ChannelMessage Channel(string text) => new(1, 1, MessageTextType.Plain, DateTimeOffset.UtcNow, text, null);
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 

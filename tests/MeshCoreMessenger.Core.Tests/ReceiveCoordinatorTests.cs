@@ -185,6 +185,30 @@ public sealed class ReceiveCoordinatorTests
     private static ContactMessage Message(byte[] prefix, string text) => new(prefix, 1, MessageTextType.Plain, DateTimeOffset.UtcNow, text, Array.Empty<byte>(), null);
     private static SelfInfo Self(byte[] key) => new(AdvertisementType.Chat, 1, 10, key, 0, 0, 0, 0, 0, false, 869.525, 250, 10, 5, "Node");
     private static byte[] Key(byte seed) => Enumerable.Range(0, 32).Select(i => (byte)(seed + i)).ToArray();
+    [Fact]
+    public async Task ReceptionBoundarySeparatesInitialMessagesFromLiveMessages()
+    {
+        await using var context = await CoordinatorContext.CreateAsync();
+        context.Client.DrainAction = () =>
+        {
+            context.Client.EmitMessage(new ChannelMessage(0, 1, MessageTextType.Plain, DateTimeOffset.MinValue, "initial", null));
+            return Task.CompletedTask;
+        };
+        await using var session = await context.CreateStartedSessionAsync();
+        await using var coordinator = context.CreateCoordinator();
+        await coordinator.SynchronizeAsync(session, CancellationToken);
+        var initial = Assert.Single(context.Store.Stored);
+        Assert.NotNull(initial.InitialSynchronization);
+        Assert.True(await initial.InitialSynchronization.Completion);
+        Assert.Equal(session.SessionId, initial.InitialSynchronization.SessionId);
+        context.Client.EmitMessage(new ChannelMessage(0, 1, MessageTextType.Plain, DateTimeOffset.MinValue, "live", null));
+        await session.FlushEventsForConsumerAsync(CancellationToken);
+        await coordinator.QuiesceAsync(CancellationToken);
+        await session.StopAsync("test", CancellationToken);
+        await coordinator.CompleteAfterSessionStopAsync(CancellationToken);
+        Assert.Null(context.Store.Stored.Last().InitialSynchronization);
+    }
+
     private static CancellationToken CancellationToken => TestContext.Current.CancellationToken;
 
     private sealed class CaptureStore : IIncomingMessageStore

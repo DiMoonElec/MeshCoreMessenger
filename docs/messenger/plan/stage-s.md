@@ -9,7 +9,7 @@
 [Результаты и оставшаяся расширенная матрица S1](../../testing/s1-instance-activation.md).
 Затем реализован **S2**: настройки и background save, Desktop 354/354 в Debug/Release,
 macOS native Light/Dark × 560/960; пользователь подтвердил визуальную приёмку S2.
-[Результаты S2](../../testing/s2-desktop-preferences.md). Реализован **S3**: трей/menu, Hide/Show и настоящий выход; Desktop 361/361 в Debug/Release, native macOS audit/Quit проверены. Пользователь подтвердил работу на macOS и Windows. [Результаты S3](../../testing/s3-tray-lifecycle.md). S4 реализован по уточнению пользователя: только две подписи боковой панели, визуальная приёмка подтверждена пользователем. S5–S7 не начаты.
+[Результаты S2](../../testing/s2-desktop-preferences.md). Реализован **S3**: трей/menu, Hide/Show и настоящий выход; Desktop 361/361 в Debug/Release, native macOS audit/Quit проверены. Пользователь подтвердил работу на macOS и Windows. [Результаты S3](../../testing/s3-tray-lifecycle.md). S4 реализован по уточнению пользователя: только две подписи боковой панели, визуальная приёмка подтверждена пользователем. S5 реализован: общий сервис запросов и отдельная message policy, Core 387/387, Desktop 385/385, native macOS visibility/fake adapter проверены. [Отчёт S5](../../testing/s5-notification-policy.md). S6/S7 не начаты.
 Выполняется только явно выбранный подэтап; этот план сам по себе
 не запускает остальные изменения, установку зависимостей или аппаратные проверки.
 
@@ -39,7 +39,8 @@ T не выбран: T1/T2 уже обозначают wire timestamps в док
   `ApplicationSettingsView` уже существует. [C9](c9-preferences.md).
 - `IMessageCommitNotifications` передаёт событие `MessageIngestor` после commit.
   `StoredIncomingMessage.Inserted` отличает новую запись от распознанного дубликата;
-  событие не содержит текста, типа переписки и контекста начального drain.
+  на старте ветки событие не содержало текста, категории и initial-drain context.
+  В S5 добавлены reception context/category и exact persisted read API.
 - Public/Private workspace уже сохраняют независимые selection/history/draft owners.
   [Контракт workspace](chat-workspaces.md).
 - Автоподключение и reconnect реализованы. Их policy и state machine не менять.

@@ -290,6 +290,23 @@ public sealed class LocalHistoryReaderTests
         public IReadOnlyList<string> Messages { get; } = OptionalMessages?.OfType<string>().ToArray() ?? [];
     }
 
+    [Fact]
+    public async Task ExactMessageDetailsDoNotUseLatestPreviewOrMixNodeAndConversationScopes()
+    {
+        using var temporary = new TemporaryDirectory();
+        var node = Guid.NewGuid(); var conversation = Guid.NewGuid();
+        await SeedAsync(temporary.Paths, [new SeedConversation(conversation, node, "Name", 0x66, "earlier", "latest")]);
+        await using var storage = await LocalStorage.OpenAsync(temporary.Paths, CancellationToken);
+        var messages = await storage.History.GetMessagesAsync(node, conversation, null, 10, CancellationToken);
+        var details = await storage.MessageDetails.GetAsync(node, conversation, messages[0].Id, CancellationToken);
+        Assert.NotNull(details);
+        Assert.Equal("earlier", details.Text);
+        Assert.Equal(messages[0].LocalSequence, details.LocalSequence);
+        Assert.Null(await storage.MessageDetails.GetAsync(Guid.NewGuid(), conversation, messages[0].Id, CancellationToken));
+        Assert.Null(await storage.MessageDetails.GetAsync(node, Guid.NewGuid(), messages[0].Id, CancellationToken));
+        Assert.Null(await storage.MessageDetails.GetAsync(node, conversation, Guid.NewGuid(), CancellationToken));
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

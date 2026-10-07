@@ -143,6 +143,11 @@ public sealed class MessageIngestor : IDurableMessageIngress, IAsyncDisposable
                 barrier.Completion.TrySetResult();
                 continue;
             }
+            if (item is SynchronizationWork synchronization)
+            {
+                synchronization.Context.Complete();
+                continue;
+            }
             var message = (MessageWork)item;
             while (true)
             {
@@ -150,7 +155,7 @@ public sealed class MessageIngestor : IDurableMessageIngress, IAsyncDisposable
                 {
                     var stored = await _store.StoreAsync(message.Envelope, _stop.Token).ConfigureAwait(false);
                     Dequeue(message.Size);
-                    RaiseCommitted(stored);
+                    RaiseCommitted(stored, message.Envelope);
                     break;
                 }
                 catch (OperationCanceledException) when (_stop.IsCancellationRequested) { return; }
@@ -206,9 +211,26 @@ public sealed class MessageIngestor : IDurableMessageIngress, IAsyncDisposable
         Interlocked.Add(ref _queuedBytes, -size);
     }
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
-    private void RaiseCommitted(StoredIncomingMessage stored)
+    internal Task CompleteSynchronizationAsync(IncomingSynchronization context)
     {
-        try { MessageCommitted?.Invoke(this, new IncomingMessageCommitEvent(stored)); } catch { }
+        ThrowIfDisposed();
+        if (!_queue.Writer.TryWrite(new SynchronizationWork(context)))
+            throw new InvalidOperationException("Incoming message queue is closed.");
+        return context.Completion;
+    }
+
+    private void RaiseCommitted(StoredIncomingMessage stored, IncomingMessageEnvelope envelope)
+    {
+        try
+        {
+            MessageCommitted?.Invoke(this, new IncomingMessageCommitEvent(stored)
+            {
+                SessionId = envelope.SessionId, ReceivedUtc = envelope.ReceivedUtc,
+                Category = envelope.Message is ContactMessage ? IncomingMessageCategory.Private : IncomingMessageCategory.Channel,
+                InitialSynchronization = envelope.InitialSynchronization,
+            });
+        }
+        catch { }
     }
     private void RaiseFailed(Exception exception)
     {
@@ -216,6 +238,7 @@ public sealed class MessageIngestor : IDurableMessageIngress, IAsyncDisposable
     }
     private abstract record WorkItem;
     private sealed record MessageWork(IncomingMessageEnvelope Envelope, long Size) : WorkItem;
+    private sealed record SynchronizationWork(IncomingSynchronization Context) : WorkItem;
     private sealed record BarrierWork(TaskCompletionSource Completion) : WorkItem;
     private static IncomingMessageEnvelope Copy(IncomingMessageEnvelope e) => e with { Message = Copy(e.Message), UnknownChannelIdentity = e.UnknownChannelIdentity?.ToArray() };
     private static ReceivedMessage Copy(ReceivedMessage m) => m switch

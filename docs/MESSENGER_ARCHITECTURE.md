@@ -12,6 +12,7 @@
 - [text-processing](messenger/architecture/text-processing.md) — Подготовка текста, UTF-8 бюджет и API будущей оптимизации.
 - [node-scoped-ui](messenger/architecture/node-scoped-ui.md) — Active/viewed node, directory projections и bounded history.
 - [ui-and-local-writes](messenger/architecture/ui-and-local-writes.md) — Компоновка, unread, search, drafts и UI preferences.
+- [notifications](messenger/architecture/notifications.md) — Общий сервис уведомлений, политика сообщений и схема потока.
 - [diagnostics](messenger/architecture/diagnostics.md) — Пакеты, диагностика и границы дешифровки.
 - [shutdown](messenger/architecture/shutdown.md) — Event barriers, quiesce и recoverable shutdown.
 - [platforms](messenger/architecture/platforms.md) — Платформы, данные, упаковка и поставка.

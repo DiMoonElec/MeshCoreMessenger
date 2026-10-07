@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Platform;
+using MeshCoreMessenger.Desktop.Notifications;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
@@ -66,6 +67,8 @@ public sealed partial class App : Application
                 catch (Exception exception) { logger.LogWarning(exception, "Could not handle application reopen."); }
             }
             var viewModel = Services.GetRequiredService<MainWindowViewModel>();
+            Services.GetRequiredService<DesktopNotificationVisibility>().Attach(window, viewModel);
+            Services.GetRequiredService<MessageNotificationCoordinator>().Start();
             RequestedThemeVariant = ToThemeVariant(viewModel.SelectedTheme.Value);
             var connectionLifecycle = Services.GetRequiredService<DesktopConnectionLifecycle>();
             EventHandler? opened = null;
