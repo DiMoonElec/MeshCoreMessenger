@@ -26,6 +26,8 @@ public sealed partial class MainWindow : Window
     private bool _shutdownAccepted;
     private bool _shutdownRequestActive;
     private bool _placementInitialized;
+    private bool _closed;
+    private WindowState _activationRestoreState = WindowState.Normal;
     private WindowPlacement? _normalPlacement;
     private MainWindowViewModel? _subscribedViewModel;
     private readonly ChatsView _publicChats = new();
@@ -50,6 +52,7 @@ public sealed partial class MainWindow : Window
         {
             if (eventArgs.Property == WindowStateProperty)
             {
+                if (WindowState != WindowState.Minimized) _activationRestoreState = WindowState;
                 CaptureWindowPlacement();
             }
         };
@@ -85,6 +88,7 @@ public sealed partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs eventArgs)
     {
+        _closed = true;
         if (_subscribedViewModel is not null)
         {
             _subscribedViewModel.PropertyChanged -= OnViewModelPropertyChanged;
@@ -92,6 +96,18 @@ public sealed partial class MainWindow : Window
         }
 
         base.OnClosed(eventArgs);
+    }
+
+    internal bool CanActivateExistingWindow => !_closed && !_shutdownAccepted && !_shutdownRequestActive;
+
+    internal bool TryActivateExistingWindow()
+    {
+        VerifyAccess();
+        if (!CanActivateExistingWindow) return false;
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = _activationRestoreState;
+        Activate();
+        return true;
     }
 
     private void OnWindowDataContextChanged(object? sender, EventArgs eventArgs)
@@ -156,6 +172,7 @@ public sealed partial class MainWindow : Window
 
     private void ApplySavedWindowPlacement()
     {
+        if (_placementInitialized) return;
         if (DataContext is not MainWindowViewModel viewModel)
         {
             return;
@@ -192,7 +209,7 @@ public sealed partial class MainWindow : Window
 
     private void CaptureWindowPlacement()
     {
-        if (!_placementInitialized || DataContext is not MainWindowViewModel viewModel)
+        if (!_placementInitialized || WindowState == WindowState.Minimized || DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }

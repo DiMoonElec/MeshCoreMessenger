@@ -28,6 +28,41 @@ public sealed partial class App : Application
                 Services.GetRequiredService<IAppPaths>().DataDirectory,
                 DesktopAppPaths.CreateDefault().DataDirectory);
             desktop.MainWindow = window;
+            var activation = Services.GetRequiredService<DesktopActivationCoordinator>();
+            var activatable = this.TryGetFeature<IActivatableLifetime>();
+            EventHandler<ActivatedEventArgs> onActivated = (_, args) =>
+            {
+                if (args.Kind == ActivationKind.Reopen) _ = ActivateAsync();
+            };
+            if (activatable is not null) activatable.Activated += onActivated;
+            // Attach after the initial placement has been applied by MainWindow.Opened.
+            EventHandler? activationOpened = null;
+            activationOpened = (_, _) =>
+            {
+                window.Opened -= activationOpened;
+                activation.Attach(() =>
+                {
+                    if (!window.CanActivateExistingWindow) return false;
+                    _ = activatable?.TryLeaveBackground();
+                    return window.TryActivateExistingWindow();
+                });
+            };
+            window.Opened += activationOpened;
+            window.Closed += (_, _) => activation.Dispose();
+            desktop.Exit += (_, _) =>
+            {
+                if (activatable is not null) activatable.Activated -= onActivated;
+                activation.Dispose();
+            };
+            async Task ActivateAsync()
+            {
+                try
+                {
+                    var activated = await activation.RequestAsync();
+                    logger.LogInformation("Application reopen handled. Existing window shown: {Activated}", activated);
+                }
+                catch (Exception exception) { logger.LogWarning(exception, "Could not handle application reopen."); }
+            }
             var viewModel = Services.GetRequiredService<MainWindowViewModel>();
             RequestedThemeVariant = ToThemeVariant(viewModel.SelectedTheme.Value);
             var connectionLifecycle = Services.GetRequiredService<DesktopConnectionLifecycle>();

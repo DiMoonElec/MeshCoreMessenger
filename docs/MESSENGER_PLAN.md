@@ -35,8 +35,8 @@
 - [d7-private-auto-retry](messenger/plan/d7-private-auto-retry.md) — Автоматические попытки ЛС и история успешных маршрутов: P1 выполнен, далее P2.
 - [stage-e](messenger/plan/stage-e.md) — Stage E: платформенная и release-приёмка.
 - [stage-f](messenger/plan/stage-f.md) — Stage F: отложенные функции и явные ограничения первой версии.
-- [stage-s](messenger/plan/stage-s.md) — Самостоятельная ветка S: трей, single-instance activation, уведомления и названия; зависимости вместо обязательной линейной очереди, реализация не начата.
-- [s1-instance-activation](messenger/plan/s1-instance-activation.md) — S1: локальный IPC и показ существующего окна с сохранением file lock на папку данных.
+- [stage-s](messenger/plan/stage-s.md) — Самостоятельная ветка S: трей, single-instance activation, уведомления и названия; явные зависимости, S1 реализован, S2–S7 не начаты.
+- [s1-instance-activation](messenger/plan/s1-instance-activation.md) — S1: IPC/показ существующего окна; автоматическая и macOS native части проверены, Windows ручная приёмка ожидается.
 - [s2-desktop-preferences](messenger/plan/s2-desktop-preferences.md) — S2: поведение крестика и два переключателя уведомлений.
 - [s3-tray-lifecycle](messenger/plan/s3-tray-lifecycle.md) — S3: трей, скрытие/возврат и настоящий выход через durable shutdown.
 - [s4-conversation-labels](messenger/plan/s4-conversation-labels.md) — S4: «Каналы» и «Чаты» во всём актуальном интерфейсе.

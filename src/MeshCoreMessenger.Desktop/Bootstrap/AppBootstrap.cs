@@ -12,7 +12,11 @@ namespace MeshCoreMessenger.Desktop.Bootstrap;
 
 public static class AppBootstrap
 {
-    public static ServiceProvider CreateServiceProvider(IAppPaths paths, LocalStorage storage)
+    public static ServiceProvider CreateServiceProvider(IAppPaths paths, LocalStorage storage) =>
+        CreateServiceProvider(paths, storage, null);
+
+    internal static ServiceProvider CreateServiceProvider(
+        IAppPaths paths, LocalStorage storage, DesktopActivationCoordinator? activation)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(storage);
@@ -86,6 +90,8 @@ public static class AppBootstrap
         services.AddSingleton<IDesktopConnectionLifecycle>(provider =>
             provider.GetRequiredService<DesktopConnectionLifecycle>());
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        if (activation is not null) services.AddSingleton(activation);
+        else services.AddSingleton<DesktopActivationCoordinator>();
         services.AddSingleton<IMessageCommitNotifications, MessageCommitNotifications>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
         services.AddSingleton<ConnectionProfilesViewModel>();

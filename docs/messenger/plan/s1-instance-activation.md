@@ -1,6 +1,6 @@
 # S1 — активация существующего экземпляра
 
-[Stage S](stage-s.md) · **Статус: не начат.**
+[Stage S](stage-s.md) · **Статус: реализован; автоматическая и macOS native части проверены. Windows ручная приёмка ожидается.**
 
 **Цель:** повторный запуск с той же папкой данных показывает существующее окно,
 не открывая вторую БД и не создавая второе соединение.
@@ -40,3 +40,43 @@ endpoint освобождается корректно, file lock удержив
 **Ручная проверка: обязательна** — macOS/Windows, прямой запуск и установленный пакет,
 свёрнутое/неактивное окно, macOS Dock/reopen и серия быстрых запусков.
 Возврат скрытого окна из трея допроверяется в S3/S7.
+
+## Реализация 07.10.2026
+
+Desktop `ApplicationInstanceCoordinator` создаётся в Program до SQLite/DI и владеет
+прежним ApplicationInstanceLock до закрытия хранилища. Лок не заменён PID/IPC.
+NamedPipeServerStream/ClientStream работают с Asynchronous/CurrentUserOnly;
+на Windows используется native pipe, на macOS — Unix socket.
+
+Владелец атомарно публикует `.meshcoremessenger.instance.json` в своей папке:
+версия, PID, короткое случайное имя pipe и InstanceId. Альтернативные пути к одной
+папке читают тот же descriptor; имя не вычисляется из строки пути.
+Descriptor ограничен 1024 байтами, Unix permissions — owner read/write.
+Handshake проверяет version/InstanceId/PID, wire request — только Activate;
+другие команды не выполняются. Windows сверяет настоящий server PID через
+GetNamedPipeServerProcessId и передаёт foreground permission через AllowSetForegroundWindow.
+
+Второй запуск ждёт не более 8 секунд, после выполненного показа возвращает exit 0
+до открытия БД/DI/соединения. Closing/unavailable и timeout дают exit 2 с диагностикой.
+Connect/handshake ограничены 1 секундой; server ждёт готовности UI до 10 секунд.
+После освобождения лока во время retry допускается обычный запуск нового владельца;
+занятый лок не обходится. Stale/invalid descriptor не является основанием takeover.
+
+DesktopActivationCoordinator объединяет ожидающие UI requests, ждёт первого Opened
+после восстановления placement и вызывает existing MainWindow через dispatcher.
+Отмена одного клиента не отменяет остальных. Closed/Exit прекращают активацию;
+текущий shutdown request отклоняет показ, failed shutdown снова позволяет его.
+Повторный Show не загружает placement заново; minimized не перезаписывает сохранённое
+normal/maximized состояние. Workspace/connection owners не пересоздаются.
+
+App подписывается на IActivatableLifetime/ActivationKind.Reopen; TryLeaveBackground
+и единое действие показа используются и для native macOS reopen, и для IPC.
+ConnectionLifecycle.StartAsync остаётся одноразовым обработчиком первого Opened.
+Core/library, schema, package pins и reconnect policy не менялись.
+
+## Проверки и оставшаяся приёмка
+
+Результаты, команды и Windows checklist: [отчёт S1](../../testing/s1-instance-activation.md).
+Системный трей/новое поведение крестика не включены; это S3.
+Windows foreground/elevation и self-contained пакеты обеих ОС требуют отдельной
+ручной приёмки; успешный native macOS audit её не заменяет.

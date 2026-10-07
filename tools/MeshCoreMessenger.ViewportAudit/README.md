@@ -70,6 +70,20 @@ All modes check CoreVideo display-link availability before Avalonia startup and
 report managed startup failures to stderr with exit code 1. See
 [display/screen-lock investigation](../../docs/testing/viewport-audit-startup.md).
 
+S1 instance activation audit (production MainWindow, real local IPC/secondary process,
+temporary SQLite and fake supervisor):
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --instance-activation-only
+```
+
+Checks visible/minimized/hidden/maximized-then-minimized window activation, focus,
+retained selection/history/draft/placement and zero connection commands. The existing
+window is reused; pending shutdown rejects activation and a failed attempt permits
+it again. No hardware or user database is opened. macOS Dock/Finder reopen
+and Windows foreground policy require their separate package/manual checks; see
+[S1 report and checklist](../../docs/testing/s1-instance-activation.md).
+
 
 Private route reset audit (production menu, simulated route service, temporary SQLite):
 

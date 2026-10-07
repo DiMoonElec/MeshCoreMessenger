@@ -43,7 +43,9 @@ internal static class Program
             if (seed is not null)
                 FakeDataSeeder.ValidateDirectoryTarget(paths.DataDirectory, defaultPaths.DataDirectory);
 #endif
-            using var instanceLock = ApplicationInstanceLock.Acquire(paths);
+            using var activation = new DesktopActivationCoordinator(new AvaloniaUiDispatcher());
+            using var instance = ApplicationInstanceCoordinator.AcquireOrActivateAsync(paths, activation).GetAwaiter().GetResult();
+            if (instance is null) return 0;
             LocalStorage storage;
             try
             {
@@ -76,7 +78,7 @@ internal static class Program
                     }
                 }
 #endif
-                var services = AppBootstrap.CreateServiceProvider(paths, storage);
+                var services = AppBootstrap.CreateServiceProvider(paths, storage, activation);
                 try
                 {
                     var viewModel = services.GetRequiredService<MainWindowViewModel>();
@@ -111,6 +113,11 @@ internal static class Program
             }
         }
         catch (ApplicationInstanceAlreadyRunningException exception)
+        {
+            Console.Error.WriteLine(exception.Message);
+            return AlreadyRunningExitCode;
+        }
+        catch (ApplicationActivationException exception)
         {
             Console.Error.WriteLine(exception.Message);
             return AlreadyRunningExitCode;
