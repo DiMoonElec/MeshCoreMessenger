@@ -22,8 +22,8 @@ public sealed class NavigationShellViewModel : ObservableObject
     {
         TopItems =
         [
-            new(ShellSection.PublicChats, "Публичные чаты", ShellIconAssets.Chats, Select),
-            new(ShellSection.PrivateChats, "Приватные чаты", ShellIconAssets.Private, Select),
+            new(ShellSection.PublicChats, "Каналы", ShellIconAssets.Chats, Select),
+            new(ShellSection.PrivateChats, "Чаты", ShellIconAssets.Private, Select),
             new(ShellSection.Devices, "Устройства", ShellIconAssets.Devices, Select),
         ];
         BottomItems =

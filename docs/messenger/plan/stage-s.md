@@ -9,7 +9,7 @@
 [Результаты и оставшаяся расширенная матрица S1](../../testing/s1-instance-activation.md).
 Затем реализован **S2**: настройки и background save, Desktop 354/354 в Debug/Release,
 macOS native Light/Dark × 560/960; пользователь подтвердил визуальную приёмку S2.
-[Результаты S2](../../testing/s2-desktop-preferences.md). Реализован **S3**: трей/menu, Hide/Show и настоящий выход; Desktop 361/361 в Debug/Release, native macOS audit/Quit проверены. Пользователь подтвердил работу на macOS и Windows. [Результаты S3](../../testing/s3-tray-lifecycle.md). S4–S7 не начаты.
+[Результаты S2](../../testing/s2-desktop-preferences.md). Реализован **S3**: трей/menu, Hide/Show и настоящий выход; Desktop 361/361 в Debug/Release, native macOS audit/Quit проверены. Пользователь подтвердил работу на macOS и Windows. [Результаты S3](../../testing/s3-tray-lifecycle.md). S4 реализован по уточнению пользователя: только две подписи боковой панели, визуальная приёмка подтверждена пользователем. S5–S7 не начаты.
 Выполняется только явно выбранный подэтап; этот план сам по себе
 не запускает остальные изменения, установку зависимостей или аппаратные проверки.
 
@@ -64,7 +64,7 @@ MeshCoreSharp остаётся свободной от UI, IPC, БД и сист
 | [S1](s1-instance-activation.md) | IPC и активация существующего экземпляра | Нет |
 | [S2](s2-desktop-preferences.md) | Поведение крестика и два переключателя уведомлений | Нет |
 | [S3](s3-tray-lifecycle.md) | Трей, скрытие/возврат и явный выход | S1, S2 |
-| [S4](s4-conversation-labels.md) | «Каналы» и «Чаты» во всём интерфейсе | Нет |
+| [S4](s4-conversation-labels.md) | «Каналы» и «Чаты» в панели навигации (scope уточнён пользователем) | Нет |
 | [S5](s5-notification-policy.md) | Post-commit очередь и простая политика уведомлений | S2 |
 | [S6](s6-native-notifications.md) | Системные адаптеры macOS/Windows и переход в переписку | S1, S5; S3 для приёмки возврата из трея |
 | [S7](s7-integration-acceptance.md) | Общая приёмка и инструкция | S1–S6 |
