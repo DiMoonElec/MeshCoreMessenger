@@ -55,7 +55,9 @@
             <TextBlock Text="Уведомления для каналов" TextWrapping="Wrap" />
           </CheckBox>
           <TextBlock Classes="settings-hint"
-                     Text="Системные уведомления пока недоступны. Ваш выбор сохраняется." />
+                     Text="{Binding Notifications.StatusText}" />
+          <Button Content="Разрешить в системе" IsVisible="{Binding Notifications.CanRequestPermission}"
+                  Command="{Binding Notifications.RequestPermissionCommand}" />
         </StackPanel>
       </Border>
       <Border Classes="settings-card" IsVisible="{Binding HasPreferencesSaveError}">

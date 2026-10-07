@@ -1,6 +1,16 @@
 <Project>
   <PropertyGroup>
+    <McmWindowsDesktop Condition="'$(OS)' == 'Windows_NT' Or $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win-'))">true</McmWindowsDesktop>
+    <EnableWindowsTargeting Condition="'$(McmWindowsDesktop)' == 'true'">true</EnableWindowsTargeting>
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
+  </PropertyGroup>
+  <!-- Native notification runtime is only part of desktop executable projects. -->
+  <PropertyGroup Condition="'$(McmWindowsDesktop)' == 'true' And ('$(MSBuildProjectName)' == 'MeshCoreMessenger.Desktop' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.Desktop.Tests' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.ViewportAudit' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.SendUiPreview')">
+    <NuGetLockFilePath>packages.windows.lock.json</NuGetLockFilePath>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">win-arm64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
   </PropertyGroup>
 </Project>

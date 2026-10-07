@@ -16,6 +16,7 @@ namespace MeshCoreMessenger.Desktop;
 public sealed partial class App : Application
 {
     internal static IServiceProvider Services { private get; set; } = null!;
+    internal static NotificationTarget? NotificationStartupTarget { get; set; }
 
     public override void Initialize() => AvaloniaXamlLoader.Load(this);
 
@@ -42,6 +43,7 @@ public sealed partial class App : Application
             activationOpened = (_, _) =>
             {
                 window.Opened -= activationOpened;
+                activation.AttachNavigation(Services.GetRequiredService<NotificationNavigationRouter>().OpenAsync);
                 activation.Attach(() =>
                 {
                     if (!window.CanActivateExistingWindow) return false;
@@ -68,7 +70,9 @@ public sealed partial class App : Application
             }
             var viewModel = Services.GetRequiredService<MainWindowViewModel>();
             Services.GetRequiredService<DesktopNotificationVisibility>().Attach(window, viewModel);
+            Services.GetRequiredService<IDesktopNotificationPlatform>().InitializeAsync().GetAwaiter().GetResult();
             Services.GetRequiredService<MessageNotificationCoordinator>().Start();
+            Services.GetRequiredService<NotificationClickController>().Start(NotificationStartupTarget);
             RequestedThemeVariant = ToThemeVariant(viewModel.SelectedTheme.Value);
             var connectionLifecycle = Services.GetRequiredService<DesktopConnectionLifecycle>();
             EventHandler? opened = null;

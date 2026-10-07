@@ -1,3 +1,9 @@
+07.10.2026: подготовлена реализация [S6](s6-native-notifications.md): нативные
+адаптеры macOS/Windows, статус и разрешение ОС в настройках, opaque click targets,
+расширение S1 IPC и безопасный переход к локальному сообщению. Linux отложен.
+Ручная приёмка настоящих banner/click macOS/Windows ещё не выполнена;
+[проверки и инструкция](../../testing/s6-native-notifications.md).
+
 07.10.2026: пользователь подтвердил исправление **геометрии окна Retina** («проверил, работает») и запросил коммит, затем реализацию S6. [Отчёт](../../testing/window-placement-retina.md).
 
 07.10.2026: исправлена **геометрия окна на macOS Retina**: Capture ошибочно умножал Bounds на RenderScaling=2, хотя screen coordinates имеют Scaling=1; Restore затем растягивал размер до WorkingArea. Capture использует текущий Screen.Scaling; closed/accepted shutdown не перезаписывает placement. Native SQLite/window roundtrip восстанавливает Normal 820×520 в (130,150); S3 tray audit пройден, preferences tests 11/11. Пользовательская БД не менялась; приёмка ожидается. [Причина и проверки](../../testing/window-placement-retina.md).

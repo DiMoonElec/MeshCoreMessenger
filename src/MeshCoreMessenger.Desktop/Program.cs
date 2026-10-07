@@ -4,6 +4,7 @@ using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Bootstrap;
 using MeshCoreMessenger.Desktop.DevFixtures;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Notifications;
 using MeshCoreMessenger.Desktop.Platform;
 using MeshCoreMessenger.Desktop.ViewModels;
 
@@ -27,11 +28,22 @@ internal static class Program
 #endif
             DesktopAppPaths paths;
             var defaultPaths = DesktopAppPaths.CreateDefault();
+            var platform = NotificationPlatformFactory.Create();
+            using var platformLifetime = new NotificationPlatformLifetime(platform);
+            platform.InitializeAsync().GetAwaiter().GetResult();
+            var registry = new NotificationTargetRegistry(Path.Combine(defaultPaths.DataDirectory, "NotificationTargets"), TimeProvider.System);
+            var tokenIndex = Array.IndexOf(args, "--notification-token");
+            var launchToken = tokenIndex >= 0 && tokenIndex + 1 < args.Length ? args[tokenIndex + 1]
+                : platform.GetStartupTokenAsync(args).GetAwaiter().GetResult();
+            var launchEntry = registry.Get(launchToken);
+            if (launchEntry is not null && !Directory.Exists(launchEntry.DataDirectory)) launchEntry = null;
+            App.NotificationStartupTarget = launchEntry?.Target;
             try
             {
                 paths = DesktopAppPaths.CreateForDirectory(DataDirectorySelection.Resolve(
                     args, Environment.GetEnvironmentVariable("MESHCORE_DATA_DIR"),
                     defaultPaths.DataDirectory, Environment.CurrentDirectory));
+                if (launchEntry is not null) paths = DesktopAppPaths.CreateForDirectory(launchEntry.DataDirectory);
             }
             catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
             {
@@ -44,8 +56,8 @@ internal static class Program
                 FakeDataSeeder.ValidateDirectoryTarget(paths.DataDirectory, defaultPaths.DataDirectory);
 #endif
             using var activation = new DesktopActivationCoordinator(new AvaloniaUiDispatcher());
-            using var instance = ApplicationInstanceCoordinator.AcquireOrActivateAsync(paths, activation).GetAwaiter().GetResult();
-            if (instance is null) return 0;
+            using var instance = ApplicationInstanceCoordinator.AcquireOrActivateAsync(paths, activation, notificationTarget: launchEntry?.Target as MessageNotificationTarget).GetAwaiter().GetResult();
+            if (instance is null) { platform.DisposeAsync().AsTask().GetAwaiter().GetResult(); return 0; }
             LocalStorage storage;
             try
             {
@@ -78,7 +90,7 @@ internal static class Program
                     }
                 }
 #endif
-                var services = AppBootstrap.CreateServiceProvider(paths, storage, activation);
+                var services = AppBootstrap.CreateServiceProvider(paths, storage, activation, platform);
                 try
                 {
                     var viewModel = services.GetRequiredService<MainWindowViewModel>();
@@ -131,6 +143,15 @@ internal static class Program
         {
             Console.Error.WriteLine(exception.Message);
             return FakeDataSeedUnavailableExitCode;
+        }
+    }
+
+    private sealed class NotificationPlatformLifetime(IDesktopNotificationPlatform platform) : IDisposable
+    {
+        public void Dispose()
+        {
+            try { platform.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+            catch { /* OS cleanup cannot prevent storage/lock disposal. */ }
         }
     }
 

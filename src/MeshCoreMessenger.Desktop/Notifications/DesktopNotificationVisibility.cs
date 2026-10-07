@@ -30,7 +30,7 @@ internal sealed class DesktopNotificationVisibility(IUiDispatcher dispatcher) : 
 }
 
 internal sealed class NotificationDesktopUiLifetime(MainWindowViewModel root, MessageNotificationCoordinator messages,
-    DesktopNotificationService notifications) : IDesktopUiLifetime
+    DesktopNotificationService notifications, NativeNotificationAdapter native, NotificationClickController clicks) : IDesktopUiLifetime
 {
     public async Task StopAsync()
     {
@@ -39,6 +39,8 @@ internal sealed class NotificationDesktopUiLifetime(MainWindowViewModel root, Me
         var delivery = notifications.StopAsync();
         await messages.StopAsync();
         await delivery;
+        await clicks.StopAsync();
+        await native.StopAsync();
         await root.StopAsync();
     }
     public Task ReportShutdownFailureAsync(Exception exception) => ((IDesktopUiLifetime)root).ReportShutdownFailureAsync(exception);

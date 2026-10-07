@@ -7,6 +7,7 @@ using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Notifications;
 using MeshCoreMessenger.Desktop.Preferences;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
@@ -74,8 +75,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
         IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null,
-        IDirectoryStore? directoryUpdates = null, IContactDeliveryHistoryReader? contactDeliveries = null)
+        IDirectoryStore? directoryUpdates = null, IContactDeliveryHistoryReader? contactDeliveries = null, NotificationSettingsViewModel? notifications = null)
     {
+        Notifications = notifications;
         _outgoingMessages = outgoingMessages;
         if (outgoingMessages is not null) outgoingMessages.MessageCommitted += OnOutgoingCommitted;
         _directoryUpdates = directoryUpdates;
@@ -262,6 +264,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
     }
+
+    public NotificationSettingsViewModel? Notifications { get; }
+    internal void ReportNotificationFallback(string message) => Status = message;
 
     public WindowPlacement? SavedWindowPlacement => _preferences.Snapshot.WindowPlacement;
 
@@ -484,6 +489,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             return;
         }
 
+        Notifications?.Stop();
         if (Modal.IsOpen) await _dispatcher.InvokeAsync(() => Modal.Close(ModalCloseReason.Shutdown));
         if (_outgoingMessages is not null) _outgoingMessages.MessageCommitted -= OnOutgoingCommitted;
         if (_directoryUpdates is not null) _directoryUpdates.ContactRouteCommitted -= OnContactRouteCommitted;

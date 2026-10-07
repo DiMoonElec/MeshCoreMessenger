@@ -1,6 +1,6 @@
 # S6 — системные уведомления macOS и Windows
 
-[Stage S](stage-s.md) · **Статус: не начат.**
+[Stage S](stage-s.md) · **Статус: реализация подготовлена 07.10.2026; ручная приёмка macOS/Windows ожидается.**
 
 **Цель:** простое системное уведомление и безопасный возврат в нужную переписку.
 
@@ -52,3 +52,44 @@ shutdown race, нулевые connection/mutation calls от click, ошибки
 [разрешения Apple](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications),
 [Microsoft app notifications](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-quickstart).
 Конкретный способ регистрации зависит от выбранного API и формата поставки.
+
+## Реализация 07.10.2026
+
+Общий `IDesktopNotificationAdapter` реализован через `NativeNotificationAdapter`.
+Он присваивает непрозрачный token, заменяет предыдущий баннер группы, ограничивает
+число целей и очищает их при выходе. Message policy и очередь S5 сохранены.
+Платформенный интерфейс дополнительно сообщает доступность, запрашивает разрешение,
+принимает click callbacks и удаляет уведомления.
+
+macOS: небольшой Objective-C bridge к `UserNotifications`, включаемый в `.app`;
+запрос разрешения выполняется кнопкой «Разрешить в системе» в существующих настройках.
+`dotnet run` показывает подсказку о запуске `.app`, без обращения к неподдерживаемому
+CLI-host API. Windows: `Microsoft.WindowsAppSDK.Foundation` 2.0.20,
+`AppNotificationManager`/`AppNotificationBuilder`, portable/self-contained native SDK.
+GUI-проекты используют Windows TFM/RID и отдельные Windows lock-файлы;
+Core и Companion library остаются платформенно независимыми.
+Linux использует адаптер без показа и остаётся отложенным.
+
+В настройках остаются два checkbox S2; рядом — фактический статус ОС и кнопка
+первичного разрешения macOS. Отказ не вызывает повторных permission dialogs.
+При попытке доставки статус ОС перечитывается, чтобы учитывать изменения разрешения.
+Focus/DND могут подавлять баннер независимо от настроек приложения.
+
+`NotificationTargetRegistry` хранит максимум 128 небольших файлов с GUID-token,
+папкой данных и node/conversation/message ID, сроком два дня. Текст/ключи туда и
+в launch arguments не попадают. При штатном выходе собственные баннеры и цели
+удаляются; после аварии оставшиеся записи позволяют разрешить cold-start click.
+Неправильный/просроченный token даёт обычный показ окна.
+
+`NotificationClickController` направляет callback в S1. Для другой занятой папки
+используется её IPC; при отсутствии владельца запускается приложение с token,
+без открытия чужой SQLite текущим процессом. Program разрешает cold-start token
+до открытия БД; Windows cold COM payload читается через AppLifecycle после
+notification registration, с ограниченным ожиданием. S1 дополнен bounded командой с тремя GUID. Затем UI router проверяет
+текущую ноду/модальный диалог, читает локальную позицию и открывает сообщение через
+существующий history jump. Недоступная цель показывает fallback; connect/mutation
+из router не вызываются. Обычная startup policy подключения не менялась.
+
+При выходе сначала отменяются S5 workers и click tasks, затем выполняется native
+cleanup и существующий UI/durable shutdown. Ошибка удаления баннера не блокирует
+сохранение истории. [Проверки и ручные сценарии](../../testing/s6-native-notifications.md).

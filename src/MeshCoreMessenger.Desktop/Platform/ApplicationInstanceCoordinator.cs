@@ -3,6 +3,7 @@ using System.IO.Pipes;
 using System.Net.Sockets;
 using System.Text.Json;
 using MeshCoreMessenger.Desktop.Lifecycle;
+using MeshCoreMessenger.Desktop.Notifications;
 
 namespace MeshCoreMessenger.Desktop.Platform;
 
@@ -12,6 +13,7 @@ internal sealed class ApplicationInstanceCoordinator : IDisposable
     internal const string DescriptorFileName = ".meshcoremessenger.instance.json";
     private const byte ProtocolVersion = 1;
     private const byte ActivateCommand = 1;
+    private const byte NotificationCommand = 2;
     private const byte ActivatedResponse = 1;
     private const byte UnavailableResponse = 2;
     private readonly ApplicationInstanceLock _instanceLock;
@@ -45,7 +47,7 @@ internal sealed class ApplicationInstanceCoordinator : IDisposable
     /// <returns>A primary owner, or null after the existing owner has handled activation.</returns>
     internal static async Task<ApplicationInstanceCoordinator?> AcquireOrActivateAsync(
         DesktopAppPaths paths, DesktopActivationCoordinator activation,
-        TimeSpan? timeout = null, CancellationToken cancellationToken = default)
+        TimeSpan? timeout = null, CancellationToken cancellationToken = default, MessageNotificationTarget? notificationTarget = null)
     {
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         deadline.CancelAfter(timeout ?? TimeSpan.FromSeconds(8));
@@ -86,7 +88,15 @@ internal sealed class ApplicationInstanceCoordinator : IDisposable
                             BinaryPrimitives.ReadInt32LittleEndian(hello.AsSpan(17)) != descriptor.ProcessId)
                             throw new IOException("The activation endpoint identity did not match.");
                         WindowsForegroundActivation.GrantToServer(pipe, descriptor.ProcessId);
-                        await pipe.WriteAsync(new byte[] { ActivateCommand }, deadline.Token).ConfigureAwait(false);
+                        await pipe.WriteAsync(new byte[] { notificationTarget is null ? ActivateCommand : NotificationCommand }, deadline.Token).ConfigureAwait(false);
+                        if (notificationTarget is not null)
+                        {
+                            var payload = new byte[48];
+                            notificationTarget.NodeId.TryWriteBytes(payload.AsSpan(0, 16));
+                            notificationTarget.ConversationId.TryWriteBytes(payload.AsSpan(16, 16));
+                            notificationTarget.MessageId.TryWriteBytes(payload.AsSpan(32, 16));
+                            await pipe.WriteAsync(payload, deadline.Token).ConfigureAwait(false);
+                        }
                         var response = new byte[1];
                         await pipe.ReadExactlyAsync(response, deadline.Token).ConfigureAwait(false);
                         if (response[0] == ActivatedResponse) return null;
@@ -133,11 +143,19 @@ internal sealed class ApplicationInstanceCoordinator : IDisposable
                         await pipe.WriteAsync(hello, handshake.Token).ConfigureAwait(false);
                         var command = new byte[1];
                         await pipe.ReadExactlyAsync(command, handshake.Token).ConfigureAwait(false);
-                        if (command[0] == ActivateCommand)
+                        if (command[0] is ActivateCommand or NotificationCommand)
                         {
+                            MessageNotificationTarget? target = null;
+                            if (command[0] == NotificationCommand)
+                            {
+                                var payload = new byte[48]; await pipe.ReadExactlyAsync(payload, handshake.Token).ConfigureAwait(false);
+                                target = new(new Guid(payload.AsSpan(0, 16)), new Guid(payload.AsSpan(16, 16)), new Guid(payload.AsSpan(32, 16)));
+                                if (target.NodeId == Guid.Empty || target.ConversationId == Guid.Empty || target.MessageId == Guid.Empty) continue;
+                            }
                             using var request = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);
                             request.CancelAfter(TimeSpan.FromSeconds(10));
-                            var activated = await Activation.RequestAsync(request.Token).ConfigureAwait(false);
+                            var activated = target is null ? await Activation.RequestAsync(request.Token).ConfigureAwait(false)
+                                : await Activation.RequestNotificationAsync(target, request.Token).ConfigureAwait(false);
                             await pipe.WriteAsync(new byte[] { activated ? ActivatedResponse : UnavailableResponse }, request.Token)
                                 .ConfigureAwait(false);
                         }

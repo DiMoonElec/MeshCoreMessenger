@@ -17,7 +17,7 @@ public static class AppBootstrap
         CreateServiceProvider(paths, storage, null);
 
     internal static ServiceProvider CreateServiceProvider(
-        IAppPaths paths, LocalStorage storage, DesktopActivationCoordinator? activation)
+        IAppPaths paths, LocalStorage storage, DesktopActivationCoordinator? activation, IDesktopNotificationPlatform? notificationPlatform = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(storage);
@@ -98,7 +98,14 @@ public static class AppBootstrap
         services.AddSingleton<DesktopNotificationVisibility>();
         services.AddSingleton<IMessageNotificationVisibility>(provider => provider.GetRequiredService<DesktopNotificationVisibility>());
         services.AddSingleton<INotificationRequestPolicy, MessageNotificationPolicy>();
-        services.AddSingleton<IDesktopNotificationAdapter, UnavailableNotificationAdapter>();
+        services.AddSingleton<IDesktopNotificationPlatform>(notificationPlatform ?? NotificationPlatformFactory.Create());
+        services.AddSingleton(provider => new NotificationTargetRegistry(
+            Path.Combine(DesktopAppPaths.CreateDefault().DataDirectory, "NotificationTargets"), TimeProvider.System));
+        services.AddSingleton<NativeNotificationAdapter>();
+        services.AddSingleton<IDesktopNotificationAdapter>(provider => provider.GetRequiredService<NativeNotificationAdapter>());
+        services.AddSingleton(provider => new NotificationSettingsViewModel(provider.GetRequiredService<IDesktopNotificationPlatform>(), provider.GetRequiredService<IUiDispatcher>()));
+        services.AddSingleton<NotificationClickController>();
+        services.AddSingleton<NotificationNavigationRouter>();
         services.AddSingleton<DesktopNotificationService>();
         services.AddSingleton<IDesktopNotificationService>(provider => provider.GetRequiredService<DesktopNotificationService>());
         services.AddSingleton<MessageNotificationCoordinator>();
