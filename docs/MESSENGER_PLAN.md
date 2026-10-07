@@ -35,10 +35,10 @@
 - [d7-private-auto-retry](messenger/plan/d7-private-auto-retry.md) — Автоматические попытки ЛС и история успешных маршрутов: P1 выполнен, далее P2.
 - [stage-e](messenger/plan/stage-e.md) — Stage E: платформенная и release-приёмка.
 - [stage-f](messenger/plan/stage-f.md) — Stage F: отложенные функции и явные ограничения первой версии.
-- [stage-s](messenger/plan/stage-s.md) — Самостоятельная ветка S: трей, single-instance activation, уведомления и названия; S1–S3 реализованы, macOS приёмка S3 подтверждена пользователем, Windows ожидается; S4–S7 не начаты.
+- [stage-s](messenger/plan/stage-s.md) — Самостоятельная ветка S: трей, single-instance activation, уведомления и названия; S1–S3 реализованы, macOS/Windows приёмка S3 подтверждена пользователем; S4–S7 не начаты.
 - [s1-instance-activation](messenger/plan/s1-instance-activation.md) — S1: IPC/показ существующего окна; автоматическая и macOS native части проверены, основной Windows-сценарий подтверждён пользователем.
 - [s2-desktop-preferences](messenger/plan/s2-desktop-preferences.md) — S2: настройки/фоновое сохранение реализованы; автоматическая/macOS native части проверены, визуальная приёмка подтверждена пользователем.
-- [s3-tray-lifecycle](messenger/plan/s3-tray-lifecycle.md) — S3: трей/menu, скрытие/возврат и durable shutdown реализованы; автоматическая/macOS native проверки пройдены, пользователь подтвердил macOS; Windows приёмка ожидается.
+- [s3-tray-lifecycle](messenger/plan/s3-tray-lifecycle.md) — S3: трей/menu, скрытие/возврат и durable shutdown реализованы; автоматическая/macOS native проверки пройдены, пользователь подтвердил macOS и Windows.
 - [s4-conversation-labels](messenger/plan/s4-conversation-labels.md) — S4: «Каналы» и «Чаты» во всём актуальном интерфейсе.
 - [s5-notification-policy](messenger/plan/s5-notification-policy.md) — S5: post-commit очередь, простые правила и fake adapter.
 - [s6-native-notifications](messenger/plan/s6-native-notifications.md) — S6: системные уведомления macOS/Windows и активация переписки.

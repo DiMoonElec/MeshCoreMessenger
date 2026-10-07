@@ -1,6 +1,6 @@
 # S3 — трей, скрытие окна и настоящий выход
 
-[Stage S](stage-s.md) · **Статус: реализован; автоматическая и macOS native части проверены. Пользователь подтвердил работу на macOS; Windows приёмка ожидается.**
+[Stage S](stage-s.md) · **Статус: реализован; автоматическая и macOS native части проверены. Пользователь подтвердил работу на macOS и Windows.**
 
 07.10.2026: реализованы TrayIcon/menu, OnExplicitShutdown, скрытие/возврат и выход через прежний durable barrier. [Результаты и ручной checklist](../../testing/s3-tray-lifecycle.md).
 
