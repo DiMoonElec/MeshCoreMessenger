@@ -3,7 +3,8 @@
 Дата: 07.10.2026. [Этап S6](../messenger/plan/s6-native-notifications.md),
 [архитектура](../messenger/architecture/notifications.md).
 
-Реализация подготовлена; ручная приёмка настоящих banner/click обеих ОС ожидается.
+Пользователь подтвердил работу уведомлений macOS 07.10.2026. На Windows 11
+ручная проверка выявила native initialization failure; повторная приёмка ожидается.
 Linux отложен. Аппаратная нода в автоматических проверках не использовалась.
 
 ## Автоматические проверки
@@ -83,3 +84,33 @@ macOS cold click может быть доставлен ОС уже после �
 Источники: [Apple UserNotifications](https://developer.apple.com/documentation/usernotifications),
 [Microsoft notification registration/activation](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-quickstart),
 [Unregister и COM lifetime](https://github.com/microsoft/WindowsAppSDK/blob/main/specs/AppNotifications/AppNotifications-spec.md).
+
+
+## Windows 11: отказ инициализации после publish
+
+07.10.2026 пользователь выполнил приведённый publish, запустил `.exe`; checkbox
+включены, системный статус — Unavailable. Код HRESULT в прежнем UI не показывался.
+Возврат управления в shell ожидаем для `WinExe` и не доказывает завершение приложения.
+
+В component Foundation отсутствует Insights.Resource DLL; Runtime 2.0.1 framework
+MSIX содержит её, версия совместима с Foundation 2.0.20. Подготовлены extraction/
+copy targets, Windows-only private NuGet dependency и publish guard. Из Runtime
+берётся одна DLL; автоматическая установка пакетов ОС не включается.
+Источник гипотезы: [Microsoft issue 6071](https://github.com/microsoft/WindowsAppSDK/issues/6071).
+Это вероятная причина отказа, не подтверждённая трассировкой Windows пользователя.
+
+Повторно закрыть приложение через «Выйти», выполнить тот же publish в **новый**
+выходной каталог, проверить наличие `Microsoft.WindowsAppRuntime.Insights.Resource.dll`
+и запустить `.exe`. Если статус всё ещё Unavailable, прислать появившийся рядом код
+ошибки и stage. Stage/type/HRESULT также пишутся в stderr; exception text не пишется.
+
+
+Проверки дополнения: macOS Release build — 0 warnings/errors, Desktop **396/396**.
+Windows GUI-граф с диагностикой компилируется без предупреждений/ошибок.
+Проверочный Windows publish на macOS (тот же временный manifest tool, PRI expansion
+отключён только для cross-check) включает resource DLL: 34 144 bytes, x64 PE,
+байты точно совпадают с файлом официального Runtime MSIX. ARM64 extraction даёт
+правильный ARM64 PE. Publish guard отдельно проверен на отсутствии DLL — отклоняет
+такой каталог. Locked restore проходит. Extraction timestamp обновляется для
+корректной incremental сборки; содержимое DLL не изменяется. Runtime Windows всё
+ещё должен подтвердить пользователь.

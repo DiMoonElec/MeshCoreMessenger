@@ -14,6 +14,7 @@ internal sealed class WindowsNotificationPlatform : IDesktopNotificationPlatform
     private bool _registrationAttempted;
     private bool _stopped;
     public NotificationPlatformStatus Status { get; private set; } = NotificationPlatformStatus.Initializing;
+    public NotificationPlatformFailure? Failure { get; private set; }
     public event EventHandler? StatusChanged;
     public event EventHandler<string>? Activated;
     public Task InitializeAsync(CancellationToken token = default)
@@ -22,16 +23,22 @@ internal sealed class WindowsNotificationPlatform : IDesktopNotificationPlatform
         if (_registered) { RefreshStatus(); StatusChanged?.Invoke(this, EventArgs.Empty); return Task.CompletedTask; }
         if (_registrationAttempted) return Task.CompletedTask;
         _registrationAttempted = true;
+        var stage = "CreateManager";
         try
         {
             _manager = AppNotificationManager.Default;
+            stage = "SubscribeActivation";
             _manager.NotificationInvoked += OnActivated;
+            stage = "Register";
             _manager.Register();
             _registered = true;
+            stage = "ReadSettings";
             RefreshStatus();
         }
-        catch
+        catch (Exception error)
         {
+            Failure = new(stage, error.GetType().Name, error.HResult);
+            Console.Error.WriteLine($"Windows notification initialization failed: {stage}, {Failure.ErrorType}, HRESULT 0x{Failure.HResult:X8}.");
             if (_manager is not null) { try { _manager.NotificationInvoked -= OnActivated; } catch { } }
             Status = NotificationPlatformStatus.Unavailable;
         }

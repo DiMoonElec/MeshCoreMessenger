@@ -1,9 +1,12 @@
 namespace MeshCoreMessenger.Desktop.Notifications;
 
 internal enum NotificationPlatformStatus { Initializing, Enabled, PermissionRequired, Denied, Unsupported, Unavailable }
+internal sealed record NotificationPlatformFailure(string Stage, string ErrorType, int HResult);
+
 internal interface IDesktopNotificationPlatform : IDesktopNotificationAdapter, IAsyncDisposable
 {
     NotificationPlatformStatus Status { get; }
+    NotificationPlatformFailure? Failure => null;
     event EventHandler? StatusChanged;
     event EventHandler<string>? Activated;
     Task InitializeAsync(CancellationToken token = default);

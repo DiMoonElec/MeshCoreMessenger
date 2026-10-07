@@ -128,6 +128,17 @@ public sealed class NativeNotificationTests
         Assert.False(settings.CanRequestPermission); Assert.Contains("запрещены", settings.StatusText);
         settings.Stop(); Assert.False(settings.CanRequestPermission);
     }
+    [Fact]
+    public void PlatformInitializationFailureExposesSafeErrorCodeWithoutExceptionText()
+    {
+        var platform = new Platform { Status = NotificationPlatformStatus.Unavailable,
+            Failure = new("Register", "COMException", unchecked((int)0x8007007E)) };
+        var settings = new NotificationSettingsViewModel(platform, new ImmediateUiDispatcher());
+        Assert.Contains("0x8007007E", settings.StatusText);
+        Assert.Contains("Register", settings.StatusText);
+        Assert.Contains("COMException", settings.StatusText);
+        settings.Stop();
+    }
     private sealed class Clock : TimeProvider
     {
         public DateTimeOffset Now = DateTimeOffset.UtcNow;
@@ -146,6 +157,7 @@ public sealed class NativeNotificationTests
         public event EventHandler<string>? Activated;
         public void Click(string token) => Activated?.Invoke(this, token);
         public void ChangeStatus() => StatusChanged?.Invoke(this, EventArgs.Empty);
+        public NotificationPlatformFailure? Failure { get; set; }
         public List<NotificationRequest> Shown { get; } = [];
         public bool ThrowRemove, ThrowShow, ThrowPermission, Disposed;
         public Task InitializeAsync(CancellationToken token = default) => Task.CompletedTask;

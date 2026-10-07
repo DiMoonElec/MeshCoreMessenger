@@ -1,3 +1,8 @@
+07.10.2026: пользователь подтвердил уведомления macOS S6; на Windows 11 portable
+показ не заработал (Unavailable при native initialization). Подготовлено дополнение
+пакета ресурсной DLL SDK и безопасная диагностика HRESULT. Повторная Windows
+проверка ожидается: [отчёт S6](../../testing/s6-native-notifications.md).
+
 07.10.2026: подготовлена реализация [S6](s6-native-notifications.md): нативные
 адаптеры macOS/Windows, статус и разрешение ОС в настройках, opaque click targets,
 расширение S1 IPC и безопасный переход к локальному сообщению. Linux отложен.

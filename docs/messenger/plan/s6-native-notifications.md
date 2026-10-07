@@ -1,6 +1,6 @@
 # S6 — системные уведомления macOS и Windows
 
-[Stage S](stage-s.md) · **Статус: реализация подготовлена 07.10.2026; ручная приёмка macOS/Windows ожидается.**
+[Stage S](stage-s.md) · **Статус: реализация подготовлена 07.10.2026; работа на macOS подтверждена пользователем; Windows приёмка выявила ошибку инициализации.**
 
 **Цель:** простое системное уведомление и безопасный возврат в нужную переписку.
 
@@ -93,3 +93,23 @@ notification registration, с ограниченным ожиданием. S1 д
 При выходе сначала отменяются S5 workers и click tasks, затем выполняется native
 cleanup и существующий UI/durable shutdown. Ошибка удаления баннера не блокирует
 сохранение истории. [Проверки и ручные сценарии](../../testing/s6-native-notifications.md).
+
+
+## Ручная проверка и Windows correction 07.10.2026
+
+Пользователь подтвердил работу уведомлений на macOS. На Windows 11 после
+self-contained publish настройки показали «Системные уведомления недоступны»;
+показ баннеров не заработал. Это отказ native initialization, не message checkbox.
+Полная ручная матрица S7 ещё не пройдена.
+
+Обнаружено, что Foundation 2.0.20 не содержит
+`Microsoft.WindowsAppRuntime.Insights.Resource.dll`. Для этого сочетания component-only
+и self-contained есть [известная ошибка регистрации SDK](https://github.com/microsoft/WindowsAppSDK/issues/6071).
+Точный HRESULT на машине пользователя пока неизвестен: первая версия его скрывала.
+Подготовлен workaround: matching Runtime 2.0.1 — private build dependency, из его
+framework MSIX извлекается только version-resource DLL нужной архитектуры.
+Framework/deployment build assets пакета исключены; установка runtime/MSIX не выполняется.
+Publish проверяет наличие DLL в каталоге поставки. Остальные Foundation/native версии
+не обновлялись. При init failure настройки показывают stage/type/HRESULT без exception
+message, payload или секретов; основной messenger продолжает работать.
+Исправление нуждается в повторной проверке Windows пользователя.

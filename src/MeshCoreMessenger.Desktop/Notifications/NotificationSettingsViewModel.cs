@@ -12,7 +12,7 @@ public sealed class NotificationSettingsViewModel : ObservableObject
     private bool _stopped;
     internal NotificationSettingsViewModel(IDesktopNotificationPlatform platform, IUiDispatcher dispatcher)
     {
-        _platform = platform; _dispatcher = dispatcher; _statusText = Describe(platform.Status);
+        _platform = platform; _dispatcher = dispatcher; _statusText = DescribePlatform(platform);
         RequestPermissionCommand = new AsyncRelayCommand(RequestPermissionAsync, () => CanRequestPermission);
         platform.StatusChanged += OnStatusChanged;
     }
@@ -33,7 +33,7 @@ public sealed class NotificationSettingsViewModel : ObservableObject
             await _dispatcher.InvokeAsync(() =>
             {
                 if (_stopped) return;
-                StatusText = Describe(_platform.Status);
+                StatusText = DescribePlatform(_platform);
                 OnPropertyChanged(nameof(CanRequestPermission)); RequestPermissionCommand.NotifyCanExecuteChanged();
             });
         }
@@ -43,6 +43,13 @@ public sealed class NotificationSettingsViewModel : ObservableObject
     {
         _stopped = true; _platform.StatusChanged -= OnStatusChanged; RequestPermissionCommand.Cancel();
         RequestPermissionCommand.NotifyCanExecuteChanged();
+    }
+    private static string DescribePlatform(IDesktopNotificationPlatform platform)
+    {
+        var text = Describe(platform.Status);
+        if (platform.Status == NotificationPlatformStatus.Unavailable && platform.Failure is { } failure)
+            text += $" Код ошибки: 0x{failure.HResult:X8} ({failure.ErrorType}, {failure.Stage}).";
+        return text;
     }
     private static string Describe(NotificationPlatformStatus status) => status switch
     {

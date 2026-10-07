@@ -1,0 +1,47 @@
+<Project>
+  <!-- Foundation 2.0.20 omits the version-resource DLL read by AppNotificationManager.Register.
+       Copy the single resource from the matching official Runtime 2.0.1 framework archive. -->
+  <PropertyGroup>
+    <McmWindowsNativeArch Condition="'$(RuntimeIdentifier)' == 'win-x64'">x64</McmWindowsNativeArch>
+    <McmWindowsNativeArch Condition="'$(RuntimeIdentifier)' == 'win-arm64'">arm64</McmWindowsNativeArch>
+    <McmWindowsNativeArch Condition="'$(RuntimeIdentifier)' == 'win-x86'">x86</McmWindowsNativeArch>
+    <McmWindowsResourceDirectory>$(BaseIntermediateOutputPath)native/$(Configuration)/$(RuntimeIdentifier)/</McmWindowsResourceDirectory>
+    <McmWindowsResourcePath>$(McmWindowsResourceDirectory)Microsoft.WindowsAppRuntime.Insights.Resource.dll</McmWindowsResourcePath>
+    <McmWindowsRuntimeArchive>$(PkgMicrosoft_WindowsAppSDK_Runtime)/tools/MSIX/win10-$(McmWindowsNativeArch)/Microsoft.WindowsAppRuntime.2.msix</McmWindowsRuntimeArchive>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(McmWindowsResourcePath)" Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
+          CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <UsingTask TaskName="ExtractMcmWindowsNotificationResource" TaskFactory="RoslynCodeTaskFactory"
+             AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Archive ParameterType="System.String" Required="true" />
+      <Destination ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System.IO.Compression" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        using (var archive = ZipFile.OpenRead(Archive))
+        {
+            var entry = archive.GetEntry("Microsoft.WindowsAppRuntime.Insights.Resource.dll");
+            if (entry == null) throw new System.IO.InvalidDataException("Windows App SDK version resource is missing from the Runtime archive.");
+            entry.ExtractToFile(Destination, overwrite: true);
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+  <Target Name="PrepareMcmWindowsNotificationResource" BeforeTargets="PrepareForBuild"
+          Inputs="$(McmWindowsRuntimeArchive);$(MSBuildThisFileFullPath)" Outputs="$(McmWindowsResourcePath)">
+    <Error Condition="'$(PkgMicrosoft_WindowsAppSDK_Runtime)' == ''" Text="Restore Windows dependencies before preparing native notification resources." />
+    <Error Condition="'$(McmWindowsNativeArch)' == ''" Text="Unsupported Windows notification architecture: $(RuntimeIdentifier)." />
+    <MakeDir Directories="$(McmWindowsResourceDirectory)" />
+    <ExtractMcmWindowsNotificationResource Archive="$(McmWindowsRuntimeArchive)" Destination="$(McmWindowsResourcePath)" />
+    <!-- ZIP preserves the SDK build date; use extraction time for incremental MSBuild checks. -->
+    <Touch Files="$(McmWindowsResourcePath)" />
+  </Target>
+  <Target Name="VerifyMcmWindowsNotificationResourcePublished" AfterTargets="Publish">
+    <Error Condition="!Exists('$(PublishDir)Microsoft.WindowsAppRuntime.Insights.Resource.dll')"
+           Text="Windows notification version resource is missing from the published application." />
+  </Target>
+</Project>

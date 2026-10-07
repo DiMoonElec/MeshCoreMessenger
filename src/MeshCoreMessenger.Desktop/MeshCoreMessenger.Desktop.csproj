@@ -14,6 +14,9 @@
   </PropertyGroup>
   <ItemGroup Condition="'$(McmWindowsDesktop)' == 'true'">
     <PackageReference Include="Microsoft.WindowsAppSDK.Foundation" />
+    <!-- Only the version resource DLL is used; no framework registration/deployment targets. -->
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" GeneratePathProperty="true"
+                      PrivateAssets="all" ExcludeAssets="build;buildTransitive" />
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Avalonia" />
@@ -39,4 +42,5 @@
     <MakeDir Directories="$(BaseIntermediateOutputPath)native/$(Configuration)/$(McmNativeArch)" />
     <Exec Command="xcrun clang -arch $(McmNativeArch) -mmacosx-version-min=11.0 -fobjc-arc -dynamiclib -install_name @rpath/libMcmNotifications.dylib -framework Foundation -framework UserNotifications &quot;$(MSBuildProjectDirectory)/Native/Notifications.m&quot; -o &quot;$(BaseIntermediateOutputPath)native/$(Configuration)/$(McmNativeArch)/libMcmNotifications.dylib&quot;" />
   </Target>
+  <Import Project="Native/WindowsNotificationResources.targets" Condition="'$(McmWindowsDesktop)' == 'true'" />
 </Project>
