@@ -9,7 +9,7 @@
 [Результаты и оставшаяся расширенная матрица S1](../../testing/s1-instance-activation.md).
 Затем реализован **S2**: настройки и background save, Desktop 354/354 в Debug/Release,
 macOS native Light/Dark × 560/960; пользователь подтвердил визуальную приёмку S2.
-[Результаты S2](../../testing/s2-desktop-preferences.md). S3–S7 не начаты.
+[Результаты S2](../../testing/s2-desktop-preferences.md). Реализован **S3**: трей/menu, Hide/Show и настоящий выход; Desktop 361/361 в Debug/Release, native macOS audit/Quit проверены. Пользователь подтвердил работу на macOS; Windows приёмка ожидается. [Результаты S3](../../testing/s3-tray-lifecycle.md). S4–S7 не начаты.
 Выполняется только явно выбранный подэтап; этот план сам по себе
 не запускает остальные изменения, установку зависимостей или аппаратные проверки.
 

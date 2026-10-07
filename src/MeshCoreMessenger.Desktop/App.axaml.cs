@@ -29,6 +29,7 @@ public sealed partial class App : Application
                 DesktopAppPaths.CreateDefault().DataDirectory);
             desktop.MainWindow = window;
             var activation = Services.GetRequiredService<DesktopActivationCoordinator>();
+            var tray = new DesktopTrayLifecycle(this, desktop, window, activation, logger);
             var activatable = this.TryGetFeature<IActivatableLifetime>();
             EventHandler<ActivatedEventArgs> onActivated = (_, args) =>
             {
@@ -51,6 +52,7 @@ public sealed partial class App : Application
             window.Closed += (_, _) => activation.Dispose();
             desktop.Exit += (_, _) =>
             {
+                tray.Dispose();
                 if (activatable is not null) activatable.Activated -= onActivated;
                 activation.Dispose();
             };

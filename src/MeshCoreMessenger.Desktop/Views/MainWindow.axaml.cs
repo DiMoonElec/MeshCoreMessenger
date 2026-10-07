@@ -24,6 +24,8 @@ public sealed partial class MainWindow : Window
 
     private readonly IDesktopShutdownCoordinator? _shutdown;
     private bool _shutdownAccepted;
+    private Func<bool>? _canHideToTray;
+    private Action? _exitApplication;
     private bool _shutdownRequestActive;
     private bool _placementInitialized;
     private bool _closed;
@@ -54,6 +56,7 @@ public sealed partial class MainWindow : Window
             {
                 if (WindowState != WindowState.Minimized) _activationRestoreState = WindowState;
                 CaptureWindowPlacement();
+                if (WindowState == WindowState.Minimized && CanActivateExistingWindow && _canHideToTray?.Invoke() == true) Hide();
             }
         };
         Opened += (_, _) => ApplySavedWindowPlacement();
@@ -77,6 +80,30 @@ public sealed partial class MainWindow : Window
         }
 
         eventArgs.Cancel = true;
+        if (ShouldHideOnClose(eventArgs.CloseReason,
+            _subscribedViewModel?.SelectedCloseBehavior.Value ?? DesktopCloseBehavior.MinimizeToTray,
+            _canHideToTray?.Invoke() == true) && CanActivateExistingWindow)
+        {
+            Hide();
+            return;
+        }
+        RequestExit();
+    }
+
+    internal static bool ShouldHideOnClose(WindowCloseReason reason, DesktopCloseBehavior behavior, bool trayAvailable) =>
+        reason == WindowCloseReason.WindowClosing && behavior == DesktopCloseBehavior.MinimizeToTray && trayAvailable;
+
+    internal void ConfigureTrayLifecycle(Func<bool> canHideToTray, Action exitApplication)
+    {
+        _canHideToTray = canHideToTray;
+        _exitApplication = exitApplication;
+    }
+
+    internal void RequestExit()
+    {
+        VerifyAccess();
+        if (_closed || _shutdownAccepted || _shutdown is null) return;
+        CaptureWindowPlacement();
         if (_shutdownRequestActive)
         {
             return;
@@ -241,13 +268,16 @@ public sealed partial class MainWindow : Window
     {
         try
         {
+            await Task.Yield(); // Leave native Closing/ShutdownRequested callbacks before completing exit.
             await _shutdown!.ShutdownAsync();
             _shutdownAccepted = true;
-            Close();
+            if (_exitApplication is { } exit) exit();
+            else Close();
         }
         catch (DesktopShutdownException)
         {
             _shutdownRequestActive = false;
+            TryActivateExistingWindow();
         }
     }
 }

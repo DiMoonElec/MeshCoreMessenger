@@ -40,7 +40,7 @@
             </ComboBox.ItemTemplate>
           </ComboBox>
           <TextBlock Classes="settings-hint"
-                     Text="Сворачивание в трей пока недоступно. Сейчас крестик закрывает приложение. Ваш выбор сохраняется." />
+                     Text="Свёрнутое окно можно открыть через значок приложения в трее." />
         </StackPanel>
       </Border>
       <Border Classes="settings-card">

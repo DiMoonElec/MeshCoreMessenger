@@ -1,6 +1,8 @@
 # S3 — трей, скрытие окна и настоящий выход
 
-[Stage S](stage-s.md) · **Статус: не начат.**
+[Stage S](stage-s.md) · **Статус: реализован; автоматическая и macOS native части проверены. Пользователь подтвердил работу на macOS; Windows приёмка ожидается.**
+
+07.10.2026: реализованы TrayIcon/menu, OnExplicitShutdown, скрытие/возврат и выход через прежний durable barrier. [Результаты и ручной checklist](../../testing/s3-tray-lifecycle.md).
 
 **Цель:** приложение остаётся доступным в фоне и всегда имеет понятный путь возврата
 и полного завершения.
@@ -12,7 +14,7 @@ Show/Hide/Exit; использует общее действие активац�
 сохраняет normal/maximized placement, selection/draft/scroll и все существующие owners.
 Не останавливать connection lifecycle и не повторять startup при очередном Show.
 
-Приложение живёт до явного выхода; кандидат — `OnExplicitShutdown` с явной
+Приложение живёт до явного выхода; используется `OnExplicitShutdown` с явной
 интеграцией всех exit paths. «Выйти», системный Quit/Cmd+Q и завершение сеанса ОС
 не превращаются в Hide. Сохранить существующий особый путь OS shutdown.
 Обычный выход идёт через DesktopShutdownCoordinator; failure показывает окно

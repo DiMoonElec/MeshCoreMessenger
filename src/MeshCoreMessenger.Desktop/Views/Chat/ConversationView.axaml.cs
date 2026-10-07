@@ -61,6 +61,7 @@ public sealed partial class ConversationView : UserControl
         {
             _window.Activated += OnActivation;
             _window.Deactivated += OnActivation;
+            _window.PropertyChanged += OnWindowVisibilityChanged;
         }
         BindOwner();
     }
@@ -72,6 +73,7 @@ public sealed partial class ConversationView : UserControl
         {
             _window.Activated -= OnActivation;
             _window.Deactivated -= OnActivation;
+            _window.PropertyChanged -= OnWindowVisibilityChanged;
         }
         _window = null;
         UnbindOwner();
@@ -155,6 +157,11 @@ public sealed partial class ConversationView : UserControl
     private void UpdateMessageVisibility() => HistoryList.IsVisible = _history?.Messages.FirstOrDefault() is { } first &&
         first.ConversationId == _owner?.Navigation.SelectedConversation?.Id;
     private void OnActivation(object? sender, EventArgs args) => ReportViewport();
+
+    private void OnWindowVisibilityChanged(object? sender, AvaloniaPropertyChangedEventArgs args)
+    {
+        if (args.Property == Window.IsVisibleProperty || args.Property == Window.WindowStateProperty) ReportViewport();
+    }
 
     private void OnLayout()
     {
@@ -304,8 +311,13 @@ public sealed partial class ConversationView : UserControl
 
     private void ReportViewport()
     {
-        if (_history is null || _pendingScroll)
+        if (_history is null) return;
+        if (_window?.IsVisible != true || _window.WindowState == WindowState.Minimized)
+        {
+            _history.ReportVisibleRange(null, null, false, false);
             return;
+        }
+        if (_pendingScroll) return;
         if (!_attached || !IsEffectivelyVisible || _owner?.IsVisible != true || _history.Messages.FirstOrDefault()?.ConversationId != _owner?.Navigation.SelectedConversation?.Id)
         {
             _history.ReportVisibleRange(null, null, false, false);
