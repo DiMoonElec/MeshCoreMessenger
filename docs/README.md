@@ -9,6 +9,7 @@ checkpoints описывают результаты на свою дату, а �
 
 - [Старт агентской сессии](CODEX_START.md) — порядок чтения и готовый prompt.
 - [Текущее состояние Messenger](messenger/plan/current-state.md) — статус Stage C.
+- [Desktop-интеграция S1–S7](messenger/plan/stage-s.md) — отдельная нелинейная ветка: трей, повторный запуск, простые уведомления и «Каналы»/«Чаты»; реализация не начата.
 - [Актуальный UI1–UI6](messenger/plan/ui-components.md) — согласованный порядок
   компонентной переработки и результаты панели; следующая реализация — по запросу пользователя.
 - [Архитектура Messenger](MESSENGER_ARCHITECTURE.md) — оглавление application contracts.
@@ -47,6 +48,7 @@ checkpoints описывают результаты на свою дату, а �
 | Persistence/ingest/schema | [Storage](messenger/architecture/storage.md), [B3 directory](messenger/plan/b3-directory.md), [B4 ingest](messenger/plan/b4-ingest.md), [B5 receive](messenger/plan/b5-receive.md); выбрать соответствующий owner |
 | Shutdown/lifecycle | [Shutdown contract](messenger/architecture/shutdown.md), [B7.3](messenger/plan/b7-3-shutdown.md), [event barriers/message pump](library/architecture/message-pump.md), C6/C8/C9 writer barriers при их изменении |
 | Пути данных / несколько экземпляров | [Папки данных и запуск](messenger/architecture/data-directories.md), начало [Storage](messenger/architecture/storage.md), [A4.1 instance lock](messenger/plan/stage-a.md#a41--один-экземпляр-на-каталог-данных-выполнено-25092026), [Shutdown contract](messenger/architecture/shutdown.md) |
+| Трей / активация / уведомления / названия | [Ветка S и зависимости](messenger/plan/stage-s.md), только выбранный S1–S7 и его зависимости; для lifecycle — shutdown, для настроек — C9, для уведомлений — B4/B5 и C6 |
 | Library framing | [Layers](library/architecture/layers.md), [runtime](library/architecture/runtime-pipeline.md), [frame formats](library/protocol/framing.md), [приоритет источников](library/protocol/sources.md) |
 | Routing/concurrency/timeouts | [Immediate transactions](library/architecture/immediate-transactions.md), [matching](library/architecture/packet-matching.md), [gates](library/architecture/concurrency.md), [timeouts/errors](library/architecture/api-and-errors.md), соответствующая protocol-команда |
 | Приём/отправка сообщений | [Message pump](library/architecture/message-pump.md), [incoming wire](library/protocol/incoming-messages.md), [send/ACK wire](library/protocol/outgoing-messages.md); application send scope — [Stage D](messenger/plan/stage-d.md) |

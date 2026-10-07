@@ -35,5 +35,13 @@
 - [d7-private-auto-retry](messenger/plan/d7-private-auto-retry.md) — Автоматические попытки ЛС и история успешных маршрутов: P1 выполнен, далее P2.
 - [stage-e](messenger/plan/stage-e.md) — Stage E: платформенная и release-приёмка.
 - [stage-f](messenger/plan/stage-f.md) — Stage F: отложенные функции и явные ограничения первой версии.
+- [stage-s](messenger/plan/stage-s.md) — Самостоятельная ветка S: трей, single-instance activation, уведомления и названия; зависимости вместо обязательной линейной очереди, реализация не начата.
+- [s1-instance-activation](messenger/plan/s1-instance-activation.md) — S1: локальный IPC и показ существующего окна с сохранением file lock на папку данных.
+- [s2-desktop-preferences](messenger/plan/s2-desktop-preferences.md) — S2: поведение крестика и два переключателя уведомлений.
+- [s3-tray-lifecycle](messenger/plan/s3-tray-lifecycle.md) — S3: трей, скрытие/возврат и настоящий выход через durable shutdown.
+- [s4-conversation-labels](messenger/plan/s4-conversation-labels.md) — S4: «Каналы» и «Чаты» во всём актуальном интерфейсе.
+- [s5-notification-policy](messenger/plan/s5-notification-policy.md) — S5: post-commit очередь, простые правила и fake adapter.
+- [s6-native-notifications](messenger/plan/s6-native-notifications.md) — S6: системные уведомления macOS/Windows и активация переписки.
+- [s7-integration-acceptance](messenger/plan/s7-integration-acceptance.md) — S7: совместная приёмка, пакеты и инструкция.
 - [test-matrix](messenger/plan/test-matrix.md) — Обязательные сценарии и методика тестирования.
 - [agent-start](messenger/plan/agent-start.md) — Исходное стартовое задание; актуальная маршрутизация — CODEX_START.

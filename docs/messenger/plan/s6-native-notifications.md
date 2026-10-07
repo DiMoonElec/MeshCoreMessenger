@@ -1,0 +1,52 @@
+# S6 — системные уведомления macOS и Windows
+
+[Stage S](stage-s.md) · **Статус: не начат.**
+
+**Цель:** простое системное уведомление и безопасный возврат в нужную переписку.
+
+**Scope:** небольшой платформенный adapter к S5; сначала macOS, затем Windows,
+результаты и ограничения каждой ОС фиксируются отдельно.
+До выбора зависимости проверить показ и click activation в настоящем формате
+поставки: macOS .app с существующим bundle identity, Windows portable directory.
+Выбрать минимальный поддерживаемый способ без новых application projects.
+Кандидаты: macOS UserNotifications, Windows native app notifications;
+окончательный bridge/package определяется проверкой совместимости, не этим планом.
+
+Разрешение macOS запрашивается в понятном контексте включения уведомлений;
+не повторять запрос при каждом сообщении/старте. Отказ ОС не выключает приём
+и не вызывает повторных диалогов; экран может показать короткую системную подсказку.
+Чекбоксы предпочтений и фактическая доступность платформы — разные состояния.
+Режимы Focus/Do Not Disturb и правила ОС уважаются.
+
+Клик маршрутизируется в общее действие показа S1, затем существующую навигацию
+по node/conversation/message identity. Учесть native activation уже работающего
+приложения и запуск процесса ОС; активировать владельца нужной папки данных.
+Не переключать подключение и не выдавать историю другой ноды за текущую.
+Для удалённой/недоступной цели или несовпадающей node context показать окно
+с понятным fallback, не выполнять connect/mutation.
+Для первой итерации не добавлять inline reply и управление нодой из уведомления.
+
+Не помещать текст сообщения/ключи в launch arguments и обычные логи.
+Для старых баннеров после выхода/смены папки проверить маршрутизацию и очистку,
+не делать неограниченное ожидание IPC.
+
+**Не входит:** remote push/APNs/WNS, сервер уведомлений, Linux приёмка,
+переработка автоподключения, обязательная смена Windows portable на MSIX.
+**Зависимости:** S1, S5; S3 для финальной проверки hidden/tray. S4 не блокирует
+адаптеры, но новые пользовательские подписи должны соответствовать S4.
+
+**Тесты:** разрешено/отказано/недоступно, callbacks на non-UI thread, уже запущен/
+cold start/занята нужная папка, разные папки, stale target, смена/удаление переписки,
+shutdown race, нулевые connection/mutation calls от click, ошибки adapter.
+Проверить runtime registration, native dependencies и identity в пакетах.
+
+**Готово:** на каждой проверенной ОС banner/click работают в self-contained пакете,
+отказ или отсутствие поддержки не мешают переписке; непроверенные платформы
+не объявляются поддержанными.
+**Ручная проверка: обязательна** — реальные macOS .app и Windows portable,
+разрешения, фоновое/скрытое окно, клик, повторный запуск, Focus/DND, rename/package move.
+
+**Источники:** [Apple UserNotifications](https://developer.apple.com/documentation/usernotifications),
+[разрешения Apple](https://developer.apple.com/documentation/usernotifications/asking-permission-to-use-notifications),
+[Microsoft app notifications](https://learn.microsoft.com/en-us/windows/apps/develop/notifications/app-notifications/app-notifications-quickstart).
+Конкретный способ регистрации зависит от выбранного API и формата поставки.
