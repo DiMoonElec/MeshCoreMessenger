@@ -16,7 +16,8 @@ try
     {
         try
         {
-            if (args.Contains("--notifications-only")) await UiWorkspaceIntegrationTests.NativeNotificationPolicyAudit.RunAsync();
+            if (args.Contains("--shutdown-only")) await UiWorkspaceIntegrationTests.NativeShutdownThreadAudit.RunAsync();
+            else if (args.Contains("--notifications-only")) await UiWorkspaceIntegrationTests.NativeNotificationPolicyAudit.RunAsync();
             else if (args.Contains("--tray-only")) await UiWorkspaceIntegrationTests.NativeTrayLifecycleAudit.RunAsync();
             else if (args.Contains("--settings-only")) await UiWorkspaceIntegrationTests.NativeSettingsPreferencesAudit.RunAsync();
             else if (args.Contains("--instance-activation-only")) await UiWorkspaceIntegrationTests.NativeInstanceActivationAudit.RunAsync();

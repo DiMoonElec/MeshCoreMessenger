@@ -93,6 +93,35 @@ dotnet build tools/MeshCoreMessenger.ViewportAudit -c Release --no-restore
 dotnet tools/MeshCoreMessenger.ViewportAudit/bin/Release/net10.0/MeshCoreMessenger.ViewportAudit.dll --notifications-only
 ```
 
+## Исправление shutdown/UI context после S5
+
+07.10.2026: пользователь подтвердил исправление («теперь работает»).
+
+07.10.2026: пользователь сообщил InvalidOperationException при завершении:
+NotificationDesktopUiLifetime → Root.StopAsync → RetryPreferencesSaveCommand
+→ Avalonia Button.CanExecuteChanged, вызванный вне UI thread.
+
+Причина — ConfigureAwait(false) в новом notification lifetime decorator перед
+Root.StopAsync. После остановки фоновых workers продолжение попадало в thread pool.
+Decorator теперь сохраняет UI context; MainWindowViewModel также сохраняет его
+между остановкой composer/chat/profile/device owners, чьи start/cancel действия
+изменяют bound UI state. Ожидание задач остаётся асинхронным; durable flush порядок
+и connection policy не менялись.
+
+Новый native `--shutdown-only` использует настоящий AppBootstrap DI, notification
+workers, MainWindow/bindings и DesktopShutdownCoordinator на временной SQLite.
+До исправления воспроизведён тот же стек; после исправления UI thread assertions
+для CanExecuteChanged/history properties проходят, durable barrier завершён.
+Debug/Release builds прошли без warnings/errors; native shutdown проверен в обеих
+конфигурациях. Release Desktop — 385/385. Первый общий прогон дал timeout старого
+ChannelRepeat UI test; отдельный класс прошёл 34/34, полный повтор — 385/385.
+Нода не подключалась. Исходный `--notifications-only` закрывал окно до final Root.Stop
+и не покрывал этот порядок, поэтому прежняя native policy проверка регрессию не поймала.
+
+```sh
+dotnet tools/MeshCoreMessenger.ViewportAudit/bin/Release/net10.0/MeshCoreMessenger.ViewportAudit.dll --shutdown-only
+```
+
 ## Границы приёмки
 
 В приложении зарегистрирован `UnavailableNotificationAdapter`: баннеры ОС пока не

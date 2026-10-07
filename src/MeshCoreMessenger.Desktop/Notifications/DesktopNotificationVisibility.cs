@@ -34,11 +34,12 @@ internal sealed class NotificationDesktopUiLifetime(MainWindowViewModel root, Me
 {
     public async Task StopAsync()
     {
-        // Start cancellation of delivery immediately, then quiesce the existing durable UI owners.
+        // Keep the caller's UI context: stopping the root raises command/control notifications.
+        // Cancellation still runs immediately; awaiting workers does not block the UI thread.
         var delivery = notifications.StopAsync();
-        await messages.StopAsync().ConfigureAwait(false);
-        await delivery.ConfigureAwait(false);
-        await root.StopAsync().ConfigureAwait(false);
+        await messages.StopAsync();
+        await delivery;
+        await root.StopAsync();
     }
     public Task ReportShutdownFailureAsync(Exception exception) => ((IDesktopUiLifetime)root).ReportShutdownFailureAsync(exception);
 }

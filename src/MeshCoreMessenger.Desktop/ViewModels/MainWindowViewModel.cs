@@ -499,10 +499,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
         _projectionRefreshSignal.Release();
-        await Task.WhenAll(_composerContexts.Select(context => context.StopAsync())).ConfigureAwait(false);
-        await Chats.StopAsync().ConfigureAwait(false);
-        await Profiles.StopAsync().ConfigureAwait(false);
-        await Devices.StopAsync().ConfigureAwait(false);
+        // Child shutdown starts touch bound UI state; retain the UI context between them.
+        await Task.WhenAll(_composerContexts.Select(context => context.StopAsync()));
+        await Chats.StopAsync();
+        await Profiles.StopAsync();
+        await Devices.StopAsync();
 
         Task[] pending;
         lock (_pendingLoadsGate)
