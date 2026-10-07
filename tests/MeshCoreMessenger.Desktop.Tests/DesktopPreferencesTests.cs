@@ -16,6 +16,9 @@ public sealed class DesktopPreferencesTests
         var placement = new WindowPlacement(120, 80, 1280, 800, IsMaximized: true);
 
         first.SetTheme(DesktopThemePreference.Dark);
+        first.SetCloseBehavior(DesktopCloseBehavior.ExitApplication);
+        first.SetNotifyPrivateMessages(false);
+        first.SetNotifyChannelMessages(false);
         first.SetWindowPlacement(placement);
         await first.FlushAsync(CancellationToken);
 
@@ -23,6 +26,9 @@ public sealed class DesktopPreferencesTests
         await restarted.LoadAsync(CancellationToken);
         Assert.Equal(DesktopThemePreference.Dark, restarted.Snapshot.Theme);
         Assert.Equal(placement, restarted.Snapshot.WindowPlacement);
+        Assert.Equal(DesktopCloseBehavior.ExitApplication, restarted.Snapshot.CloseBehavior);
+        Assert.False(restarted.Snapshot.NotifyPrivateMessages);
+        Assert.False(restarted.Snapshot.NotifyChannelMessages);
     }
 
     [Fact]
@@ -40,6 +46,9 @@ public sealed class DesktopPreferencesTests
                 await preferences.LoadAsync(CancellationToken);
                 preferences.SetTheme(DesktopThemePreference.Dark);
                 preferences.SetWindowPlacement(placement);
+                preferences.SetCloseBehavior(DesktopCloseBehavior.ExitApplication);
+                preferences.SetNotifyPrivateMessages(false);
+                preferences.SetNotifyChannelMessages(false);
                 await preferences.FlushAsync(CancellationToken);
             }
 
@@ -48,6 +57,9 @@ public sealed class DesktopPreferencesTests
             await restored.LoadAsync(CancellationToken);
             Assert.Equal(DesktopThemePreference.Dark, restored.Snapshot.Theme);
             Assert.Equal(placement, restored.Snapshot.WindowPlacement);
+            Assert.Equal(DesktopCloseBehavior.ExitApplication, restored.Snapshot.CloseBehavior);
+            Assert.False(restored.Snapshot.NotifyPrivateMessages);
+            Assert.False(restored.Snapshot.NotifyChannelMessages);
         }
         finally
         {
@@ -98,6 +110,102 @@ public sealed class DesktopPreferencesTests
     }
 
     [Fact]
+    public async Task OldDatabaseHasIndependentDefaultsAndInvalidValuesDoNotBlockStartup()
+    {
+        var settings = new FakeSettingsStore();
+        var preferences = new DesktopPreferences(settings);
+        await preferences.LoadAsync(CancellationToken);
+        Assert.Equal(DesktopCloseBehavior.MinimizeToTray, preferences.Snapshot.CloseBehavior);
+        Assert.True(preferences.Snapshot.NotifyPrivateMessages);
+        Assert.True(preferences.Snapshot.NotifyChannelMessages);
+        await preferences.FlushAsync(CancellationToken);
+        Assert.Empty(settings.Values);
+
+        settings.Values[DesktopPreferences.CloseBehaviorSettingKey] = "999";
+        settings.Values[DesktopPreferences.NotifyPrivateSettingKey] = "false";
+        settings.Values[DesktopPreferences.NotifyChannelsSettingKey] = "enabled";
+        await preferences.LoadAsync(CancellationToken);
+        Assert.Equal(DesktopCloseBehavior.MinimizeToTray, preferences.Snapshot.CloseBehavior);
+        Assert.False(preferences.Snapshot.NotifyPrivateMessages);
+        Assert.True(preferences.Snapshot.NotifyChannelMessages);
+        Assert.Throws<ArgumentOutOfRangeException>(() => preferences.SetCloseBehavior((DesktopCloseBehavior)999));
+    }
+
+    [Fact]
+    public async Task ChangeDuringBlockedFlushPersistsNewestValues()
+    {
+        var settings = new FakeSettingsStore();
+        var preferences = new DesktopPreferences(settings);
+        preferences.SetCloseBehavior(DesktopCloseBehavior.ExitApplication);
+        preferences.SetNotifyPrivateMessages(false);
+        preferences.SetNotifyChannelMessages(false);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        settings.BeforeWrite = async (key, token) =>
+        {
+            if (key != DesktopPreferences.CloseBehaviorSettingKey) return;
+            started.TrySetResult();
+            await release.Task.WaitAsync(token);
+        };
+        var save = preferences.FlushAsync(CancellationToken);
+        await started.Task.WaitAsync(CancellationToken);
+        preferences.SetCloseBehavior(DesktopCloseBehavior.MinimizeToTray);
+        preferences.SetNotifyPrivateMessages(true);
+        preferences.SetNotifyChannelMessages(true);
+        release.SetResult();
+        await save;
+        var restored = new DesktopPreferences(settings);
+        await restored.LoadAsync(CancellationToken);
+        Assert.Equal(preferences.Snapshot, restored.Snapshot);
+    }
+
+    [Fact]
+    public async Task PartialFailureKeepsDirtyFieldsAndRetrySavesLatestChoice()
+    {
+        var settings = new FakeSettingsStore();
+        var preferences = new DesktopPreferences(settings);
+        preferences.SetCloseBehavior(DesktopCloseBehavior.ExitApplication);
+        preferences.SetNotifyPrivateMessages(false);
+        preferences.SetNotifyChannelMessages(false);
+        settings.BeforeWrite = (key, _) => key == DesktopPreferences.NotifyPrivateSettingKey
+            ? Task.FromException(new IOException("disk full")) : Task.CompletedTask;
+        await Assert.ThrowsAsync<DesktopPreferencesPersistenceException>(() => preferences.FlushAsync(CancellationToken));
+        Assert.Equal("ExitApplication", settings.Values[DesktopPreferences.CloseBehaviorSettingKey]);
+        Assert.False(settings.Values.ContainsKey(DesktopPreferences.NotifyPrivateSettingKey));
+        Assert.True(preferences.IsPaused);
+        preferences.SetNotifyPrivateMessages(true);
+        settings.BeforeWrite = null;
+        await preferences.RetryAsync(CancellationToken);
+        Assert.False(preferences.IsPaused);
+        var restored = new DesktopPreferences(settings);
+        await restored.LoadAsync(CancellationToken);
+        Assert.Equal(preferences.Snapshot, restored.Snapshot);
+    }
+
+    [Fact]
+    public async Task CanceledBackgroundWriteLeavesChoiceForFinalBarrier()
+    {
+        var settings = new FakeSettingsStore();
+        var preferences = new DesktopPreferences(settings);
+        preferences.SetNotifyChannelMessages(false);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        settings.BeforeWrite = async (_, token) =>
+        {
+            started.SetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        };
+        using var cancel = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+        var save = preferences.FlushAsync(cancel.Token);
+        await started.Task.WaitAsync(CancellationToken);
+        cancel.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => save);
+        Assert.False(preferences.Snapshot.NotifyChannelMessages);
+        settings.BeforeWrite = null;
+        await preferences.FlushAsync(CancellationToken);
+        Assert.Equal("False", settings.Values[DesktopPreferences.NotifyChannelsSettingKey]);
+    }
+
+    [Fact]
     public void InvalidBoundsAreIgnoredAndOversizedBoundsAreClamped()
     {
         var screens = new[] { new ScreenArea(0, 0, 1440, 900, IsPrimary: true) };
@@ -132,20 +240,21 @@ public sealed class DesktopPreferencesTests
     {
         public Dictionary<string, string> Values { get; } = [];
         public Queue<Exception> Failures { get; } = [];
+        public Func<string, CancellationToken, Task>? BeforeWrite { get; set; }
 
         public Task<string?> GetAsync(string key, CancellationToken cancellationToken = default) =>
             Task.FromResult(Values.GetValueOrDefault(key));
 
-        public Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
+        public async Task SetAsync(string key, string value, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (BeforeWrite is { } before) await before(key, cancellationToken);
             if (Failures.TryDequeue(out var failure))
             {
                 throw failure;
             }
 
             Values[key] = value;
-            return Task.CompletedTask;
         }
     }
 

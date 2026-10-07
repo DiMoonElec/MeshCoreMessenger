@@ -1,5 +1,16 @@
 # Native viewport audit
 
+S2 settings audit uses production MainWindow/SettingsView with temporary SQLite
+and a fake supervisor:
+
+```sh
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --settings-only
+```
+
+Checks Light/Dark × actual 560/960 px, ComboBox/CheckBox bindings, Tab/Space,
+background saves before exit and error/retry without connection commands.
+Images: `$TMPDIR/meshcore-s2-settings/`. See [S2 report](../../docs/testing/s2-desktop-preferences.md).
+
 Requires a desktop/display session. Uses production Avalonia controls and a freshly
 created temporary SQLite fixture through the Desktop test helpers. No real transport,
 user data folder or development fixture folder is opened. Not part of headless xUnit

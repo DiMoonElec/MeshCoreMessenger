@@ -1,6 +1,6 @@
 # S2 — поведение крестика и настройки уведомлений
 
-[Stage S](stage-s.md) · **Статус: не начат.**
+[Stage S](stage-s.md) · **Статус: реализован и автоматически проверен; macOS native проверен. Визуальная приёмка подтверждена пользователем 07.10.2026.**
 
 **Цель:** три понятные настройки в существующем экране, без сложных фильтров.
 
@@ -34,3 +34,42 @@
 надёжно сохраняются; production поведение включается в S3/S6.
 **Ручная проверка: обязательна** — narrow/wide, Light/Dark, keyboard/Tab,
 понятные подписи и восстановление после перезапуска.
+
+## Реализация 07.10.2026
+
+DesktopPreferencesSnapshot расширен DesktopCloseBehavior и двумя boolean preferences.
+Новые ключи — `desktop.close-behavior`, `desktop.notifications.private`,
+`desktop.notifications.channels`; существующие theme/window-placement не изменены.
+Отсутствующие/невалидные значения дают MinimizeToTray и оба checkbox=true.
+Каждый параметр имеет свою dirty/persisted revision; partial failure не отмечает
+несохранённые поля как committed, retry использует последний snapshot.
+SQLite schema/package pins/Core/Companion library не менялись.
+
+MainWindowViewModel применяет изменение в память и запускает tracked FlushAsync
+для темы и трёх новых явных настроек. Прежний flush gate сериализует записи;
+StopAsync отменяет/ждёт фоновые saves, отдельный durable preferences barrier
+по-прежнему завершает штатный выход. Geometry не вызывает запись на каждом move/resize.
+Новые setters после quiesce не меняют принятый выбор.
+
+Ошибка записи и RetryPreferencesSaveCommand находятся в Settings отдельно от
+общего ErrorMessage. UI callback читает актуальный IsPaused, поэтому late completion
+старого save не скрывает новую ошибку и не возвращает её после recovery.
+Retry сохраняет локальные preferences без connection/mutation commands.
+
+После карточки темы добавлены «Поведение окна» и «Уведомления»: ComboBox и два
+CheckBox, two-way bindings и accessibility names. По уточнению пользователя новые
+пункты показаны в ApplicationSettingsView уже в S2. Короткие подсказки честно
+обозначают, что трей/системные уведомления пока недоступны, а выбор сохраняется.
+Фактическое поведение крестика остаётся прежним до S3; уведомления — до S5/S6.
+
+## Проверки
+
+07.10.2026: пользователь подтвердил визуальную приёмку («Визуально все ОК»).
+Платформа этой проверки не указана; отдельная Windows приёмка этим не подтверждается.
+
+Desktop **354/354 в Release и Debug**; builds без warnings/errors. Native macOS:
+Light/Dark × фактические 560/960 px, two-way bindings, Tab/Space, запись в SQLite
+до выхода, отсутствие overflow и доступный failure/retry UI. Транспорт — fake,
+пользовательская БД/аппаратная нода не использовались.
+Результаты, ограничения и ручной checklist: [отчёт S2](../../testing/s2-desktop-preferences.md).
+S3–S7 не начаты; следующий рекомендуемый этап — S3, только по запросу пользователя.

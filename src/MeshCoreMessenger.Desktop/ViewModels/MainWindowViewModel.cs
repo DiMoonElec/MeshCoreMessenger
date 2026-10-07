@@ -44,6 +44,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     private string? _connectionStatusDetail;
     private string _activeProfileDisplayName = "Не выбран";
     private string? _errorMessage;
+    private string? _preferencesSaveError;
     private bool _isLoading;
     private ConnectionSupervisorState _connectionState;
     private bool _isConnectionSettingsOpen;
@@ -133,6 +134,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);
         ConnectCommand = new AsyncRelayCommand(ConnectAsync);
         DisconnectCommand = new AsyncRelayCommand(DisconnectAsync);
+        RetryPreferencesSaveCommand = new AsyncRelayCommand(
+            token => Track(SavePreferencesAsync(token)),
+            () => HasPreferencesSaveError && Volatile.Read(ref _stopped) == 0);
         ToggleConnectionSettingsCommand = new RelayCommand(
             () => IsConnectionSettingsOpen = !IsConnectionSettingsOpen);
         CloseConnectionSettingsCommand = new RelayCommand(() => IsConnectionSettingsOpen = false);
@@ -166,14 +170,97 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         set
         {
             ArgumentNullException.ThrowIfNull(value);
-            if (value.Value == _preferences.Snapshot.Theme)
+            if (Volatile.Read(ref _stopped) != 0 || value.Value == _preferences.Snapshot.Theme)
             {
                 return;
             }
 
             _preferences.SetTheme(value.Value);
             OnPropertyChanged();
+            RequestPreferencesSave();
         }
+    }
+
+    public IReadOnlyList<DesktopCloseBehaviorOption> CloseBehaviorOptions { get; } =
+    [
+        new(DesktopCloseBehavior.MinimizeToTray, "Сворачивать в трей"),
+        new(DesktopCloseBehavior.ExitApplication, "Закрывать приложение"),
+    ];
+
+    public DesktopCloseBehaviorOption SelectedCloseBehavior
+    {
+        get => CloseBehaviorOptions.Single(option => option.Value == _preferences.Snapshot.CloseBehavior);
+        set
+        {
+            ArgumentNullException.ThrowIfNull(value);
+            if (Volatile.Read(ref _stopped) != 0 || value.Value == _preferences.Snapshot.CloseBehavior) return;
+            _preferences.SetCloseBehavior(value.Value);
+            OnPropertyChanged();
+            RequestPreferencesSave();
+        }
+    }
+
+    public bool NotifyPrivateMessages
+    {
+        get => _preferences.Snapshot.NotifyPrivateMessages;
+        set
+        {
+            if (Volatile.Read(ref _stopped) != 0 || value == NotifyPrivateMessages) return;
+            _preferences.SetNotifyPrivateMessages(value);
+            OnPropertyChanged();
+            RequestPreferencesSave();
+        }
+    }
+
+    public bool NotifyChannelMessages
+    {
+        get => _preferences.Snapshot.NotifyChannelMessages;
+        set
+        {
+            if (Volatile.Read(ref _stopped) != 0 || value == NotifyChannelMessages) return;
+            _preferences.SetNotifyChannelMessages(value);
+            OnPropertyChanged();
+            RequestPreferencesSave();
+        }
+    }
+
+    public string? PreferencesSaveError
+    {
+        get => _preferencesSaveError;
+        private set
+        {
+            if (!SetProperty(ref _preferencesSaveError, value)) return;
+            OnPropertyChanged(nameof(HasPreferencesSaveError));
+            RetryPreferencesSaveCommand.NotifyCanExecuteChanged();
+        }
+    }
+    public bool HasPreferencesSaveError => PreferencesSaveError is not null;
+    public IAsyncRelayCommand RetryPreferencesSaveCommand { get; }
+
+    private void RequestPreferencesSave()
+    {
+        if (Volatile.Read(ref _stopped) == 0) _ = Track(SavePreferencesAsync());
+    }
+
+    private async Task SavePreferencesAsync(CancellationToken cancellationToken = default)
+    {
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetimeCancellation.Token);
+        try
+        {
+            try { await _preferences.FlushAsync(linked.Token).ConfigureAwait(false); }
+            catch (DesktopPreferencesPersistenceException exception)
+            { _logger.LogWarning(exception, "Could not save desktop preferences."); }
+
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (Volatile.Read(ref _stopped) != 0) return;
+                // Read the current writer state: an older completion must not overwrite a newer failure/recovery.
+                PreferencesSaveError = _preferences.IsPaused
+                    ? "Не удалось сохранить настройки. Повторите сохранение."
+                    : null;
+            }, linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
     }
 
     public WindowPlacement? SavedWindowPlacement => _preferences.Snapshot.WindowPlacement;
@@ -299,6 +386,9 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                 _lifetimeCancellation.Token);
             await _preferences.LoadAsync(linkedCancellation.Token);
             OnPropertyChanged(nameof(SelectedTheme));
+            OnPropertyChanged(nameof(SelectedCloseBehavior));
+            OnPropertyChanged(nameof(NotifyPrivateMessages));
+            OnPropertyChanged(nameof(NotifyChannelMessages));
             OnPropertyChanged(nameof(SavedWindowPlacement));
             await Profiles.LoadAsync(linkedCancellation.Token);
             var nodes = await _nodes.GetAllAsync(KnownNodePageSize, linkedCancellation.Token);
@@ -404,6 +494,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _channelRepeats.Dispose();
         _privateResends.Dispose();
         _lifetimeCancellation.Cancel();
+        RetryPreferencesSaveCommand.Cancel();
+        RetryPreferencesSaveCommand.NotifyCanExecuteChanged();
         ConnectCommand.Cancel();
         DisconnectCommand.Cancel();
         _projectionRefreshSignal.Release();
@@ -980,6 +1072,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 }
 
 public sealed record DesktopThemeOption(DesktopThemePreference Value, string Title);
+public sealed record DesktopCloseBehaviorOption(DesktopCloseBehavior Value, string Title);
 
 public sealed class KnownNodeListItem
 {

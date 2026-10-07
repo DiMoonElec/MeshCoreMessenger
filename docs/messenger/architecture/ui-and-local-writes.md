@@ -88,6 +88,15 @@ C9 хранит desktop preferences в той же таблице `Settings`, н
 Повреждённые theme/placement не блокируют offline startup: используются system theme
 и штатная геометрия окна. Схема SQLite не меняется.
 
+S2 расширяет тот же owner close behavior и двумя notification preferences с
+независимыми revisions/defaults. Явные настройки и theme сохраняются tracked async
+FlushAsync во время работы приложения; текущий flush gate сериализует записи.
+UI quiesce отменяет/ждёт background saves, затем прежний отдельный preferences
+barrier завершает accepted dirty values. Geometry не запускает save на каждый move.
+Settings error/retry отделён от общего application ErrorMessage и читает актуальный
+writer state при UI callback, чтобы stale completion не менял результат recovery.
+Трей/фактическое поведение крестика и системные уведомления подключаются в S3/S5/S6.
+
 Сохранённая геометрия содержит физические normal bounds и признак maximized; minimized
 не восстанавливается. Чистый `WindowPlacementCalculator` валидирует bounds, выбирает
 доступный экран, ограничивает размер working area и центрирует окно на primary, если

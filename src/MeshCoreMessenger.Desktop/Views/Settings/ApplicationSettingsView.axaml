@@ -26,6 +26,44 @@
                      Text="Авто — оформление как в системе. Выбранная тема применяется сразу." />
         </StackPanel>
       </Border>
+      <Border Classes="settings-card">
+        <StackPanel Classes="settings-fields">
+          <TextBlock Classes="settings-heading" Text="Поведение окна" />
+          <TextBlock Classes="settings-label" Text="При закрытии окна" />
+          <ComboBox ItemsSource="{Binding CloseBehaviorOptions}"
+                    SelectedItem="{Binding SelectedCloseBehavior, Mode=TwoWay}"
+                    AutomationProperties.Name="Действие при закрытии окна">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:DesktopCloseBehaviorOption">
+                <TextBlock Text="{Binding Title}" />
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Classes="settings-hint"
+                     Text="Сворачивание в трей пока недоступно. Сейчас крестик закрывает приложение. Ваш выбор сохраняется." />
+        </StackPanel>
+      </Border>
+      <Border Classes="settings-card">
+        <StackPanel Classes="settings-fields">
+          <TextBlock Classes="settings-heading" Text="Уведомления" />
+          <CheckBox HorizontalAlignment="Stretch" IsChecked="{Binding NotifyPrivateMessages, Mode=TwoWay}"
+                    AutomationProperties.Name="Уведомления для личных сообщений">
+            <TextBlock Text="Уведомления для личных сообщений" TextWrapping="Wrap" />
+          </CheckBox>
+          <CheckBox HorizontalAlignment="Stretch" IsChecked="{Binding NotifyChannelMessages, Mode=TwoWay}"
+                    AutomationProperties.Name="Уведомления для каналов">
+            <TextBlock Text="Уведомления для каналов" TextWrapping="Wrap" />
+          </CheckBox>
+          <TextBlock Classes="settings-hint"
+                     Text="Системные уведомления пока недоступны. Ваш выбор сохраняется." />
+        </StackPanel>
+      </Border>
+      <Border Classes="settings-card" IsVisible="{Binding HasPreferencesSaveError}">
+        <StackPanel Classes="settings-fields">
+          <TextBlock Classes="settings-error" Text="{Binding PreferencesSaveError}" />
+          <Button Content="Повторить сохранение" Command="{Binding RetryPreferencesSaveCommand}" />
+        </StackPanel>
+      </Border>
     </StackPanel>
   </ScrollViewer>
 </UserControl>

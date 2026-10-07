@@ -16,7 +16,8 @@ try
     {
         try
         {
-            if (args.Contains("--instance-activation-only")) await UiWorkspaceIntegrationTests.NativeInstanceActivationAudit.RunAsync();
+            if (args.Contains("--settings-only")) await UiWorkspaceIntegrationTests.NativeSettingsPreferencesAudit.RunAsync();
+            else if (args.Contains("--instance-activation-only")) await UiWorkspaceIntegrationTests.NativeInstanceActivationAudit.RunAsync();
             else if (args.Contains("--repeat-channel-only")) await UiWorkspaceIntegrationTests.NativeChannelRepeatAudit.RunAsync();
             else if (args.Contains("--modal-only")) await UiWorkspaceIntegrationTests.NativeModalAudit.RunAsync();
             else if (args.Contains("--route-reset-only")) await UiWorkspaceIntegrationTests.NativeContactRouteAudit.RunAsync();

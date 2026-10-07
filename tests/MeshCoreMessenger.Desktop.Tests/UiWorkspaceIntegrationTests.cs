@@ -301,13 +301,14 @@ public sealed partial class UiWorkspaceIntegrationTests
         }
         public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null,
             ISendReadinessReader? sendReadiness = null, IMessageService? messageService = null,
-            Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null, IContactRouteService? contactRoutes = null)
+            Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null, IContactRouteService? contactRoutes = null,
+            ISettingsStore? preferencesStore = null)
         {
             FailingDraftStore = new FaultingDraftStore(Storage.Drafts);
             Drafts = new DraftWriteTracker(FailingDraftStore, TimeProvider.System);
             readStore ??= Storage.ReadStates;
             Reads = new ConversationReadStateTracker(readStore);
-            Preferences = new DesktopPreferences(Storage.Settings);
+            Preferences = new DesktopPreferences(preferencesStore ?? Storage.Settings);
             var profiles = new ConnectionProfilesViewModel(new ConnectionProfileManager(Storage.ConnectionProfiles, Storage.Settings, TimeProvider.System),
                 Supervisor, new EmptyPorts(), NullLogger<ConnectionProfilesViewModel>.Instance);
             return new MainWindowViewModel(Storage.ConversationDirectory, Storage.History, readStore, Reads,

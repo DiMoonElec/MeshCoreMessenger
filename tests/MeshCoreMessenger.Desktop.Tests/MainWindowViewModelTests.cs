@@ -9,7 +9,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Desktop.Tests;
 
-public sealed class MainWindowViewModelTests
+public sealed partial class MainWindowViewModelTests
 {
     [Fact]
     public async Task RouteCommitRefreshesSelectedHeaderWithoutChangingHistoryAndUnsubscribesOnStop()
@@ -558,9 +558,10 @@ public sealed class MainWindowViewModelTests
         FakeMessageCommitNotifications? notifications = null,
         IUiDispatcher? dispatcher = null,
         FakeNodeStore? nodes = null,
-        FakeSettingsStore? settings = null,
+        ISettingsStore? settings = null,
         TestProfileManager? profileManager = null,
-        IConversationDirectoryReader? directory = null, IDirectoryStore? directoryUpdates = null)
+        IConversationDirectoryReader? directory = null, IDirectoryStore? directoryUpdates = null,
+        DesktopPreferences? preferences = null)
     {
         supervisor ??= new FakeConnectionSupervisor();
         nodes ??= new FakeNodeStore([CreateNode(NodeAId, "Node A", 0x11)]);
@@ -579,7 +580,7 @@ public sealed class MainWindowViewModelTests
             new FakeDraftBuffer(),
             nodes,
             settings,
-            new DesktopPreferences(settings),
+            preferences ?? new DesktopPreferences(settings),
             profiles,
             supervisor,
             notifications ?? new FakeMessageCommitNotifications(),
