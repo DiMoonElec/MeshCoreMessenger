@@ -3,8 +3,8 @@
 Дата: 07.10.2026. [Этап S6](../messenger/plan/s6-native-notifications.md),
 [архитектура](../messenger/architecture/notifications.md).
 
-Пользователь подтвердил работу уведомлений macOS 07.10.2026. На Windows 11
-ручная проверка выявила native initialization failure; повторная приёмка ожидается.
+Пользователь подтвердил работу уведомлений macOS и Windows 11 07.10.2026.
+Первоначальный Windows initialization failure устранён после исправления 67429c8.
 Linux отложен. Аппаратная нода в автоматических проверках не использовалась.
 
 ## Автоматические проверки
@@ -114,3 +114,15 @@ Windows GUI-граф с диагностикой компилируется бе
 такой каталог. Locked restore проходит. Extraction timestamp обновляется для
 корректной incremental сборки; содержимое DLL не изменяется. Runtime Windows всё
 ещё должен подтвердить пользователь.
+
+
+## Повторная проверка Windows — подтверждена пользователем
+
+07.10.2026 пользователь сообщил, что уведомления Windows работают после исправления.
+Исходная команда self-contained publish win-x64 успешно завершилась за 43,7 с:
+restore 29,4 с, library 2,3 с, Core 2,2 с, Desktop 8,7 с. В local global.json
+rollForward изменён с latestPatch на latestFeature; version=10.0.301, стабильные
+SDK и MTP runner сохранены. Publish log не показывает фактически выбранный SDK;
+для его проверки используется `dotnet --version` из корня checkout.
+Общий global.json не изменён. Базовая работа macOS/Windows принята; отдельные
+сценарии полного checklist выше ещё не объявляются проверенными.
