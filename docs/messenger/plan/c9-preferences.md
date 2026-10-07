@@ -46,3 +46,6 @@ Desktop — 111/111, MeshCoreSharp — 92/92. Ручная проверка C9 �
 system/light/dark, maximized и перенос/смена масштаба монитора, Cmd/Ctrl+F,
 Escape/Alt+Left, Tab/focus и IME. Windows недоступна и её платформенная приёмка
 переносится в E. C10 не начат.
+
+07.10.2026: исправлено несогласованное использование RenderScaling/Screen.Scaling
+при сохранении geometry на macOS Retina. [Отчёт и native roundtrip](../../testing/window-placement-retina.md).

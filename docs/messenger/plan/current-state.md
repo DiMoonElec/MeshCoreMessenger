@@ -1,3 +1,7 @@
+07.10.2026: пользователь подтвердил исправление **геометрии окна Retina** («проверил, работает») и запросил коммит, затем реализацию S6. [Отчёт](../../testing/window-placement-retina.md).
+
+07.10.2026: исправлена **геометрия окна на macOS Retina**: Capture ошибочно умножал Bounds на RenderScaling=2, хотя screen coordinates имеют Scaling=1; Restore затем растягивал размер до WorkingArea. Capture использует текущий Screen.Scaling; closed/accepted shutdown не перезаписывает placement. Native SQLite/window roundtrip восстанавливает Normal 820×520 в (130,150); S3 tray audit пройден, preferences tests 11/11. Пользовательская БД не менялась; приёмка ожидается. [Причина и проверки](../../testing/window-placement-retina.md).
+
 07.10.2026: пользователь подтвердил исправление **S5 shutdown/UI context** («теперь работает») и запросил коммит. [Причина и проверки](../../testing/s5-notification-policy.md#исправление-shutdownui-context-после-s5).
 
 07.10.2026: исправлена выявленная пользователем **регрессия S5 shutdown/UI thread**. NotificationDesktopUiLifetime терял UI context через ConfigureAwait(false) перед Root.StopAsync; декоратор и последовательный запуск child Stop теперь сохраняют контекст. Native real-DI/bindings `--shutdown-only` воспроизводит прежний стек до правки и успешно завершает durable barrier после неё в Debug/Release; Release Desktop 385/385, builds без warnings/errors, без подключения к ноде. S6 не начат. [Причина и проверка](../../testing/s5-notification-policy.md#исправление-shutdownui-context-после-s5).

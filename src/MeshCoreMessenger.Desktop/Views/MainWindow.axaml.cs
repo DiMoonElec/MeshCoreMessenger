@@ -236,7 +236,7 @@ public sealed partial class MainWindow : Window
 
     private void CaptureWindowPlacement()
     {
-        if (!_placementInitialized || WindowState == WindowState.Minimized || DataContext is not MainWindowViewModel viewModel)
+        if (!_placementInitialized || _closed || _shutdownAccepted || WindowState == WindowState.Minimized || DataContext is not MainWindowViewModel viewModel)
         {
             return;
         }
@@ -244,7 +244,9 @@ public sealed partial class MainWindow : Window
         WindowPlacement? currentNormal = null;
         if (WindowState == WindowState.Normal)
         {
-            var scale = RenderScaling is > 0 ? RenderScaling : 1;
+            // Placement uses screen coordinates. On macOS Retina, screen scaling is 1
+            // while RenderScaling is 2; backing pixels must not inflate the saved window.
+            var scale = Screens.ScreenFromWindow(this)?.Scaling is > 0 and var screenScale ? screenScale : 1;
             currentNormal = new WindowPlacement(
                 Position.X,
                 Position.Y,
