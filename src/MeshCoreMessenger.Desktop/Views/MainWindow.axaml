@@ -16,8 +16,9 @@
     </DataTemplate>
   </Window.DataTemplates>
   <Window.Title>
-    <MultiBinding StringFormat="{}{0}{1}">
+    <MultiBinding StringFormat="{}{0}{1}{2}">
       <Binding Path="Title" />
+      <Binding Path="#RootWindow.BuildVersionTitleSuffix" />
       <Binding Path="#RootWindow.DataDirectoryTitleSuffix" />
     </MultiBinding>
   </Window.Title>

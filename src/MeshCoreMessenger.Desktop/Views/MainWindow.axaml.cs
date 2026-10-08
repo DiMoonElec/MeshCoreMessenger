@@ -1,6 +1,7 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
+using System.Reflection;
 using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
@@ -13,6 +14,18 @@ namespace MeshCoreMessenger.Desktop.Views;
 
 public sealed partial class MainWindow : Window
 {
+    public string BuildVersionTitleSuffix { get; } = GetBuildVersionTitleSuffix();
+
+    private static string GetBuildVersionTitleSuffix()
+    {
+        var version = typeof(MainWindow).Assembly
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "unknown";
+        var separator = version.IndexOf('+');
+        if (separator < 0) return $" — v{version} (git unknown)";
+        var revision = version[(separator + 1)..];
+        return $" — v{version[..separator]} + {revision[..Math.Min(8, revision.Length)]}";
+    }
+
     public static readonly StyledProperty<string> DataDirectoryTitleSuffixProperty =
         AvaloniaProperty.Register<MainWindow, string>(nameof(DataDirectoryTitleSuffix), string.Empty);
 

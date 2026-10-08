@@ -8,6 +8,21 @@
 [результаты проверки и ограничения](docs/testing/first-iteration-closure.md).
 На macOS `bash tools/publish-macos.sh` собирает self-contained `.app`/`.zip`
 для локального запуска без .NET SDK.
+На Windows из корня репозитория запустите
+`powershell -ExecutionPolicy Bypass -File .\tools\publish-windows.ps1`
+(по умолчанию `win-x64`; для ARM64 добавьте `-RuntimeIdentifier win-arm64`).
+Для сборки нужен .NET 10 SDK. Скрипт создаёт автономную папку приложения и ZIP
+в `artifacts/windows/<runtime>/build.<id>/`. На компьютере клиента распакуйте
+архив целиком и запустите `MeshCoreMessenger/MeshCoreMessenger.Desktop.exe`;
+установка .NET не требуется.
+
+Заголовок окна показывает версию приложения и первые 8 символов git-хэша сборки.
+Версия задаётся в `src/MeshCoreMessenger.Desktop/MeshCoreMessenger.Desktop.csproj`
+(`Version`); для отдельной сборки её можно переопределить через `-p:Version=0.2.0`.
+Полный git-хэш автоматически записывается SDK в `AssemblyInformationalVersion`
+при build/publish и доступен без Git на компьютере клиента. При сборке исходников
+без Git версия отображается с `git unknown`; хэш можно передать явно через
+`-p:SourceRevisionId=<полный-хэш>`. macOS-пакет использует ту же версию проекта.
 
 ## Структура
 

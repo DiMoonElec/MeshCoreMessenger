@@ -1,3 +1,16 @@
+08.10.2026: добавлен `tools/publish-windows.ps1` для Release self-contained
+portable directory/ZIP (win-x64 по умолчанию, опционально win-arm64).
+Trimming/single-file выключены; ошибки publish останавливают упаковку,
+проверяются EXE и native notification resource. Команды добавлены в README.
+Проверка Windows-сборки и PowerShell ожидается: текущая среда macOS без pwsh.
+
+08.10.2026: заголовок окна дополнен версией Desktop и коротким git-хэшем сборки.
+Полный хэш хранится в AssemblyInformationalVersion; Version задаётся в Desktop
+csproj, macOS Info.plist получает ту же версию. Без Git отображается git unknown.
+Release build: 0 warnings/errors; Desktop 400/400; self-contained osx-arm64
+.app/.zip собраны, подпись проверена; версия plist и хэш publish проверены.
+Визуальная ручная проверка заголовка не выполнялась. Настройка описана в README.
+
 07.10.2026: добавлена настройка состояния окна после запуска: LastState (default),
 обычная минимизация, трей. Последнее состояние сохраняется отдельно от геометрии;
 первоначальная минимизация не скрывается в трей, unavailable tray даёт fallback.

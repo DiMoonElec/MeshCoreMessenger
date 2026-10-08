@@ -7,6 +7,7 @@ if [[ "$(uname -s)" != Darwin ]]; then
 fi
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
+app_version="$(dotnet msbuild "$repo_dir/src/MeshCoreMessenger.Desktop" -getProperty:Version -nologo)"
 case "${1:-$(uname -m)}" in
   arm64|osx-arm64) runtime_id=osx-arm64 ;;
   x86_64|osx-x64) runtime_id=osx-x64 ;;
@@ -24,7 +25,7 @@ dotnet publish "$repo_dir/src/MeshCoreMessenger.Desktop" -c Release \
   -p:UseSharedCompilation=false -p:PublishTrimmed=false -p:PublishSingleFile=false \
   -o "$bundle_dir/Contents/MacOS"
 
-cat > "$bundle_dir/Contents/Info.plist" <<'PLIST'
+cat > "$bundle_dir/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
@@ -34,8 +35,8 @@ cat > "$bundle_dir/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key><string>MeshCoreMessenger</string>
   <key>CFBundleDisplayName</key><string>MeshCoreMessenger</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>$app_version</string>
+  <key>CFBundleVersion</key><string>$app_version</string>
   <key>NSHighResolutionCapable</key><true/>
 </dict></plist>
 PLIST
