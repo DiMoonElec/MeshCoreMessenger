@@ -12,6 +12,7 @@ public enum MeshCoreBleFailureReason
     DeviceUnreachable,
     TransportFailure,
     RadioOff,
+    UnsupportedCharacteristics,
 }
 
 /// <summary>A BLE failure with platform-neutral diagnostics. Never include pairing secrets in the message.</summary>

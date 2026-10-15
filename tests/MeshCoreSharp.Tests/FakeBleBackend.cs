@@ -38,7 +38,9 @@ internal sealed class FakeBleGattSession : IBleGattSession
 {
     internal sealed record Write(ReadOnlyMemory<byte> Frame, ControlledBleOperation<bool> Operation);
     public BleGattCapabilities Capabilities { get; init; } = new(true, true, true, true, true);
-    public ushort MaxPduSize { get; private set; } = 247;
+    private ushort _maxPduSize = 247;
+    public ushort MaxPduSize { get { var size = _maxPduSize; OnMtuRead?.Invoke(); return size; } }
+    public bool IsLinkConnected { get; private set; } = true;
     public event Action<ReadOnlyMemory<byte>>? NotificationReceived;
     public event Action<Exception?>? Disconnected;
     public event Action<ushort>? MaxPduSizeChanged;
@@ -47,6 +49,8 @@ internal sealed class FakeBleGattSession : IBleGattSession
     internal Channel<ControlledBleOperation<bool>> Unsubscriptions { get; } = Channel.CreateUnbounded<ControlledBleOperation<bool>>();
     internal Channel<Write> Writes { get; } = Channel.CreateUnbounded<Write>();
     internal ControlledBleOperation<bool>? Disposal { get; init; }
+    internal Action? OnMtuRead { get; set; }
+    internal bool HasPreparationHandlers => Disconnected is not null || MaxPduSizeChanged is not null;
     internal int DisposeCount;
 
     public Task EnableNotificationsAsync(CancellationToken cancellationToken) => Queue(Subscriptions, cancellationToken);
@@ -67,10 +71,14 @@ internal sealed class FakeBleGattSession : IBleGattSession
     }
 
     internal void EmitNotification(ReadOnlyMemory<byte> frame) => NotificationReceived?.Invoke(frame);
-    internal void EmitDisconnect(Exception? error = null) => Disconnected?.Invoke(error);
+    internal void EmitDisconnect(Exception? error = null)
+    {
+        IsLinkConnected = false;
+        Disconnected?.Invoke(error);
+    }
     internal void EmitMaxPduSize(ushort size)
     {
-        MaxPduSize = size;
+        _maxPduSize = size;
         MaxPduSizeChanged?.Invoke(size);
     }
 
@@ -81,6 +89,7 @@ internal sealed class FakeBleGattSession : IBleGattSession
     public ValueTask DisposeAsync()
     {
         Interlocked.Increment(ref DisposeCount);
+        IsLinkConnected = false;
         NotificationReceived = null;
         Disconnected = null;
         MaxPduSizeChanged = null;

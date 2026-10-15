@@ -11,6 +11,8 @@ public sealed record BleMeshCoreTransportOptions
     public int ReceiveQueueCapacity { get; init; } = 256;
     /// <summary>Maximum complete logical frame; the default matches the current firmware baseline.</summary>
     public int MaximumFrameSize { get; init; } = ProtocolLimits.CurrentFirmwareMaxFrameSize;
+    /// <summary>Host UI dispatcher for Windows device access/consent. Required by the Windows GATT backend.</summary>
+    public IBleDeviceAccessDispatcher? DeviceAccessDispatcher { get; init; }
 
     internal void Validate()
     {

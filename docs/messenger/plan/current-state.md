@@ -1,3 +1,14 @@
+15.10.2026: пользователь подтвердил обнаруженную ноду BLE3; изменения закоммичены
+в `d18d548`, затем выполнен [BLE4](ble4-gatt-open.md). Подготовлены Windows uncached
+GATT discovery NUS/RX/TX, проверка capabilities/MTU >=179, один open deadline,
+учёт отмены/поздних native результатов и cleanup, portable UI access dispatcher
+с адаптером существующего Desktop IUiDispatcher (без регистрации в DI).
+Library **135/135 Windows**, **133/133 portable**; обе Release solution builds и
+locked restore успешны, 0 warnings/errors. Подготовленная attempt остаётся Opening:
+CCCD/notifications/send ещё не реализованы. Настоящий GATT на ноде не открывался;
+аппаратная проверка остаётся BLE8. Core runtime/БД не менялись, ограничение полной
+Desktop suite сохраняется. **Следующий подэтап — BLE5**.
+
 15.10.2026: по запросу пользователя созданы отдельные коммиты `708de12` (BLE2) и
 `24f1c19` (Windows Core/SQLite fixes), затем выполнен [BLE3](ble3-discovery.md).
 Добавлены standalone discovery API, Windows active advertisement scan и typed-address

@@ -10,17 +10,23 @@ internal interface IBleBackend
     Task<IBleGattSession> OpenAsync(string deviceId, CancellationToken cancellationToken);
 }
 
-internal interface IBleGattSession : IAsyncDisposable
+internal interface IBleGattConnection : IAsyncDisposable
 {
     // Immutable discovery results. Native backend verifies the profile and reports typed failures.
     BleGattCapabilities Capabilities { get; }
     ushort MaxPduSize { get; }
+    // Physical link status only; this is not Companion readiness or transport IsConnected.
+    bool IsLinkConnected { get; }
+    event Action<Exception?>? Disconnected;
+    event Action<ushort>? MaxPduSizeChanged;
+}
+
+internal interface IBleGattSession : IBleGattConnection
+{
 
     // Notifications may arrive while enabling CCCD. The receiver must subscribe first.
     // Buffer lifetime ends when the callback returns; consumers copy before enqueueing.
     event Action<ReadOnlyMemory<byte>>? NotificationReceived;
-    event Action<Exception?>? Disconnected;
-    event Action<ushort>? MaxPduSizeChanged;
 
     Task EnableNotificationsAsync(CancellationToken cancellationToken);
     Task DisableNotificationsAsync(CancellationToken cancellationToken);

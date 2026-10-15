@@ -11,7 +11,7 @@ internal sealed class BleConnectionAttempt : IAsyncDisposable
 {
     private static long _nextGeneration;
     private readonly object _sync = new();
-    private IBleGattSession? _session;
+    private IBleGattConnection? _session;
     private bool _started;
     private Task? _cleanup;
     private BleConnectionState _state;
@@ -40,7 +40,7 @@ internal sealed class BleConnectionAttempt : IAsyncDisposable
     }
 
     // Takes ownership even on rejection, so cancelled/late results cannot leak.
-    internal async ValueTask<bool> AdoptSessionAsync(IBleGattSession session)
+    internal async ValueTask<bool> AdoptSessionAsync(IBleGattConnection session)
     {
         ArgumentNullException.ThrowIfNull(session);
         lock (_sync)
@@ -71,7 +71,7 @@ internal sealed class BleConnectionAttempt : IAsyncDisposable
     internal Task CloseAsync(Exception? error = null)
     {
         TaskCompletionSource completion;
-        IBleGattSession? session;
+        IBleGattConnection? session;
         lock (_sync)
         {
             if (_cleanup is not null)
@@ -88,7 +88,7 @@ internal sealed class BleConnectionAttempt : IAsyncDisposable
         return completion.Task;
     }
 
-    private async Task CompleteCleanupAsync(IBleGattSession? session, TaskCompletionSource completion)
+    private async Task CompleteCleanupAsync(IBleGattConnection? session, TaskCompletionSource completion)
     {
         try
         {
