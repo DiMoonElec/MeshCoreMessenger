@@ -1,3 +1,14 @@
+15.10.2026: по запросу пользователя [разобраны восемь ошибок Core на Windows](../../testing/windows-core-suite.md).
+Baseline 387/8 failed воспроизведён. Исправлены pooling/sharing mode вспомогательных
+SQLite connections в тестах, ожидаемый TCP abort эмулятора и реальная гонка отмены
+DatabaseReader до начала SQL (interrupt + progress handler + проверки token).
+Core теперь **389/389**, включая два новых regression tests; HistoryPaging 11/11,
+исходный Desktop history-clear test 1/1, sample self-test успешен, Release build
+без warnings/errors. Полная Desktop suite не закрыта: вспомогательный workspace
+прогон выявил отдельное незавершившееся ожидание AwaitingAck в PrivateSendUiTests.
+Native macOS не проверялся; аппаратных действий не было. BLE2 остаётся выполненным,
+BLE3 не начат. Исправления фиксируются отдельно от реализации BLE2 по запросу пользователя.
+
 15.10.2026: изменения BLE1 закоммичены в `f0719fe`, затем выполнен
 [BLE2](ble2-contracts.md): portable options/device DTO, typed BLE ошибки с native
 диагностикой, internal GATT backend/session контракты и учёт владения одной generation.

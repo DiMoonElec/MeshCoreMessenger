@@ -67,7 +67,11 @@ public sealed partial class UiWorkspaceIntegrationTests
         chat.Navigation.History.SearchText = "needle";
         await UntilAsync(() => chat.Navigation.History.HasSearchResults);
         var before = chat.Navigation.Messages.Select(m => m.Id).ToArray();
-        using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={w.StoragePath()}");
+        using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+        {
+            DataSource = w.StoragePath(),
+            Pooling = false,
+        }.ToString());
         await connection.OpenAsync(Token);
         using var command = connection.CreateCommand();
         command.CommandText = "CREATE TRIGGER RejectClear BEFORE DELETE ON Messages BEGIN SELECT RAISE(ABORT,'blocked'); END;";

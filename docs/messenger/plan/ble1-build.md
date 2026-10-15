@@ -88,6 +88,11 @@ library-portable.log, Desktop run — artifacts/ble1/desktop.log; artifacts иг
 
 ## Известные ограничения
 
+Обновление 15.10.2026 после BLE2: восемь baseline Core failures исправлены,
+полная Core suite теперь 389/389; [разбор и проверки](../../testing/windows-core-suite.md).
+Ниже сохранён исторический результат на момент BLE1. Полная Desktop suite остаётся
+отдельной незавершённой проверкой.
+
 - Baseline до правок BLE1: библиотека 105/105; полная Core suite — 387 tests,
   8 failures (379 passed). Ошибки очистки SQLite messenger.db при открытых Windows
   handles, reset/close localhost TCP fixture и timing cancellation SQLite search.

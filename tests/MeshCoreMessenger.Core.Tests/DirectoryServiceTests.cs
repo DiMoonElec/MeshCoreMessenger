@@ -433,8 +433,13 @@ public sealed partial class DirectoryServiceTests
             var files = new[] { Path.Combine(RootDirectory, "messenger.db"), Path.Combine(RootDirectory, "messenger.db-wal") };
             foreach (var file in files.Where(File.Exists))
             {
-                var bytes = await File.ReadAllBytesAsync(file, CancellationToken);
-                if (bytes.AsSpan().IndexOf(sequence) >= 0)
+                // SQLite keeps its writer open; File.ReadAllBytes uses a sharing mode that
+                // conflicts with that handle on Windows, even after all writes have completed.
+                await using var stream = new FileStream(file, FileMode.Open, FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete);
+                using var snapshot = new MemoryStream();
+                await stream.CopyToAsync(snapshot, CancellationToken);
+                if (snapshot.GetBuffer().AsSpan(0, checked((int)snapshot.Length)).IndexOf(sequence) >= 0)
                 {
                     return true;
                 }
@@ -449,7 +454,12 @@ public sealed partial class DirectoryServiceTests
             try { System.IO.Directory.Delete(RootDirectory, recursive: true); } catch (DirectoryNotFoundException) { }
         }
 
-        private SqliteConnection OpenReadOnly() => new($"Data Source={Path.Combine(RootDirectory, "messenger.db")};Mode=ReadOnly");
+        private SqliteConnection OpenReadOnly() => new(new SqliteConnectionStringBuilder
+        {
+            DataSource = Path.Combine(RootDirectory, "messenger.db"),
+            Mode = SqliteOpenMode.ReadOnly,
+            Pooling = false,
+        }.ToString());
     }
 
     private sealed record TestPaths(string DataDirectory) : IAppPaths

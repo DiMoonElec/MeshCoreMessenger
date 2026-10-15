@@ -5,6 +5,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal sealed class DatabaseReader(string databasePath)
 {
+    private const int CancellationProgressInterval = 1_000;
     private readonly string _databasePath = Path.GetFullPath(databasePath);
 
     public Task<T> ExecuteAsync<T>(Func<SqliteConnection, T> action, CancellationToken cancellationToken = default)
@@ -23,9 +24,18 @@ internal sealed class DatabaseReader(string databasePath)
                     raw.sqlite3_interrupt(activeConnection.Handle);
                 },
                 connection);
+            // sqlite3_interrupt is a no-op between statements. A progress callback also
+            // observes cancellation requested just before sqlite3_prepare/step starts.
+            if (cancellationToken.CanBeCanceled)
+                raw.sqlite3_progress_handler(connection.Handle, CancellationProgressInterval,
+                    static state => ((CancellationToken)state).IsCancellationRequested ? 1 : 0,
+                    cancellationToken);
             try
             {
-                return action(connection);
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = action(connection);
+                cancellationToken.ThrowIfCancellationRequested();
+                return result;
             }
             catch (SqliteException exception) when (cancellationToken.IsCancellationRequested)
             {
@@ -33,6 +43,11 @@ internal sealed class DatabaseReader(string databasePath)
                     "The SQLite read was cancelled.",
                     exception,
                     cancellationToken);
+            }
+            finally
+            {
+                if (cancellationToken.CanBeCanceled)
+                    raw.sqlite3_progress_handler(connection.Handle, 0, null, null);
             }
         }, cancellationToken);
     }

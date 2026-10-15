@@ -75,7 +75,12 @@ public sealed partial class SessionCommandGatewayTests
         var request = RouteRequest(f);
         if (failSql)
         {
-            using var connection = new SqliteConnection($"Data Source={f.Paths.DatabasePath}"); connection.Open();
+            using var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = f.Paths.DatabasePath,
+                Pooling = false,
+            }.ToString());
+            connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = "CREATE TRIGGER FailRoute BEFORE UPDATE OF OutPathLength ON Contacts BEGIN SELECT RAISE(ABORT, 'route failure'); END;";
             command.ExecuteNonQuery();

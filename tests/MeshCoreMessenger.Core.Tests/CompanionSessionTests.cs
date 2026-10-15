@@ -485,7 +485,12 @@ public sealed class CompanionSessionTests
         {
             var ids = new List<Guid>();
             var database = Path.Combine(_directory, "messenger.db");
-            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={database};Mode=ReadOnly");
+            await using var connection = new Microsoft.Data.Sqlite.SqliteConnection(new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder
+            {
+                DataSource = database,
+                Mode = Microsoft.Data.Sqlite.SqliteOpenMode.ReadOnly,
+                Pooling = false,
+            }.ToString());
             await connection.OpenAsync(CancellationToken);
             await using var command = connection.CreateCommand();
             command.CommandText = "SELECT Id FROM Sessions ORDER BY StartedUtc;";

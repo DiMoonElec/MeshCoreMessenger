@@ -87,6 +87,12 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             byte[] command;
             try { command = await ReadFrameAsync(stream, 0x3C); }
             catch (EndOfStreamException) { return; }
+            catch (IOException error) when (error.InnerException is SocketException
+                { SocketErrorCode: SocketError.ConnectionReset or SocketError.ConnectionAborted or SocketError.OperationAborted })
+            {
+                // A peer shutting down with unread push/response data can send RST instead of EOF.
+                return;
+            }
             if (command.Length == 0) throw new InvalidDataException("Empty command.");
             var type = (CommandType)command[0];
 

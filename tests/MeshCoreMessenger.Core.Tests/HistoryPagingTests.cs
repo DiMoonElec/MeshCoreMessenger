@@ -222,16 +222,17 @@ public sealed class HistoryPagingTests
         using var cancellation = new CancellationTokenSource();
         var query = reader.ExecuteAsync(connection =>
         {
+            // Signal from inside sqlite3_step, not just before ExecuteScalar starts.
+            connection.CreateFunction("signal_read_started", () => { started.TrySetResult(); return 0; });
             using var command = connection.CreateCommand();
             command.CommandText = """
                 WITH RECURSIVE values_to_scan(value) AS (
-                    VALUES(0)
+                    VALUES(signal_read_started())
                     UNION ALL
                     SELECT value + 1 FROM values_to_scan WHERE value < 100000000
                 )
                 SELECT sum(value) FROM values_to_scan;
                 """;
-            started.TrySetResult();
             return command.ExecuteScalar();
         }, cancellation.Token);
 
@@ -239,6 +240,60 @@ public sealed class HistoryPagingTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query);
+    }
+
+    [Fact]
+    public async Task CancellationBeforeSqliteStartsStillInterruptsTheQuery()
+    {
+        await using var context = await HistoryContext.CreateAsync(1);
+        var reader = new DatabaseReader(context.DatabasePath);
+        using var cancellation = new CancellationTokenSource();
+        var rows = 0;
+        var query = reader.ExecuteAsync(connection =>
+        {
+            connection.CreateFunction("count_row", (int value) => { rows++; return value; });
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH RECURSIVE values_to_scan(value) AS (
+                    VALUES(0)
+                    UNION ALL
+                    SELECT value + 1 FROM values_to_scan WHERE value < 100000
+                )
+                SELECT sum(count_row(value)) FROM values_to_scan;
+                """;
+            // Deterministically hit the gap: no statement is running when interrupt is called.
+            cancellation.Cancel();
+            return command.ExecuteScalar();
+        }, cancellation.Token);
+
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query);
+        Assert.Equal(cancellation.Token, error.CancellationToken);
+        // A token check after a fully completed query alone would not fix the responsiveness bug.
+        Assert.True(rows < 100000, $"Cancelled query scanned {rows} rows.");
+        Assert.Equal(42L, await reader.ExecuteAsync(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 42;";
+            return (long)command.ExecuteScalar()!;
+        }, CancellationToken));
+    }
+
+    [Fact]
+    public async Task CancellationAfterLastSqlStatementDoesNotReturnAStaleResult()
+    {
+        await using var context = await HistoryContext.CreateAsync(1);
+        var reader = new DatabaseReader(context.DatabasePath);
+        using var cancellation = new CancellationTokenSource();
+        var query = reader.ExecuteAsync(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT 42;";
+            var result = command.ExecuteScalar();
+            cancellation.Cancel();
+            return result;
+        }, cancellation.Token);
+        var error = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => query);
+        Assert.Equal(cancellation.Token, error.CancellationToken);
     }
 
     private static int[] Numbers(HistoryMessagePage page) =>
