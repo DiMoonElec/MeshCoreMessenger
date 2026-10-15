@@ -2,7 +2,7 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: запланирован 15.10.2026; реализация не начата.**
+**Статус: реализован 15.10.2026; Windows и portable проверки пройдены.**
 
 **Цель:** Задать небольшой тестируемый каркас без реального подключения.
 
@@ -30,11 +30,83 @@
 
 **Ручная проверка:** Не требуется.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; фактические результаты записаны ниже.
-- [ ] Статус подэтапа, checklist Stage BLE и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; фактические результаты записаны ниже.
+- [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
 
-Пока отсутствует. При выполнении записать дату, изменения, команды и результаты
-проверок, оставшиеся ограничения. Не заменять реальные результаты планом.
+15.10.2026: перед началом BLE2 изменения BLE1 проверены в staged diff и закоммичены
+в `f0719fe`. Пользователь сообщил о подготовленной BT-ноде; аппаратные действия
+для BLE2 не нужны и не выполнялись. BLE3 и следующие подэтапы не начаты.
+
+### Изменения
+
+- `Transport/Ble/BleMeshCoreTransportOptions`: opaque DeviceId, конечный положительный
+  OpenTimeout (15 с default), ReceiveQueueCapacity (256 default), MaximumFrameSize
+  (protocol baseline 176 bytes). Внутренняя валидация используется при создании
+  connection attempt; пустой ID, бесконечный/слишком большой timeout и недопустимые
+  лимиты отвергаются. ID не нормализуется как MAC или имя.
+- `BleDeviceInfo` — public portable DTO кандидата с отдельным ID/display name,
+  признаками paired и advertised service. Это не проверенная Companion identity.
+- `BleGattProfile` содержит NUS service/RX/TX UUID и ATT value overhead в одном месте.
+- `IBleBackend` и `IBleGattSession` — internal portable seam: bounded discovery,
+  open, capabilities, MTU и его изменения, notifications/disconnect, CCCD enable/disable,
+  запись полного logical frame через WriteWithResponse и асинхронное освобождение.
+  WinRT-типов в сигнатурах нет. Отмена ожидания не означает завершение native I/O;
+  backend освобождает частично открытые ресурсы при failure, успешный open передаёт
+  владение вызывающему даже при запоздалом результате.
+- `MeshCoreBleTransportException` содержит typed Reason, nullable NativeHResult,
+  NativeStatus/ProtocolError и InnerException. NativeHResult также переносится в
+  стандартное HResult. PIN/секреты не являются полями DTO/исключения; будущий backend
+  обязан не включать их в сообщения. Причины включают unsupported, adapter unavailable,
+  pairing/access, missing service/characteristic, insufficient MTU, unreachable и
+  transport failure. Для наследования снят sealed с MeshCoreTransportException;
+  nullable InnerException разрешён в двух базовых конструкторах, как в System.Exception.
+  Существующий catch MeshCoreTransportException принимает BLE-ошибку.
+- `BleConnectionAttempt` — internal учёт владения одной generation с состояниями
+  Closed/Opening/Ready/Closing/Faulted. Повторный open требует новый экземпляр.
+  Ready разрешён только явным переходом после будущей проверки CCCD; этот каркас
+  сам не выполняет GATT. Close/Dispose используют одну cleanup Task и освобождают
+  принятую сессию один раз. Запоздалый open результат отвергается и освобождается;
+  ошибку cleanup можно наблюдать в Task, terminal state — Faulted.
+- `tests/MeshCoreSharp.Tests/FakeBleBackend.cs`: управляемые pending operations
+  discovery/open/subscribe/unsubscribe/write/dispose с RunContinuationsAsynchronously,
+  сохранёнными CancellationToken, явным complete/fail/cancel и channels для ожидания
+  начала операции. События notification/MTU/disconnect и сохранённые delegates
+  позволяют воспроизвести callback после отписки. Fake находится только в tests.
+- Семь BLE contract tests включены в существующий console harness через Program.cs.
+
+### Проверки
+
+Команды выполнены из корня на Windows, SDK 10.0.401:
+
+| Команда / проверка | Результат |
+| --- | --- |
+| `dotnet build MeshCoreSharp.sln -c Release --no-restore` | Оба library targets и Windows consumers; 0 warnings/errors |
+| `dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-build` | **114/114**, включая семь новых BLE сценариев и Windows API smoke |
+| `dotnet restore MeshCoreSharp.sln -p:McmWindowsDesktop=false --locked-mode` | Успешно |
+| `dotnet build MeshCoreSharp.sln -c Release -p:McmWindowsDesktop=false --no-restore` | Portable consumers; 0 warnings/errors |
+| `dotnet run --project tests/MeshCoreSharp.Tests -c Release -p:McmWindowsDesktop=false --no-build` | **113/113**, те же BLE контракты без WinRT |
+| `dotnet restore MeshCoreSharp.sln --locked-mode` после portable проверки | Успешно; восстановлен Windows graph |
+| Portable library deps.json | Нет WinRT/Windows SDK/WindowsAppSDK dependency |
+| `git diff --check` | Успешно |
+
+Проверены: validation/границы, native diagnostics, открытия двух endpoints с обратным
+порядком завершения, одинаковые имена разных устройств, отмена discovery, notification
+до завершения CCCD, копирование payload fake write, write после cancellation,
+MTU/disconnect, callback после dispose, pending cleanup/повторный close, cleanup failure,
+поздний успешный open после отмены ожидания и изоляция следующей generation.
+Тесты задают порядок через pending tasks/channels, без Thread.Sleep/таймерных задержек.
+Локальные логи: artifacts/ble2/library-windows.log и library-portable.log (не в Git).
+
+### Границы и оставшееся
+
+Реального Windows backend/сканирования, IMeshCoreTransport реализации и production DI
+пока нет. State/ownership каркас не управляет очередью RX, подпиской, deadline или
+конкурирующими native writes: эта интеграция и безопасное закрытие active I/O остаются
+в BLE4–BLE7. Полные Core/Desktop suites повторно не запускались: runtime, БД и UI
+не менялись; известные ограничения их Windows прогонов остаются в отчёте BLE1.
+Сборка всех их проектов прошла. Native macOS и аппаратный BLE обмен не проверялись.
+Следующий подэтап — **BLE3**, поиск устройств Windows; подготовленная нода пригодится
+для проверки scan и последующего BLE8 probe.

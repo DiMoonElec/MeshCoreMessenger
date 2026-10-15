@@ -3,10 +3,12 @@
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
-**Статус: BLE1 реализован 15.10.2026; BLE2–BLE18 не начаты.** Кодовое имя ветки — **BLE**.
+**Статус: BLE1 и BLE2 реализованы 15.10.2026; BLE3–BLE18 не начаты.** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
-tests 107/107 и 106/106. Полные Core/Desktop suites имеют Windows failures/незавершённый
-прогон; детали и команды — в [BLE1](ble1-build.md). Следующий подэтап — BLE2.
+tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
+незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)
+добавлены portable контракты/ошибки, учёт владения generation и fake backend;
+библиотечные tests 114/114 Windows и 113/113 portable. Следующий подэтап — BLE3.
 Это самостоятельная ветка, не перенумеровывающая A–F, UI, P и S.
 Выполнять только запрошенный подэтап и необходимые незавершённые зависимости;
 создание плана само по себе не запускает реализацию или аппаратные передачи.
@@ -144,7 +146,7 @@ provider лишь создаёт её public transport. Общий MeshCoreClien
 ## Контроль завершения
 
 - [x] [BLE1 — Сборка Windows и сохранение portable target](ble1-build.md).
-- [ ] [BLE2 — Контракты BLE и управляемый fake backend](ble2-contracts.md).
+- [x] [BLE2 — Контракты BLE и управляемый fake backend](ble2-contracts.md).
 - [ ] [BLE3 — Поиск BLE-устройств Windows](ble3-discovery.md).
 - [ ] [BLE4 — Открытие GATT и проверка характеристик](ble4-gatt-open.md).
 - [ ] [BLE5 — Подписка и непрерывный приём кадров](ble5-receive.md).

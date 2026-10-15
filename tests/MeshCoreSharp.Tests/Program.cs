@@ -98,7 +98,7 @@ var failed = 0;
 var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat(ChannelStatsTests.Cases)
     .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).Concat(ContactMutationTests.Cases)
     .Concat(EventBarrierTests.Cases).Concat(TextValidationTests.Cases)
-    .Concat(BuildTargetTests.Cases).ToArray();
+    .Concat(BuildTargetTests.Cases).Concat(BleContractTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try

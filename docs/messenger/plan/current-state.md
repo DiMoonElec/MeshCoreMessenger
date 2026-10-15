@@ -1,3 +1,14 @@
+15.10.2026: изменения BLE1 закоммичены в `f0719fe`, затем выполнен
+[BLE2](ble2-contracts.md): portable options/device DTO, typed BLE ошибки с native
+диагностикой, internal GATT backend/session контракты и учёт владения одной generation.
+Управляемый fake backend в tests воспроизводит discovery/open/CCCD/write, MTU,
+disconnect и запоздалые результаты. Семь новых сценариев включены в harness:
+Library **114/114 Windows**, **113/113 portable**; обе Release solution builds и
+locked restore успешны, 0 warnings/errors. Production DI/runtime/UI/БД не менялись;
+полные Core/Desktop suites не повторялись, ограничения BLE1 сохраняются.
+Пользователь сообщил о подготовленной BT-ноде; аппаратных действий в BLE2 не было.
+**Следующий подэтап — BLE3.**
+
 15.10.2026: план BLE и global.json закоммичены в `f0dfa32`, затем выполнен
 [BLE1](ble1-build.md): одна MeshCoreSharp.dll с portable/Windows target assets,
 Core остаётся net10.0, Desktop выбирает Windows asset. Подготовлены Windows targets
