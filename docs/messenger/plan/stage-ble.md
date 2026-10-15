@@ -3,12 +3,14 @@
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
-**Статус: BLE1 и BLE2 реализованы 15.10.2026; BLE3–BLE18 не начаты.** Кодовое имя ветки — **BLE**.
+**Статус: BLE1–BLE3 реализованы 15.10.2026; BLE4–BLE18 не начаты.** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
 незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)
 добавлены portable контракты/ошибки, учёт владения generation и fake backend;
-библиотечные tests 114/114 Windows и 113/113 portable. Следующий подэтап — BLE3.
+библиотечные tests 114/114 Windows и 113/113 portable. В [BLE3](ble3-discovery.md)
+реализован standalone Windows scan: library tests 122/122 и 121/121 portable,
+native поиск обнаружил один NUS-кандидат без GATT/pairing. Следующий подэтап — BLE4.
 После BLE2 восемь Core failures [разобраны и исправлены](../../testing/windows-core-suite.md):
 Core 389/389. Полная Desktop suite остаётся незавершённой; исторические результаты
 BLE1/BLE2 в их отчётах сохранены.
@@ -150,7 +152,7 @@ provider лишь создаёт её public transport. Общий MeshCoreClien
 
 - [x] [BLE1 — Сборка Windows и сохранение portable target](ble1-build.md).
 - [x] [BLE2 — Контракты BLE и управляемый fake backend](ble2-contracts.md).
-- [ ] [BLE3 — Поиск BLE-устройств Windows](ble3-discovery.md).
+- [x] [BLE3 — Поиск BLE-устройств Windows](ble3-discovery.md).
 - [ ] [BLE4 — Открытие GATT и проверка характеристик](ble4-gatt-open.md).
 - [ ] [BLE5 — Подписка и непрерывный приём кадров](ble5-receive.md).
 - [ ] [BLE6 — Передача целого Companion-кадра](ble6-send.md).

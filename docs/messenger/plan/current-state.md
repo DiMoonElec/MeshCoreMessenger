@@ -1,3 +1,14 @@
+15.10.2026: по запросу пользователя созданы отдельные коммиты `708de12` (BLE2) и
+`24f1c19` (Windows Core/SQLite fixes), затем выполнен [BLE3](ble3-discovery.md).
+Добавлены standalone discovery API, Windows active advertisement scan и typed-address
+resolving через DeviceWatcher, сохранение offline/paired candidates, deadline/cancel
+cleanup и --list-ble в Console sample. Library **122/122 Windows**, **121/121 portable**;
+обе Release solution builds и locked restore успешны, 0 warnings/errors.
+Native scan повторно нашёл MeshCore-RnD CatCore🐈 (NUS=true, paired=false) с Windows ID;
+GATT/pairing/Companion/RF-команды не выполнялись. [Отчёт BLE3](../../testing/ble3-discovery.md).
+Core/Desktop runtime и БД в BLE3 не менялись; отдельное ограничение Desktop suite
+остаётся. **Следующий подэтап — BLE4**. Изменения BLE3 пока в рабочем дереве.
+
 15.10.2026: по запросу пользователя [разобраны восемь ошибок Core на Windows](../../testing/windows-core-suite.md).
 Baseline 387/8 failed воспроизведён. Исправлены pooling/sharing mode вспомогательных
 SQLite connections в тестах, ожидаемый TCP abort эмулятора и реальная гонка отмены

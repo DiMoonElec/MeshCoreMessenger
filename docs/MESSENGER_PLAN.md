@@ -2,7 +2,7 @@
 
 - [Как читать документацию](README.md) — выбор минимального набора разделов для задачи.
 - [current-state](messenger/plan/current-state.md) — Текущий статус, checkpoint и исходная актуализация.
-- [stage-ble](messenger/plan/stage-ble.md) — самостоятельный этап BLE: Windows GATT через .NET; BLE1–BLE2 реализованы, BLE3–BLE18 не начаты.
+- [stage-ble](messenger/plan/stage-ble.md) — самостоятельный этап BLE: Windows GATT через .NET; BLE1–BLE3 реализованы, BLE4–BLE18 не начаты.
 - [stage-a](messenger/plan/stage-a.md) — Выполненный фундамент A1–A4: bootstrap, SQLite, barriers, offline startup.
 - [stage-b](messenger/plan/stage-b.md) — Границы, порядок и зависимости Stage B.
 - [b1-profiles](messenger/plan/b1-profiles.md) — B1: профили и transport/platform adapters.

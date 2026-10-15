@@ -3,6 +3,42 @@ using MeshCoreSharp.Models;
 using MeshCoreSharp.Transport;
 using MeshCoreSharp.Transport.Serial;
 using MeshCoreSharp.Transport.Tcp;
+using MeshCoreSharp.Transport.Ble;
+using MeshCoreSharp.Exceptions;
+
+if (args.Length >= 1 && args[0] == "--list-ble")
+{
+    var seconds = 5;
+    if (args.Length > 2 || (args.Length == 2 && (!int.TryParse(args[1], out seconds) || seconds is < 1 or > 60)))
+    {
+        Console.Error.WriteLine("Usage: --list-ble [seconds=5, range 1..60]");
+        return 2;
+    }
+    using var cancellation = new CancellationTokenSource();
+    ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+    Console.CancelKeyPress += cancel;
+    try
+    {
+        var devices = await new BleDeviceDiscovery().FindAsync(new()
+        {
+            ScanDuration = TimeSpan.FromSeconds(seconds),
+        }, cancellation.Token);
+        Console.WriteLine($"BLE candidates: {devices.Count} (unverified; no GATT connection opened)");
+        foreach (var device in devices)
+        {
+            Console.WriteLine($"{device.Name ?? "(unnamed)"} | paired={device.IsPaired} | NUS={device.AdvertisesCompanionService}");
+            Console.WriteLine($"  {device.DeviceId}");
+        }
+        return 0;
+    }
+    catch (MeshCoreBleTransportException error)
+    {
+        Console.Error.WriteLine($"BLE discovery: {error.Reason}: {error.Message}");
+        return 1;
+    }
+    catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 130; }
+    finally { Console.CancelKeyPress -= cancel; }
+}
 
 if (args.Length == 1 && args[0] == "--list-ports")
 {
@@ -43,6 +79,7 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- <host> <port> [observeSeconds]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --serial <portName> [baudRate] [observeSeconds]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --list-ports");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --list-ble [seconds=5]");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");
