@@ -41,6 +41,7 @@ checkpoints описывают результаты на свою дату, а �
 
 | Задача | Дополнительные разделы |
 | --- | --- |
+| BLE-транспорт и BLE-профили | [Stage BLE](messenger/plan/stage-ble.md), затем один выбранный BLE1–BLE18 и результаты зависимостей; для wire — layers/runtime/framing, для application — connections/identity/shutdown |
 | Shell, стили, новые UI-компоненты | [UI-план](messenger/plan/ui-components.md), [node-scoped UI](messenger/architecture/node-scoped-ui.md), [владельцы компонентов](messenger/ui-analysis/components.md), [риски UI](messenger/ui-analysis/risks.md) |
 | История, scroll, unread | [C4 position API](messenger/plan/c4-history-api.md), [C5 viewport](messenger/plan/c5-history-window.md), [C6 unread](messenger/plan/c6-unread.md); выбрать затрагиваемую часть |
 | Search/draft/preferences | [C7 search](messenger/plan/c7-search.md), [C8 draft](messenger/plan/c8-drafts.md), [C9 preferences](messenger/plan/c9-preferences.md), [durable UI-записи](messenger/architecture/ui-and-local-writes.md); выбрать нужный этап |

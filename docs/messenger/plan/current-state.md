@@ -1,3 +1,14 @@
+15.10.2026: по запросу пользователя подготовлен самостоятельный [этап BLE](stage-ble.md)
+из 18 небольших подэтапов: Windows WinRT/GATT в единственной MeshCoreSharp.dll,
+тестируемый транспорт, аппаратный probe, профили/миграция, DI/supervisor, UI и приёмка.
+**Реализация BLE не начата.** Рекомендуемое начало — BLE1; каждый подэтап выполняется
+по отдельному заданию с проверкой зависимостей. Windows адаптер Realtek и LE enumerator
+обнаружены со статусом OK; соединение с BLE-нодой ещё не проверялось.
+Пользователь подтвердил намеренное изменение global.json для Windows:
+10.0.301 / rollForward=latestFeature / allowPrerelease=false; сохранить эту политику,
+не возвращать latestPatch по старым checkpoint. На ноутбуке выбран SDK 10.0.401.
+При подготовке плана production-код, схема БД и global.json агентом не менялись.
+
 08.10.2026: добавлен `tools/publish-windows.ps1` для Release self-contained
 portable directory/ZIP (win-x64 по умолчанию, опционально win-arm64).
 Trimming/single-file выключены; ошибки publish останавливают упаковку,
