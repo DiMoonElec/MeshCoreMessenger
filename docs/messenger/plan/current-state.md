@@ -1,3 +1,15 @@
+15.10.2026: план BLE и global.json закоммичены в `f0dfa32`, затем выполнен
+[BLE1](ble1-build.md): одна MeshCoreSharp.dll с portable/Windows target assets,
+Core остаётся net10.0, Desktop выбирает Windows asset. Подготовлены Windows targets
+sample/tests, отдельные Windows locks; исправлен baseline PNG Content конфликт
+Windows App SDK с Avalonia. Windows/portable Release и locked restore успешны;
+Windows self-contained publish содержит одну правильную DLL. Library 107/107
+Windows и 106/106 portable; profile tests Core 13/13, Desktop 8/8; sample self-test
+и оба Desktop tools build успешны. Полные suites не зелёные: Core baseline до правок
+имел 8 failures из 387; Desktop получил SQLite cleanup failure и не завершился
+за 2 мин 32 с, процесс остановлен. Подробности и ограничения — в BLE1.
+Native macOS и BLE hardware не проверялись; **следующий подэтап — BLE2**.
+
 15.10.2026: по запросу пользователя подготовлен самостоятельный [этап BLE](stage-ble.md)
 из 18 небольших подэтапов: Windows WinRT/GATT в единственной MeshCoreSharp.dll,
 тестируемый транспорт, аппаратный probe, профили/миграция, DI/supervisor, UI и приёмка.

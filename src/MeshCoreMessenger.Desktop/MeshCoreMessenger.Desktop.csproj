@@ -31,6 +31,8 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../MeshCoreMessenger.Core/MeshCoreMessenger.Core.csproj" />
+    <!-- Core stays portable; Desktop selects the native Windows library asset. -->
+    <ProjectReference Include="../MeshCoreSharp/MeshCoreSharp.csproj" Condition="'$(McmWindowsDesktop)' == 'true'" />
   </ItemGroup>
   <PropertyGroup>
     <McmNativeArch Condition="'$(RuntimeIdentifier)' == 'osx-x64' Or ('$(RuntimeIdentifier)' == '' And '$(NETCoreSdkRuntimeIdentifier)' == 'osx-x64')">x86_64</McmNativeArch>

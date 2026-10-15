@@ -5,11 +5,17 @@
     <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
     <RestoreLockedMode Condition="'$(CI)' == 'true'">true</RestoreLockedMode>
   </PropertyGroup>
+  <!-- Console consumers select a Windows target on Windows, keeping portable locks intact. -->
+  <PropertyGroup Condition="'$(McmWindowsDesktop)' == 'true' And ('$(MSBuildProjectName)' == 'MeshCoreSharp.Console' Or '$(MSBuildProjectName)' == 'MeshCoreSharp.Tests')">
+    <NuGetLockFilePath>packages.windows.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
   <!-- Native notification runtime is only part of desktop executable projects. -->
   <PropertyGroup Condition="'$(McmWindowsDesktop)' == 'true' And ('$(MSBuildProjectName)' == 'MeshCoreMessenger.Desktop' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.Desktop.Tests' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.ViewportAudit' Or '$(MSBuildProjectName)' == 'MeshCoreMessenger.SendUiPreview')">
     <NuGetLockFilePath>packages.windows.lock.json</NuGetLockFilePath>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <!-- Avalonia embeds images; Windows App SDK must not publish them as loose Content. -->
+    <EnableDefaultWindowsAppSdkContentItems>false</EnableDefaultWindowsAppSdkContentItems>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == '' And '$(NETCoreSdkRuntimeIdentifier)' == 'win-arm64'">win-arm64</RuntimeIdentifier>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
   </PropertyGroup>
