@@ -2,7 +2,7 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: запланирован 15.10.2026; реализация не начата.**
+**Статус: реализован 16.10.2026.**
 
 **Цель:** Превратить notifications в ReceiveAsync без блокировки callbacks.
 
@@ -30,11 +30,41 @@
 
 **Ручная проверка:** Не требуется до BLE8.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; фактические результаты записаны ниже.
-- [ ] Статус подэтапа, checklist Stage BLE и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; фактические результаты записаны ниже.
+- [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
 
-Пока отсутствует. При выполнении записать дату, изменения, команды и результаты
-проверок, оставшиеся ограничения. Не заменять реальные результаты планом.
+16.10.2026: добавлен internal `BleReceiveSession` поверх подготовленной BLE4 generation.
+Очередь bounded, callbacks зарегистрированы до CCCD; Ready выставляется только после
+успешной подписки и повторной проверки link/MTU. Notifications копируются и передаются
+в порядке входа без stream framing. Channel запрещает synchronous continuations:
+consumer не запускается внутри GATT callback. Неизвестный код сохраняется как есть.
+Пустое/слишком большое значение терминально диагностируется через InvalidFrame;
+переполнение — через ReceiveQueueOverflow. Отмена отдельного ReceiveAsync не закрывает
+соединение. Закрытая generation игнорирует сохранённые старые callbacks.
+
+В Windows connection реализованы `IBleGattNotifications`, ValueChanged и CCCD Notify
+через WriteClientCharacteristicConfigurationDescriptorWithResultAsync с проверкой
+native status/protocol error. Native I/O не бросается на полпути при отмене caller wait:
+освобождение services/device ждёт окончания операции, cleanup наблюдается отдельно.
+На GATT callback native cleanup не выполняется. Полный lifecycle, bounded best-effort
+CCCD disable и повторный Connect одного transport остаются BLE7.
+Public transport и SendAsync добавляются в BLE6; production DI не менялся.
+
+| Проверка | Результат |
+| --- | --- |
+| `dotnet build MeshCoreSharp.sln -c Release --no-restore` | 0 warnings/errors |
+| `dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-build` | **143/143** |
+| `dotnet restore MeshCoreSharp.sln -p:McmWindowsDesktop=false --locked-mode` | Успешно |
+| `dotnet build MeshCoreSharp.sln -c Release -p:McmWindowsDesktop=false --no-restore` | 0 warnings/errors |
+| `dotnet run --project tests/MeshCoreSharp.Tests -c Release -p:McmWindowsDesktop=false --no-build` | **141/141** |
+
+Восемь новых cases: первый notification до CCCD completion, порядок/копирование/unknown,
+overflow, invalid lengths, отмена reader, отказ/отмена/поздний успех подписки,
+disconnect/MTU drop и старая generation. Реальный GATT и native macOS не проверялись;
+ручная проверка не требуется до BLE8. Core/DB/runtime и полные Core/Desktop suites
+не затрагивались; известное ограничение Desktop suite сохраняется.
+
+Источник Windows API: [Microsoft GATT client](https://learn.microsoft.com/en-us/windows/apps/develop/devices-sensors/gatt-client).

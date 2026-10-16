@@ -1,3 +1,11 @@
+16.10.2026: после коммита BLE4 `0b4dc53` выполнен [BLE5](ble5-receive.md):
+CCCD Notify, bounded receive queue, Ready после подписки, копирование/порядок кадров,
+явные overflow/invalid-frame ошибки и изоляция старой generation. Windows library
+**143/143**, portable **141/141**, обе Release solution builds без warnings/errors.
+Аппаратный GATT не проверялся (BLE8); production DI не изменён. Следующий подэтап —
+**BLE6**, пользователь разрешил автоматический переход, commit/push между этапами;
+BLE7 в текущий запрос не входит.
+
 15.10.2026: пользователь подтвердил обнаруженную ноду BLE3; изменения закоммичены
 в `d18d548`, затем выполнен [BLE4](ble4-gatt-open.md). Подготовлены Windows uncached
 GATT discovery NUS/RX/TX, проверка capabilities/MTU >=179, один open deadline,

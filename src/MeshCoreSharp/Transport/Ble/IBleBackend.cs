@@ -21,7 +21,7 @@ internal interface IBleGattConnection : IAsyncDisposable
     event Action<ushort>? MaxPduSizeChanged;
 }
 
-internal interface IBleGattSession : IBleGattConnection
+internal interface IBleGattNotifications : IBleGattConnection
 {
 
     // Notifications may arrive while enabling CCCD. The receiver must subscribe first.
@@ -30,6 +30,10 @@ internal interface IBleGattSession : IBleGattConnection
 
     Task EnableNotificationsAsync(CancellationToken cancellationToken);
     Task DisableNotificationsAsync(CancellationToken cancellationToken);
+}
+
+internal interface IBleGattSession : IBleGattNotifications
+{
     // One complete logical frame, WriteWithResponse. GATT success is not a Companion/mesh ACK.
     Task WriteAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken);
 

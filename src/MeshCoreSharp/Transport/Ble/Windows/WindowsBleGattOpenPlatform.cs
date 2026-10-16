@@ -3,6 +3,7 @@ using MeshCoreSharp.Exceptions;
 using global::Windows.Devices.Bluetooth;
 using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
 using global::Windows.Devices.Enumeration;
+using global::Windows.Storage.Streams;
 
 namespace MeshCoreSharp.Transport.Ble.Windows;
 
@@ -70,9 +71,12 @@ internal static class WindowsBleGattErrors
         "Windows BLE device access failed.", error, nativeHResult: error.HResult);
 }
 
-// Preparation only. Notification subscription/write operations are added in BLE5/BLE6, not stubbed here.
-internal sealed class WindowsBleGattConnection : IBleGattConnection
+internal sealed class WindowsBleGattConnection : IBleGattNotifications
 {
+    private readonly SemaphoreSlim _ioGate = new(1, 1);
+    private readonly object _disposeSync = new();
+    private Task? _disposal;
+    private bool _notificationHandlerAttached;
     private readonly BluetoothLEDevice _device;
     private readonly List<GattDeviceService> _services = [];
     private GattSession? _session;
@@ -97,6 +101,56 @@ internal sealed class WindowsBleGattConnection : IBleGattConnection
         && Volatile.Read(ref _disconnected) == 0 && Volatile.Read(ref _linkConnected) != 0;
     public event Action<Exception?>? Disconnected;
     public event Action<ushort>? MaxPduSizeChanged;
+    public event Action<ReadOnlyMemory<byte>>? NotificationReceived;
+
+    public Task EnableNotificationsAsync(CancellationToken cancellationToken) =>
+        SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue.Notify, cancellationToken);
+
+    public Task DisableNotificationsAsync(CancellationToken cancellationToken) =>
+        SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue.None, cancellationToken);
+
+    private async Task SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue value,
+        CancellationToken cancellationToken)
+    {
+        await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            var characteristic = SendToApp ?? throw new InvalidOperationException("NUS TX was not discovered.");
+            if (!_notificationHandlerAttached)
+            {
+                characteristic.ValueChanged += OnValueChanged;
+                _notificationHandlerAttached = true;
+            }
+            // Do not abandon native I/O on caller cancellation or dispose its services underneath it.
+            var result = await characteristic.WriteClientCharacteristicConfigurationDescriptorWithResultAsync(value)
+                .AsTask().ConfigureAwait(false);
+            CheckStatus(result.Status, result.ProtocolError);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (Exception error) when (error is COMException or UnauthorizedAccessException)
+        {
+            throw WindowsBleGattErrors.FromNative(error);
+        }
+        finally { _ioGate.Release(); }
+    }
+
+    private void OnValueChanged(GattCharacteristic sender, GattValueChangedEventArgs args)
+    {
+        if (Volatile.Read(ref _disposed) != 0) return;
+        try
+        {
+            using var reader = DataReader.FromBuffer(args.CharacteristicValue);
+            var bytes = new byte[reader.UnconsumedBufferLength];
+            reader.ReadBytes(bytes);
+            NotificationReceived?.Invoke(bytes);
+        }
+        catch (Exception error) when (error is COMException or ObjectDisposedException)
+        {
+            SignalDisconnect(WindowsBleGattErrors.FromNative(error));
+        }
+    }
 
     internal async Task InitializeAsync(CancellationToken cancellationToken)
     {
@@ -192,7 +246,19 @@ internal sealed class WindowsBleGattConnection : IBleGattConnection
 
     public ValueTask DisposeAsync()
     {
-        if (Interlocked.Exchange(ref _disposed, 1) != 0) return ValueTask.CompletedTask;
+        lock (_disposeSync) return new(_disposal ??= DisposeCoreAsync());
+    }
+
+    private async Task DisposeCoreAsync()
+    {
+        Interlocked.Exchange(ref _disposed, 1);
+        await _ioGate.WaitAsync().ConfigureAwait(false);
+        try { ReleaseResources(); }
+        finally { _ioGate.Release(); }
+    }
+
+    private void ReleaseResources()
+    {
         var errors = new List<Exception>();
         void Release(Action action)
         {
@@ -200,6 +266,8 @@ internal sealed class WindowsBleGattConnection : IBleGattConnection
             catch (Exception error) { errors.Add(error); }
         }
         Release(() => _device.ConnectionStatusChanged -= OnConnectionStatusChanged);
+        if (_notificationHandlerAttached && SendToApp is not null)
+            Release(() => SendToApp.ValueChanged -= OnValueChanged);
         if (_session is not null)
         {
             Release(() => _session.MaxPduSizeChanged -= OnMaxPduSizeChanged);
@@ -212,9 +280,9 @@ internal sealed class WindowsBleGattConnection : IBleGattConnection
         Release(_device.Dispose);
         Disconnected = null;
         MaxPduSizeChanged = null;
+        NotificationReceived = null;
         ReceiveFromApp = null;
         SendToApp = null;
-        if (errors.Count != 0) return ValueTask.FromException(new AggregateException("BLE native cleanup failed.", errors));
-        return ValueTask.CompletedTask;
+        if (errors.Count != 0) throw new AggregateException("BLE native cleanup failed.", errors);
     }
 }

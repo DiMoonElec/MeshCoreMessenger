@@ -13,6 +13,8 @@ public enum MeshCoreBleFailureReason
     TransportFailure,
     RadioOff,
     UnsupportedCharacteristics,
+    ReceiveQueueOverflow,
+    InvalidFrame,
 }
 
 /// <summary>A BLE failure with platform-neutral diagnostics. Never include pairing secrets in the message.</summary>
