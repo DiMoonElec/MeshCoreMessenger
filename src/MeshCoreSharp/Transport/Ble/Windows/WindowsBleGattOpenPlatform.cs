@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.WindowsRuntime;
 using MeshCoreSharp.Exceptions;
 using global::Windows.Devices.Bluetooth;
 using global::Windows.Devices.Bluetooth.GenericAttributeProfile;
@@ -58,7 +59,7 @@ internal static class WindowsBleGattErrors
         };
         throw new MeshCoreBleTransportException(reason, reason == MeshCoreBleFailureReason.PairingRequired
             ? "Pair the selected BLE device in Windows Bluetooth settings before retrying."
-            : "Windows GATT discovery failed.", nativeStatus: (int)status, protocolError: protocolError);
+            : "A Windows GATT operation failed.", nativeStatus: (int)status, protocolError: protocolError);
     }
 
     private static bool RequiresAuthentication(byte? error) =>
@@ -71,7 +72,7 @@ internal static class WindowsBleGattErrors
         "Windows BLE device access failed.", error, nativeHResult: error.HResult);
 }
 
-internal sealed class WindowsBleGattConnection : IBleGattNotifications
+internal sealed class WindowsBleGattConnection : IBleGattSession
 {
     private readonly SemaphoreSlim _ioGate = new(1, 1);
     private readonly object _disposeSync = new();
@@ -108,6 +109,26 @@ internal sealed class WindowsBleGattConnection : IBleGattNotifications
 
     public Task DisableNotificationsAsync(CancellationToken cancellationToken) =>
         SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue.None, cancellationToken);
+
+    public async Task WriteAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
+    {
+        await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            var characteristic = ReceiveFromApp ?? throw new InvalidOperationException("NUS RX was not discovered.");
+            var result = await characteristic.WriteValueWithResultAsync(frame.ToArray().AsBuffer(),
+                GattWriteOption.WriteWithResponse).AsTask().ConfigureAwait(false);
+            CheckStatus(result.Status, result.ProtocolError);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (Exception error) when (error is COMException or UnauthorizedAccessException)
+        {
+            throw WindowsBleGattErrors.FromNative(error);
+        }
+        finally { _ioGate.Release(); }
+    }
 
     private async Task SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue value,
         CancellationToken cancellationToken)

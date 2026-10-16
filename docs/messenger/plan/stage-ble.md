@@ -3,7 +3,7 @@
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
-**Статус: BLE1–BLE5 реализованы; BLE6–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
+**Статус: BLE1–BLE6 реализованы; BLE7–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
 незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)
@@ -14,7 +14,9 @@ native поиск обнаружил один NUS-кандидат без GATT/p
 В [BLE4](ble4-gatt-open.md) подготовлены GATT discovery/MTU, UI access boundary и
 cleanup поздних результатов; tests 135/135 Windows, 133/133 portable. Настоящий GATT
 на ноде ещё не проверялся. В [BLE5](ble5-receive.md) реализованы CCCD Notify и bounded
-RX queue; tests 143/143 Windows, 141/141 portable. Следующий подэтап — BLE6.
+RX queue; tests 143/143 Windows, 141/141 portable. В [BLE6](ble6-send.md) добавлены
+Windows transport и WriteWithResponse, проверен MeshCoreClient через fake BLE:
+tests 152/152 Windows и 150/150 portable. BLE7 не начат по границе текущего запроса.
 После BLE2 восемь Core failures [разобраны и исправлены](../../testing/windows-core-suite.md):
 Core 389/389. Полная Desktop suite остаётся незавершённой; исторические результаты
 BLE1/BLE2 в их отчётах сохранены.
@@ -159,7 +161,7 @@ provider лишь создаёт её public transport. Общий MeshCoreClien
 - [x] [BLE3 — Поиск BLE-устройств Windows](ble3-discovery.md).
 - [x] [BLE4 — Открытие GATT и проверка характеристик](ble4-gatt-open.md).
 - [x] [BLE5 — Подписка и непрерывный приём кадров](ble5-receive.md).
-- [ ] [BLE6 — Передача целого Companion-кадра](ble6-send.md).
+- [x] [BLE6 — Передача целого Companion-кадра](ble6-send.md).
 - [ ] [BLE7 — Разрыв, отмена и освобождение BLE-сессии](ble7-lifecycle.md).
 - [ ] [BLE8 — Проверка транспорта на выделенной ноде](ble8-device-probe.md).
 - [ ] [BLE9 — Модель и валидация BLE-профиля](ble9-profile-model.md).

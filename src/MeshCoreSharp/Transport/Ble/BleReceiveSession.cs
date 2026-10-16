@@ -3,7 +3,7 @@ using MeshCoreSharp.Exceptions;
 
 namespace MeshCoreSharp.Transport.Ble;
 
-// One prepared generation. This is deliberately internal until the send side is available.
+// One prepared generation with continuous receive and serialized writes.
 internal sealed class BleReceiveSession : IAsyncDisposable
 {
     private readonly object _sync = new();
@@ -15,14 +15,17 @@ internal sealed class BleReceiveSession : IAsyncDisposable
     private bool _stopped;
     private bool _started;
     private Exception? _error;
+    private readonly SemaphoreSlim _writeGate = new(1, 1);
+    private readonly TimeProvider _time;
 
-    internal BleReceiveSession(BleGattOpenResult prepared, BleMeshCoreTransportOptions options)
+    internal BleReceiveSession(BleGattOpenResult prepared, BleMeshCoreTransportOptions options, TimeProvider? time = null)
     {
         _prepared = prepared;
         _connection = prepared.Connection as IBleGattNotifications
             ?? throw new ArgumentException("The prepared connection must support notifications.", nameof(prepared));
         options.Validate();
         _options = options;
+        _time = time ?? TimeProvider.System;
         _frames = Channel.CreateBounded<ReadOnlyMemory<byte>>(new BoundedChannelOptions(options.ReceiveQueueCapacity)
         {
             FullMode = BoundedChannelFullMode.Wait, AllowSynchronousContinuations = false,
@@ -72,6 +75,54 @@ internal sealed class BleReceiveSession : IAsyncDisposable
 
     internal IAsyncEnumerable<ReadOnlyMemory<byte>> ReceiveAsync(CancellationToken cancellationToken = default) =>
         _frames.Reader.ReadAllAsync(cancellationToken);
+
+    internal async ValueTask SendAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
+    {
+        if (frame.IsEmpty || frame.Length > _options.MaximumFrameSize)
+            throw new ArgumentOutOfRangeException(nameof(frame), "Send one nonempty complete Companion frame within the firmware limit.");
+        await _writeGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var started = false;
+        using var deadline = new CancellationTokenSource(_options.WriteTimeout, _time);
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            lock (_sync)
+            {
+                ThrowIfStopped();
+                if (!IsConnected) throw new MeshCoreTransportException("The BLE subscription is not ready.");
+            }
+            CheckLink();
+            var native = _connection as IBleGattSession
+                ?? throw new InvalidOperationException("The BLE connection does not support writes.");
+            wait.Token.ThrowIfCancellationRequested();
+            started = true;
+            // Copy before native I/O: the caller may reuse its buffer after cancellation returns.
+            var writing = native.WriteAsync(frame.ToArray(), wait.Token);
+            Observe(writing);
+            await Task.WhenAny(writing, _terminated.Task).WaitAsync(wait.Token).ConfigureAwait(false);
+            ThrowIfStopped();
+            await writing.ConfigureAwait(false);
+            wait.Token.ThrowIfCancellationRequested();
+            ThrowIfStopped();
+        }
+        catch (Exception error)
+        {
+            if (started)
+            {
+                var failure = error is OperationCanceledException || _terminated.Task.IsCompleted
+                    ? new MeshCoreBleTransportException(MeshCoreBleFailureReason.WriteOutcomeUnknown,
+                        "The GATT write outcome is unknown. Reconnect before sending another frame; do not automatically repeat this write.", error)
+                    : error;
+                Stop(failure);
+                if (cancellationToken.IsCancellationRequested && error is OperationCanceledException)
+                    throw new OperationCanceledException(cancellationToken);
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+            throw;
+        }
+        finally { _writeGate.Release(); }
+    }
 
     private void CheckLink()
     {

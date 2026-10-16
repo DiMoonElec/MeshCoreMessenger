@@ -1,3 +1,12 @@
+16.10.2026: BLE5 зафиксирован и отправлен в origin/main коммитом `4d85b30`, затем
+выполнен [BLE6](ble6-send.md). Добавлены Windows BleMeshCoreTransport и logical-frame
+SendAsync: один WriteWithResponse, write gate/deadline, terminal unknown outcome
+без replay. MeshCoreClient работает через fake BLE без изменений runtime, включая
+MSG_SENT/ACK до write completion. Library **152/152 Windows**, **150/150 portable**;
+обе Release solution builds и locked restore успешны, 0 warnings/errors. Production
+DI/БД не менялись, аппаратный тест остаётся BLE8. **BLE7 не начат** по указанию
+пользователя; остаются consolidation lifecycle, повторный Connect и bounded CCCD disable.
+
 16.10.2026: после коммита BLE4 `0b4dc53` выполнен [BLE5](ble5-receive.md):
 CCCD Notify, bounded receive queue, Ready после подписки, копирование/порядок кадров,
 явные overflow/invalid-frame ошибки и изоляция старой generation. Windows library
