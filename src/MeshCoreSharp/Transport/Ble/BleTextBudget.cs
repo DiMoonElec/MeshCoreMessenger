@@ -33,8 +33,13 @@ public sealed record BleTextBudget(int MaximumTextBytes, int AttPayloadBytes, in
     }
 }
 
-internal interface IBleClientPolicy
+/// <summary>Reads the current BLE session budget without opening a connection or sending a command.</summary>
+public interface IBleTextBudgetProvider
+{
+    BleTextBudget GetTextBudget(BleTextMessageKind kind, string? senderName = null, bool regionScoped = true);
+}
+
+internal interface IBleClientPolicy : IBleTextBudgetProvider
 {
     void SetSelfInfo(SelfInfo self);
-    BleTextBudget GetTextBudget(BleTextMessageKind kind, string? senderName = null, bool regionScoped = true);
 }

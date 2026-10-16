@@ -47,7 +47,11 @@ public sealed class ConnectionControlViewModel : ObservableObject
     public IAsyncRelayCommand ConnectCommand { get; }
     public IAsyncRelayCommand DisconnectCommand { get; }
     public bool IsBusy => Volatile.Read(ref _busy) != 0;
+    public bool AllowsBleDiscovery => Volatile.Read(ref _stopped) == 0 && !IsBusy &&
+        _snapshot.State is not (ConnectionSupervisorState.Connecting or ConnectionSupervisorState.Identifying or
+            ConnectionSupervisorState.Synchronizing or ConnectionSupervisorState.Disconnecting);
     public bool CanConnect => Volatile.Read(ref _stopped) == 0 && !IsBusy && !_editor.IsBusy && !_editor.IsDirty &&
+        _editor.BleDevices?.IsScanning != true && (!_editor.IsBle || _editor.IsBleSupported) &&
         !_editor.HasPendingSelection && _editor.IsValid && _editor.SavedProfile is not null &&
         _snapshot.State is not (ConnectionSupervisorState.Disconnecting or ConnectionSupervisorState.Connecting or
             ConnectionSupervisorState.Identifying or ConnectionSupervisorState.Synchronizing) &&
@@ -59,7 +63,9 @@ public sealed class ConnectionControlViewModel : ObservableObject
     public bool HasUnappliedChanges => _snapshot.UsedProfile is { } used && _editor.SavedProfile is { } saved &&
         used.Id == saved.Id && NeedsReconnect && _snapshot.State != ConnectionSupervisorState.Offline;
     public string? UnappliedNotice => HasUnappliedChanges ? "Изменения сохранены, но ещё не применены к подключению." : null;
-    public string? ConnectHint => _editor.IsDirty ? "Сохраните или отмените изменения перед подключением." :
+    public string? ConnectHint => _editor.IsBle && !_editor.IsBleSupported ? "Подключение BLE доступно только на Windows." :
+        _editor.BleDevices?.IsScanning == true ? "Дождитесь завершения поиска или отмените его." :
+        _editor.IsDirty ? "Сохраните или отмените изменения перед подключением." :
         _editor.SavedProfile is null ? "Выберите сохранённый профиль для подключения." : null;
     public string ConnectLabel => NeedsReconnect && _snapshot.State != ConnectionSupervisorState.Offline ? "Переподключить" :
         _snapshot.State == ConnectionSupervisorState.RetryWaiting ? "Подключить сейчас" : "Подключить";
@@ -85,7 +91,7 @@ public sealed class ConnectionControlViewModel : ObservableObject
     public string PublicKey => _publicKey;
     public void RefreshActions()
     {
-        foreach (var name in new[] { nameof(IsBusy), nameof(CanConnect), nameof(CanDisconnect), nameof(NeedsReconnect),
+        foreach (var name in new[] { nameof(IsBusy), nameof(AllowsBleDiscovery), nameof(CanConnect), nameof(CanDisconnect), nameof(NeedsReconnect),
             nameof(HasUnappliedChanges), nameof(UnappliedNotice), nameof(ConnectHint), nameof(ConnectLabel), nameof(Status),
             nameof(IsOnline), nameof(IsAttention), nameof(ErrorMessage), nameof(Detail), nameof(RetryText),
             nameof(ActiveProfileName), nameof(NodeName), nameof(PublicKey) }) OnPropertyChanged(name);
@@ -136,7 +142,7 @@ public sealed class ConnectionControlViewModel : ObservableObject
             }
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
-        catch (Exception error) { _error = error is TimeoutException ? $"Отключение не завершилось за {_disconnectTimeout.TotalSeconds:g} секунд. Новое подключение не начато." : $"Не удалось подключиться: {error.Message}"; }
+        catch (Exception error) { _error = error is TimeoutException ? $"Отключение не завершилось за {_disconnectTimeout.TotalSeconds:g} секунд. Новое подключение не начато." : $"Не удалось подключиться: {ConnectionFailureClassifier.Describe(error)}"; }
         finally { Interlocked.Exchange(ref _busy, 0); RefreshActions(); _editor.NotifyControlChanged(); }
     }
     private async Task DisconnectAsync(CancellationToken token)
@@ -146,7 +152,7 @@ public sealed class ConnectionControlViewModel : ObservableObject
         _operationStatus = "Отключение…"; _error = null; RefreshActions(); _editor.NotifyControlChanged();
         try { await DisconnectWithTimeoutAsync(linked.Token); }
         catch (OperationCanceledException) when (linked.IsCancellationRequested) { }
-        catch (Exception error) { _error = $"Не удалось завершить отключение: {error.Message}"; }
+        catch (Exception error) { _error = $"Не удалось завершить отключение: {ConnectionFailureClassifier.Describe(error)}"; }
         finally { Interlocked.Exchange(ref _busy, 0); RefreshActions(); _editor.NotifyControlChanged(); }
     }
     private async Task DisconnectWithTimeoutAsync(CancellationToken token)

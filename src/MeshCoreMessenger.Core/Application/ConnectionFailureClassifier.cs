@@ -19,6 +19,28 @@ public interface IConnectionFailureClassifier
 
 public sealed class ConnectionFailureClassifier : IConnectionFailureClassifier
 {
+    public static string? Describe(Exception? exception)
+    {
+        if (exception is null) return null;
+        return Unwrap(exception) is MeshCoreBleTransportException ble ? ble.Reason switch
+        {
+            MeshCoreBleFailureReason.UnsupportedPlatform => "Подключение BLE доступно только на Windows.",
+            MeshCoreBleFailureReason.PairingRequired => "Сопрягите ноду в настройках Bluetooth Windows и повторите подключение.",
+            MeshCoreBleFailureReason.AccessDenied => "Windows запретила доступ к BLE-устройству. Проверьте разрешения.",
+            MeshCoreBleFailureReason.AdapterUnavailable => "Адаптер Bluetooth недоступен. Проверьте его подключение.",
+            MeshCoreBleFailureReason.RadioOff => "Включите Bluetooth и повторите подключение.",
+            MeshCoreBleFailureReason.DeviceUnreachable => "BLE-нода недоступна. Проверьте питание, расстояние и подключение другого клиента.",
+            MeshCoreBleFailureReason.MissingService => "Устройство не предоставляет BLE-сервис MeshCore Companion.",
+            MeshCoreBleFailureReason.MissingCharacteristic or MeshCoreBleFailureReason.UnsupportedCharacteristics => "BLE-характеристики устройства несовместимы с MeshCore Companion.",
+            MeshCoreBleFailureReason.InsufficientMtu => "Не удалось согласовать допустимый размер BLE-пакета.",
+            MeshCoreBleFailureReason.ReceiveQueueOverflow => "Переполнена очередь BLE-приёма. Часть данных могла быть потеряна.",
+            MeshCoreBleFailureReason.IncompleteNotification => "Целостность входящего BLE-сообщения не подтверждена. Часть сообщения могла быть потеряна.",
+            MeshCoreBleFailureReason.InvalidFrame => "Получен недопустимый BLE-кадр.",
+            MeshCoreBleFailureReason.WriteOutcomeUnknown => "Результат BLE-записи неизвестен. Переподключение само по себе не повторяет отправку.",
+            _ => "Ошибка обмена по Bluetooth LE. Повторите подключение.",
+        } : exception.Message;
+    }
+
     public ConnectionFailureDisposition Classify(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

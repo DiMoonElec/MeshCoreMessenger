@@ -4,7 +4,8 @@
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
 **Статус: BLE1–BLE7 реализованы; BLE8 stock read-only probe прошёл, аппаратная граница длинного RX ожидает;
-BLE9–BLE14 реализованы; BLE15–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
+BLE9–BLE14 реализованы; код BLE15 готов, ручная приёмка ожидается;
+BLE16–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
 незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)

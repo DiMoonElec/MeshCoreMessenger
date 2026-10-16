@@ -162,6 +162,9 @@ public sealed class BleDeviceScanViewModel : ObservableObject
         foreach (var device in choices.OrderBy(item => item.DisplayName, StringComparer.CurrentCulture)
             .ThenBy(item => item.DeviceId, StringComparer.Ordinal)) Devices.Add(device);
         SelectedDevice = selected is null ? null : Devices.First(item => item.DeviceId == selected.DeviceId);
+        // ComboBox drops its visual selection when Items is rebuilt even when the
+        // saved DTO compares equal. Reapply the binding after the collection reset.
+        OnPropertyChanged(nameof(SelectedDevice));
     }
 
     private void NotifyState()

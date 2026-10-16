@@ -172,7 +172,7 @@ public sealed class FakeDataSeederTests
         var before = await reopened.Sessions.GetAsync(seeded.SessionId, CancellationToken);
 
         // Actual Desktop DI/startup path; no window or physical transport is needed.
-        await using (var services = AppBootstrap.CreateServiceProvider(temporary.Paths, reopened))
+        await using (var services = AppBootstrap.CreateServiceProvider(temporary.Paths, reopened, null, uiDispatcher: new ImmediateUiDispatcher()))
         {
             var viewModel = services.GetRequiredService<MainWindowViewModel>();
             await viewModel.LoadAsync(CancellationToken).WaitAsync(TimeSpan.FromSeconds(10), CancellationToken);

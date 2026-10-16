@@ -15,6 +15,7 @@ public sealed record ChannelSlotCommandTarget(byte Slot) : SessionCommandTarget;
 
 public interface ISessionCommandGateway
 {
+    int? GetTextByteLimit(Guid nodeId, bool isChannel) => null;
     SessionCommandLease Acquire(Guid nodeId, SessionCommandTarget target, CancellationToken cancellationToken = default);
 }
 
@@ -25,6 +26,18 @@ public sealed class SessionCommandGateway(
 {
     private readonly object _gate = new();
     private SessionCommandScope? _active;
+
+    public int? GetTextByteLimit(Guid nodeId, bool isChannel)
+    {
+        lock (_gate)
+        {
+            if (_active is null || _active.Owner.NodeId != nodeId) return null;
+            try { return _active.GetTextByteLimit(isChannel); }
+            catch (InvalidOperationException) { return null; }
+            catch (OutgoingPersistenceException) { return null; }
+            catch (MeshCoreSharp.Exceptions.MeshCoreTransportException) { return null; }
+        }
+    }
 
     public SessionCommandLease Acquire(Guid nodeId, SessionCommandTarget target, CancellationToken cancellationToken = default)
     {
@@ -86,6 +99,16 @@ internal sealed class SessionCommandScope(
     internal IOutgoingMessageStore Messages { get; } = messages;
     internal IDurableOutgoingWrites Outgoing { get; } = outgoing;
     internal TimeProvider TimeProvider { get; } = timeProvider;
+    internal int GetTextByteLimit(bool isChannel)
+    {
+        lock (Gate)
+        {
+            EnsureOpen();
+            var protocol = isChannel ? TextMessageValidator.GetChannelTextLimit(Owner.SenderName) : ProtocolLimits.MaxTextBytes;
+            var transport = client.GetTransportTextByteLimit(isChannel, Owner.SenderName);
+            return transport is { } limit ? Math.Min(protocol, Math.Max(0, limit)) : protocol;
+        }
+    }
     internal DateTimeOffset? EstimateAcknowledgementDeadline(uint suggested) => client.GetAcknowledgementWaitDuration(suggested) is { } wait
         ? TimeProvider.GetUtcNow().Add(wait) : null;
 

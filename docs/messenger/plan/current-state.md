@@ -1,3 +1,15 @@
+16.10.2026: код [BLE15](ble15-profile-ui.md) реализован, ручная приёмка ожидается.
+BLE editor использует scan model, dirty/save/offline profile, close/shutdown cancel,
+прежний supervisor и понятные ошибки. Текущий BLE UTF-8 budget передаётся в composer
+и send admission; TCP/Serial limits сохранены. По запросу пользователя native UI
+проверка нашла и исправила сброс выбора TCP обратно на BLE: TransportKinds теперь
+стабильная коллекция. Native TCP→Serial→BLE→TCP→BLE с save/readback прошёл.
+Core451/451, library179/179 Windows и177/177 portable, Desktop48/48 на каждой ветке
+и startup fixture1/1; обе Release builds/locked restore зелёные. Native fake audit
+Light/Dark420/900px прошёл. [Отчёт и ручной сценарий](../../testing/ble15-profile-ui.md).
+Реальный Desktop connect, полный ручной Tab/Shift+Tab и пользовательская визуальная
+проверка ожидаются; BLE16 не начат. BLE8 RX174–176 аппаратно всё ещё не подтверждён.
+
 16.10.2026: реализован [BLE14](ble14-scan-ui.md): portable discovery DTO, Desktop
 adapter и scan viewmodel с generation/cancel/stop, UI dispatcher, сохранённым offline
 ID и явным открытием Bluetooth settings. Desktop targeted21/21 Windows и21/21

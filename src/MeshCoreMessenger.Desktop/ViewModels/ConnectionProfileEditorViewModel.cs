@@ -13,6 +13,8 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
     [ObservableProperty] private string _tcpPort = "5000";
     [ObservableProperty] private string _serialPortName = string.Empty;
     [ObservableProperty] private string _baudRate = "115200";
+    [ObservableProperty] private string? _bleDeviceId;
+    [ObservableProperty] private string? _bleDeviceName;
     [ObservableProperty] private bool _dtrEnable = true;
     [ObservableProperty] private bool _rtsEnable = true;
     [ObservableProperty] private string _openDelayMilliseconds = "2000";
@@ -26,9 +28,11 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
     public ConnectionProfile? SavedProfile { get; private set; }
     public bool IsTcp => SelectedTransport == ConnectionTransportKind.Tcp;
     public bool IsSerial => SelectedTransport == ConnectionTransportKind.Serial;
+    public bool IsBle => SelectedTransport == ConnectionTransportKind.Ble;
     public bool IsDirty => !Values().SequenceEqual(_baseline);
     public bool IsValid => new[] { ProfileNameError, TcpHostError, TcpPortError, SerialPortNameError,
-        BaudRateError, OpenDelayError, CommandTimeoutError, AckTimeoutError }.All(error => error is null);
+        BaudRateError, OpenDelayError, CommandTimeoutError, AckTimeoutError, BleDeviceError }.All(error => error is null);
+    public string? BleDeviceError => IsBle && string.IsNullOrWhiteSpace(BleDeviceId) ? "Выберите BLE-устройство." : null;
     public string? ProfileNameError => string.IsNullOrWhiteSpace(ProfileName) ? "Укажите название профиля." : null;
     public string? TcpHostError => IsTcp && string.IsNullOrWhiteSpace(TcpHost) ? "Укажите host или IP-адрес." : null;
     public string? SerialPortNameError => IsSerial && string.IsNullOrWhiteSpace(SerialPortName) ? "Укажите Serial-порт." : null;
@@ -43,6 +47,7 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
         base.OnPropertyChanged(args);
         if (!_loading && args.PropertyName is nameof(ProfileName) or nameof(SelectedTransport) or
             nameof(TcpHost) or nameof(TcpPort) or nameof(SerialPortName) or nameof(BaudRate) or
+            nameof(BleDeviceId) or nameof(BleDeviceName) or
             nameof(DtrEnable) or nameof(RtsEnable) or nameof(OpenDelayMilliseconds) or
             nameof(CommandTimeoutMilliseconds) or nameof(AcknowledgementTimeoutMilliseconds) or
             nameof(AutoConnect) or nameof(Reconnect)) NotifyEditor();
@@ -51,7 +56,7 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
     {
         foreach (var name in new[] { nameof(ProfileNameError), nameof(TcpHostError), nameof(TcpPortError),
             nameof(SerialPortNameError), nameof(BaudRateError), nameof(OpenDelayError), nameof(CommandTimeoutError),
-            nameof(AckTimeoutError), nameof(IsValid), nameof(IsDirty), nameof(IsTcp), nameof(IsSerial) }) OnPropertyChanged(name);
+            nameof(AckTimeoutError), nameof(BleDeviceError), nameof(IsValid), nameof(IsDirty), nameof(IsTcp), nameof(IsSerial), nameof(IsBle) }) OnPropertyChanged(name);
     }
     public void LoadEditor(ConnectionProfile? profile)
     {
@@ -60,6 +65,7 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
         SelectedTransport = profile?.Transport ?? ConnectionTransportKind.Serial;
         TcpHost = profile?.TcpHost ?? "127.0.0.1"; TcpPort = profile?.TcpPort?.ToString() ?? "5000";
         SerialPortName = profile?.SerialPortName ?? string.Empty; BaudRate = profile?.BaudRate?.ToString() ?? "115200";
+        BleDeviceId = profile?.BleDeviceId; BleDeviceName = profile?.BleDeviceName;
         DtrEnable = profile?.DtrEnable ?? true; RtsEnable = profile?.RtsEnable ?? true;
         OpenDelayMilliseconds = (profile?.OpenDelayMilliseconds ?? 2000).ToString();
         CommandTimeoutMilliseconds = (profile?.CommandTimeoutMilliseconds ?? 10000).ToString();
@@ -75,6 +81,7 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
             Id = SavedProfile?.Id, Name = ProfileName.Trim(), Transport = SelectedTransport,
             TcpHost = IsTcp ? TcpHost.Trim() : null, TcpPort = IsTcp ? int.Parse(TcpPort) : null,
             SerialPortName = IsSerial ? SerialPortName.Trim() : null, BaudRate = IsSerial ? int.Parse(BaudRate) : null,
+            BleDeviceId = IsBle ? BleDeviceId : null, BleDeviceName = IsBle ? BleDeviceName : null,
             DtrEnable = DtrEnable, RtsEnable = RtsEnable,
             OpenDelayMilliseconds = IsSerial ? int.Parse(OpenDelayMilliseconds) : SavedProfile?.OpenDelayMilliseconds ?? 2000,
             CommandTimeoutMilliseconds = int.Parse(CommandTimeoutMilliseconds),
@@ -89,5 +96,5 @@ public partial class ConnectionProfileEditorViewModel : ObservableObject
             $"{name}: целое число от {minimum} до {maximum}.";
     private string[] Values() => [ProfileName, SelectedTransport.ToString(), TcpHost, TcpPort, SerialPortName,
         BaudRate, DtrEnable.ToString(), RtsEnable.ToString(), OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-        AcknowledgementTimeoutMilliseconds, AutoConnect.ToString(), Reconnect.ToString()];
+        AcknowledgementTimeoutMilliseconds, AutoConnect.ToString(), Reconnect.ToString(), BleDeviceId ?? "", BleDeviceName ?? ""];
 }

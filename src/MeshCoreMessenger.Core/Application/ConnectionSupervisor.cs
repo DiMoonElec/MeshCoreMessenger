@@ -137,8 +137,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             }
             catch (Exception exception)
             {
-                _needsAttentionReason = exception.Message;
-                Publish(ConnectionSupervisorState.NeedsAttention, exception.Message, nextAttemptUtc: null);
+                _needsAttentionReason = ConnectionFailureClassifier.Describe(exception);
+                Publish(ConnectionSupervisorState.NeedsAttention, ConnectionFailureClassifier.Describe(exception), nextAttemptUtc: null);
                 if (message is ControlMessage control)
                 {
                     control.Completion.TrySetException(exception);
@@ -568,10 +568,10 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         active.Failure = exception;
         if (_failures.Classify(exception) == ConnectionFailureDisposition.NeedsAttention)
         {
-            _needsAttentionReason = exception.Message;
+            _needsAttentionReason = ConnectionFailureClassifier.Describe(exception);
             Publish(
                 ConnectionSupervisorState.NeedsAttention,
-                exception.Message,
+                ConnectionFailureClassifier.Describe(exception),
                 null,
                 sessionId: active.Attempt?.SessionId,
                 nodeId: active.Attempt?.NodeId);
@@ -657,8 +657,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
             teardown.Intent is not TeardownIntent.Shutdown)
         {
             _connectionDesired = false;
-            _needsAttentionReason = teardown.Error.Message;
-            Publish(ConnectionSupervisorState.NeedsAttention, teardown.Error.Message, null, sessionId: null, nodeId: null);
+            _needsAttentionReason = ConnectionFailureClassifier.Describe(teardown.Error);
+            Publish(ConnectionSupervisorState.NeedsAttention, ConnectionFailureClassifier.Describe(teardown.Error), null, sessionId: null, nodeId: null);
             CompleteDisconnectWaiters();
             return;
         }
@@ -666,7 +666,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         switch (teardown.Intent)
         {
             case TeardownIntent.Retry:
-                ScheduleRetry(teardown.Error?.Message ?? active.Failure?.Message ?? "Connection lost.");
+                ScheduleRetry(ConnectionFailureClassifier.Describe(teardown.Error) ?? ConnectionFailureClassifier.Describe(active.Failure) ?? "Connection lost.");
                 break;
             case TeardownIntent.Restart:
                 await BeginAttemptAsync(_profile!).ConfigureAwait(false);
@@ -675,7 +675,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
                 await CompleteSuspendTeardownAsync(teardown.Error).ConfigureAwait(false);
                 break;
             case TeardownIntent.Offline:
-                Publish(ConnectionSupervisorState.Offline, teardown.Error?.Message, null, sessionId: null, nodeId: null);
+                Publish(ConnectionSupervisorState.Offline, ConnectionFailureClassifier.Describe(teardown.Error), null, sessionId: null, nodeId: null);
                 CompleteDisconnectWaiters();
                 break;
             case TeardownIntent.Shutdown:
@@ -694,7 +694,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         switch (intent)
         {
             case TeardownIntent.Retry:
-                ScheduleRetry(active.Failure?.Message ?? "Connection attempt failed.");
+                ScheduleRetry(ConnectionFailureClassifier.Describe(active.Failure) ?? "Connection attempt failed.");
                 break;
             case TeardownIntent.Restart:
                 _ = BeginAttemptAsync(_profile!);
@@ -703,7 +703,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
                 _ = CompleteSuspendTeardownAsync(null);
                 break;
             case TeardownIntent.Offline:
-                Publish(ConnectionSupervisorState.Offline, active.Failure?.Message, null, sessionId: null, nodeId: null);
+                Publish(ConnectionSupervisorState.Offline, ConnectionFailureClassifier.Describe(active.Failure), null, sessionId: null, nodeId: null);
                 CompleteDisconnectWaiters();
                 break;
             case TeardownIntent.Shutdown:
@@ -737,8 +737,8 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
         catch (Exception exception)
         {
             _connectionDesired = false;
-            _needsAttentionReason = exception.Message;
-            Publish(ConnectionSupervisorState.NeedsAttention, exception.Message, null, sessionId: null, nodeId: null);
+            _needsAttentionReason = ConnectionFailureClassifier.Describe(exception);
+            Publish(ConnectionSupervisorState.NeedsAttention, ConnectionFailureClassifier.Describe(exception), null, sessionId: null, nodeId: null);
             return;
         }
 
@@ -862,7 +862,7 @@ public sealed class ConnectionSupervisor : IConnectionSupervisor
                 _needsAttentionReason is null
                     ? ConnectionSupervisorState.Offline
                     : ConnectionSupervisorState.NeedsAttention,
-                _needsAttentionReason ?? error?.Message ?? "System is suspended.",
+                _needsAttentionReason ?? ConnectionFailureClassifier.Describe(error) ?? "System is suspended.",
                 null,
                 sessionId: null,
                 nodeId: null);

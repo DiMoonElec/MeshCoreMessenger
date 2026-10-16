@@ -9,6 +9,27 @@ namespace MeshCoreMessenger.Desktop.Tests;
 public sealed class ComposerValidationTests
 {
     [Fact]
+    public void LiveBleBudgetIsReadOnEditAndNeverTruncatesText()
+    {
+        var limit = 144;
+        var composer = new ComposerViewModel { Context = new(false), Readiness = SendReadiness.Ready };
+        composer.ConfigureTextBudgetReader(_ => limit);
+        composer.Text = new string('я', 72);
+        Assert.Equal("144 / 144 байт", composer.ByteCounter);
+        Assert.True(composer.IsReadyForSend);
+        limit = 143;
+        composer.Text += "x";
+        Assert.Equal("145 / 143 байт", composer.ByteCounter);
+        Assert.Equal(new string('я', 72) + "x", composer.Text);
+        Assert.False(composer.IsReadyForSend);
+        composer.Context = new(true, "Sender");
+        Assert.Equal("145 / 143 байт", composer.ByteCounter);
+        limit = 140;
+        composer.Readiness = SendReadiness.Offline;
+        Assert.Equal("145 / 140 байт", composer.ByteCounter);
+    }
+
+    [Fact]
     public void ByteCounterUsesProcessorOutputWithoutRewritingEditorOrEnablingWire()
     {
         var processor = new ProbeProcessor();

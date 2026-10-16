@@ -373,7 +373,11 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public bool IsConnectionSettingsOpen
     {
         get => _isConnectionSettingsOpen;
-        private set => SetProperty(ref _isConnectionSettingsOpen, value);
+        private set
+        {
+            if (SetProperty(ref _isConnectionSettingsOpen, value) && !value)
+                _ = Track(Profiles.CloseBleEditorAsync());
+        }
     }
 
     public string Status

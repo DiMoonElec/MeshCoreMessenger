@@ -40,6 +40,7 @@ public sealed class SessionCommandLease : IAsyncDisposable
     public SessionCommandOwner Owner => _scope.Owner;
     public SessionCommandTarget Target { get; }
     public CancellationToken Token => _token;
+    public int MaximumTextBytes => _scope.GetTextByteLimit(Target is ChannelCommandTarget);
     public bool WasInvoked { get; private set; }
     internal Task Completion => _completion.Task;
 
@@ -249,7 +250,7 @@ public sealed class SessionCommandLease : IAsyncDisposable
     private async Task ValidateTextSendAsync()
     {
         if (_message is null) throw new InvalidOperationException("Sending requires a persisted attempt.");
-        var limit = Target is ChannelCommandTarget ? TextMessageValidator.GetChannelTextLimit(Owner.SenderName) : MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes;
+        var limit = MaximumTextBytes;
         if (!TextMessageValidator.Validate(_message.TransmissionText, limit).IsValid) throw new InvalidOperationException("Stored text exceeds the current session's UTF-8 budget.");
         await _scope.ValidateSendTargetAsync(this).ConfigureAwait(false);
     }

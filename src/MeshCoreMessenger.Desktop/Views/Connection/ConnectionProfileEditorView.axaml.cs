@@ -4,6 +4,14 @@ namespace MeshCoreMessenger.Desktop.Views.Connection;
 public sealed partial class ConnectionProfileEditorView : UserControl
 {
     public ConnectionProfileEditorView() => InitializeComponent();
+    private void OnBleDeviceSelectionChanged(object? sender, SelectionChangedEventArgs args)
+    {
+        if (DataContext is not ConnectionProfilesViewModel { CanEdit: true, IsBle: true, BleDevices: { } scan }
+            || sender is not ComboBox { SelectedItem: BleDeviceChoice selected }
+            || !scan.Devices.Contains(selected)) return;
+        // Ignore the temporary null selection while discovery rebuilds the list.
+        scan.SelectedDevice = selected;
+    }
     private void OnSerialPortSelectionChanged(object? sender, SelectionChangedEventArgs args)
     {
         if (DataContext is not ConnectionProfilesViewModel owner || sender is not ComboBox picker ||

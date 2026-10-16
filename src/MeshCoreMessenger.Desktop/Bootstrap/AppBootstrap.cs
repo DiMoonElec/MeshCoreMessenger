@@ -18,7 +18,8 @@ public static class AppBootstrap
         CreateServiceProvider(paths, storage, null);
 
     internal static ServiceProvider CreateServiceProvider(
-        IAppPaths paths, LocalStorage storage, DesktopActivationCoordinator? activation, IDesktopNotificationPlatform? notificationPlatform = null)
+        IAppPaths paths, LocalStorage storage, DesktopActivationCoordinator? activation, IDesktopNotificationPlatform? notificationPlatform = null,
+        IUiDispatcher? uiDispatcher = null)
     {
         ArgumentNullException.ThrowIfNull(paths);
         ArgumentNullException.ThrowIfNull(storage);
@@ -94,7 +95,7 @@ public static class AppBootstrap
         services.AddSingleton<DesktopConnectionLifecycle>();
         services.AddSingleton<IDesktopConnectionLifecycle>(provider =>
             provider.GetRequiredService<DesktopConnectionLifecycle>());
-        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
+        services.AddSingleton<IUiDispatcher>(uiDispatcher ?? new AvaloniaUiDispatcher());
         if (activation is not null) services.AddSingleton(activation);
         else services.AddSingleton<DesktopActivationCoordinator>();
         services.AddSingleton<IMessageCommitNotifications, MessageCommitNotifications>();

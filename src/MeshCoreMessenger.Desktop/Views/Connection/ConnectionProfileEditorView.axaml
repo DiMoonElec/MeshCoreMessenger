@@ -19,7 +19,32 @@
       <StackPanel Classes="settings-field">
         <TextBlock Classes="settings-label" Text="Способ подключения" />
         <ComboBox ItemsSource="{Binding TransportKinds}" SelectedItem="{Binding SelectedTransport, Mode=TwoWay}" />
-        <TextBlock Classes="settings-hint" Text="Bluetooth LE — пока недоступен" />
+      </StackPanel>
+      <StackPanel Classes="settings-field" IsVisible="{Binding IsBle}" IsEnabled="{Binding CanUseBleDiscovery}">
+        <TextBlock Classes="settings-label" Text="BLE-устройство" />
+        <TextBlock Classes="settings-hint" Text="{Binding BlePlatformNotice}" />
+        <ComboBox ItemsSource="{Binding BleDevices.Devices}" SelectedItem="{Binding BleDevices.SelectedDevice, Mode=OneWay}"
+                  SelectionChanged="OnBleDeviceSelectionChanged"
+                  PlaceholderText="Найдите и выберите ноду" IsEnabled="{Binding IsBleSupported}">
+          <ComboBox.ItemTemplate>
+            <DataTemplate x:DataType="vm:BleDeviceChoice">
+              <StackPanel>
+                <TextBlock Text="{Binding DisplayName}" TextTrimming="CharacterEllipsis" />
+                <TextBlock Classes="settings-hint" Text="{Binding EndpointHint}" />
+                <TextBlock Classes="settings-hint" Text="{Binding Status}" />
+              </StackPanel>
+            </DataTemplate>
+          </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Classes="settings-error" Text="{Binding BleDeviceError}" />
+        <WrapPanel Classes="settings-actions" IsEnabled="{Binding IsBleSupported}">
+          <Button Content="Найти устройства" Command="{Binding BleDevices.ScanCommand}" />
+          <Button Content="Отменить поиск" Command="{Binding BleDevices.CancelCommand}" />
+          <Button Content="Настройки Bluetooth" Command="{Binding BleDevices.OpenBluetoothSettingsCommand}" />
+        </WrapPanel>
+        <TextBlock Classes="settings-hint" Text="Поиск устройств…" IsVisible="{Binding BleDevices.IsScanning}" />
+        <TextBlock Classes="settings-error" Text="{Binding BleDevices.ErrorMessage}" />
+        <TextBlock Classes="settings-hint" Text="{Binding BleDevices.PairingInstructions}" />
       </StackPanel>
       <StackPanel Classes="settings-field" IsVisible="{Binding IsSerial}">
         <TextBlock Classes="settings-label" Text="Serial-порт" />

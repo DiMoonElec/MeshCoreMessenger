@@ -23,6 +23,7 @@ public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
 
 public interface IMessageService
 {
+    int? GetTextByteLimit(Guid nodeId, bool isChannel) => null;
     Task<PrivateSendOutcome> SendPrivateAsNewAsync(PrivateResendRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<ChannelSendOutcome> SendChannelAsNewAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default) =>
@@ -45,6 +46,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
 {
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
     private long _lastChannelTimestamp;
+    public int? GetTextByteLimit(Guid nodeId, bool isChannel) => gateway.GetTextByteLimit(nodeId, isChannel);
 
     public async Task<ChannelSendOutcome> RepeatChannelAsync(ChannelRepeatRequest request, CancellationToken cancellationToken = default)
         => await SendCapturedChannelAsync(request, false, cancellationToken).ConfigureAwait(false);
@@ -127,7 +129,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             if (parent.Owner.SessionId != request.SessionId || parent.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
             reservation = privateDeliveries!.Reserve(parent);
-            var processed = processor.Process(capture.Text, new(false, parent.Owner.SenderName), request.Options);
+            var processed = processor.Process(capture.Text, new(false, parent.Owner.SenderName, parent.MaximumTextBytes), request.Options);
             if (!processed.Validation.IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
                 throw new ArgumentException("Message text is empty or invalid.");
             return await parent.RunAsync(async (owned, token) =>
@@ -188,9 +190,9 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 ? new ChannelCommandTarget(recipient) : new ContactCommandTarget(recipient.Identity), cancellationToken);
             if (lease.Owner.SessionId != request.SessionId || lease.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
-            var processed = repeat is null ? processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName), request.Options) : null;
+            var processed = repeat is null ? processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName, lease.MaximumTextBytes), request.Options) : null;
             var transmission = repeat?.TransmissionText ?? processed!.TransmissionText;
-            var budget = isChannel ? MeshCoreSharp.TextMessageValidator.GetChannelTextLimit(lease.Owner.SenderName) : MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes;
+            var budget = lease.MaximumTextBytes;
             if (!(processed?.Validation.IsValid ?? MeshCoreSharp.TextMessageValidator.Validate(transmission, budget).IsValid) || string.IsNullOrWhiteSpace(transmission))
                 throw new ArgumentException("Message text is empty or invalid.");
             return await lease.RunAsync(async (owned, token) =>

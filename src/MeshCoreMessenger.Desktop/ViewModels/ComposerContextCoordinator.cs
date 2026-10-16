@@ -31,6 +31,8 @@ internal sealed class ComposerContextCoordinator
         _reader = reader;
         _messages = messages;
         if (messages is not null) workspace.Composer.ConfigureSend(SendAsync);
+        if (messages is not null) workspace.Composer.ConfigureTextBudgetReader(isChannel =>
+            workspace.ViewedNode is { } node ? messages.GetTextByteLimit(node.Id, isChannel) : null);
         workspace.Composer.PropertyChanged += OnComposerChanged;
         _dispatcher = dispatcher;
         _logger = logger;

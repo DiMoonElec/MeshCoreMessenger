@@ -31,6 +31,14 @@ Reserved levels: Disabled, Conservative, Moderate, Aggressive. На всех у�
 prepare не должна изменять уже сохранённое сообщение/данные ACK. Отображение
 original vs transmission при настоящих заменах требует отдельного решения.
 
+BLE15, 16.10.2026: OutgoingTextContext дополнен optional TransportMaximumTextBytes.
+Только BLE provider даёт дополнительное ограничение по текущему MTU/типу/имени;
+processor берёт минимум с прежним protocol/name budget. TCP/Serial сохраняют
+прежнее поведение. UI читает лимит через MessageService/session gateway без I/O,
+actual admission и write перепроверяют его. По позднейшему требованию пользователя
+BLE-текст сверх лимита отклоняется явно, исходный draft не обрезается; идея
+автоматического обрезания ниже не реализована.
+
 Имя ноды, public keys, channel fingerprint, slot binding и прочая identity
 не оптимизируются. Placeholder не требует БД, радио, нового library assembly
 или сетевых команд. Preview может выбирать уровни, не притворяясь работающей

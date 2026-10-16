@@ -4,6 +4,7 @@ using MeshCoreSharp.Models;
 using MeshCoreSharp.Transport;
 using MeshCoreSharp.Transport.Serial;
 using MeshCoreSharp.Transport.Tcp;
+using MeshCoreSharp.Transport.Ble;
 
 namespace MeshCoreMessenger.Core.Application;
 
@@ -20,12 +21,16 @@ public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
     {
         var mapping = ConnectionProfileMapper.Map(profile);
         var transport = _transports.Create(profile);
-        return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions), mapping.ClientOptions);
+        return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions), mapping.ClientOptions,
+            transport as IBleTextBudgetProvider);
     }
 }
 
-internal sealed class MeshCoreClientAdapter(MeshCoreClient client, MeshCoreClientOptions? options = null) : ICompanionClient
+internal sealed class MeshCoreClientAdapter(MeshCoreClient client, MeshCoreClientOptions? options = null,
+    IBleTextBudgetProvider? bleBudgets = null) : ICompanionClient
 {
+    public int? GetTransportTextByteLimit(bool isChannel, string? senderName) => bleBudgets?.GetTextBudget(
+        isChannel ? BleTextMessageKind.Channel : BleTextMessageKind.Private, senderName).MaximumTextBytes;
     public TimeSpan? GetAcknowledgementWaitDuration(uint suggestedMilliseconds) => options is null ? null
         : TimeSpan.FromMilliseconds(Math.Clamp(suggestedMilliseconds + options.AckTimeoutMargin.TotalMilliseconds,
             options.MinimumAckTimeout.TotalMilliseconds, options.MaximumAckTimeout.TotalMilliseconds));

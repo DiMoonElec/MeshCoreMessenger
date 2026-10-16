@@ -24,12 +24,19 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
     private string? _errorMessage;
     private HashSet<string> _detected = [];
     private int _stopped;
+    private int _loadingBle;
+    private readonly HashSet<Task> _bleOperations = [];
+    private readonly ObservableCollection<ConnectionTransportKind> _transportKinds =
+        [ConnectionTransportKind.Serial, ConnectionTransportKind.Tcp];
     public ConnectionProfilesViewModel(IConnectionProfileManager manager, IConnectionSupervisor supervisor,
         ISerialPortCatalog serialPorts, ILogger<ConnectionProfilesViewModel> logger,
         IUiDispatcher? dispatcher = null, INodeStore? nodes = null,
-        TimeProvider? time = null, TimeSpan? disconnectTimeout = null)
+        TimeProvider? time = null, TimeSpan? disconnectTimeout = null, BleDeviceScanViewModel? bleDevices = null)
     {
         _manager = manager; _serialPorts = serialPorts; _logger = logger;
+        BleDevices = bleDevices;
+        if (IsBleSupported) _transportKinds.Add(ConnectionTransportKind.Ble);
+        if (BleDevices is not null) BleDevices.PropertyChanged += OnBleChanged;
         Control = new ConnectionControlViewModel(this, manager, supervisor, dispatcher, nodes, time, disconnectTimeout);
         NewProfileCommand = new RelayCommand(() => RequestSelection(null, true), () => CanEdit);
         RefreshPortsCommand = new AsyncRelayCommand(RefreshPortsAsync, () => CanEdit);
@@ -50,13 +57,27 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
                 NotifyControlChanged(); Control.RefreshActions();
             }
             if (args.PropertyName == nameof(SerialPortName)) OnPropertyChanged(nameof(SerialPortNotice));
-            if (args.PropertyName == nameof(SavedProfile)) Control.RefreshActions();
+            if (args.PropertyName == nameof(SavedProfile))
+            {
+                Control.RefreshActions();
+                TrackBle(SynchronizeBleEndpointAsync());
+            }
+            if (args.PropertyName == nameof(SelectedTransport))
+            {
+                if (IsBle && !_transportKinds.Contains(ConnectionTransportKind.Ble))
+                    _transportKinds.Add(ConnectionTransportKind.Ble);
+                if (!IsBle && BleDevices?.IsScanning == true) TrackBle(BleDevices.CancelAsync());
+            }
         };
     }
     public ConnectionControlViewModel Control { get; }
+    public BleDeviceScanViewModel? BleDevices { get; }
+    public bool IsBleSupported => BleDevices?.IsSupported == true;
+    public bool CanUseBleDiscovery => CanEdit && IsBleSupported && Control.AllowsBleDiscovery;
+    public string? BlePlatformNotice => IsBleSupported ? null : "Подключение BLE доступно только на Windows. Сохранённые профили и история остаются доступны.";
     public ObservableCollection<ConnectionProfileListItem> AvailableProfiles { get; } = [];
     public ObservableCollection<string> AvailableSerialPorts { get; } = [];
-    public IReadOnlyList<ConnectionTransportKind> TransportKinds { get; } = [ConnectionTransportKind.Serial, ConnectionTransportKind.Tcp];
+    public IReadOnlyList<ConnectionTransportKind> TransportKinds => _transportKinds;
     public IRelayCommand NewProfileCommand { get; }
     public IAsyncRelayCommand RefreshPortsCommand { get; }
     public IAsyncRelayCommand SaveCommand { get; }
@@ -64,7 +85,7 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
     public IRelayCommand DiscardAndSwitchCommand { get; }
     public IRelayCommand StayCommand { get; }
     public IAsyncRelayCommand SaveAndSwitchCommand { get; }
-    public bool CanSave => IsDirty && IsValid && CanEdit;
+    public bool CanSave => IsDirty && IsValid && CanEdit && BleDevices?.IsScanning != true;
     public bool HasPendingSelection => _hasPendingSelection;
     public string? SerialPortNotice => string.IsNullOrWhiteSpace(SerialPortName) || _detected.Contains(SerialPortName)
         ? null : "Порт сейчас не обнаружен. Сохранённое значение не изменено.";
@@ -81,6 +102,7 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
     internal void NotifyControlChanged()
     {
         OnPropertyChanged(nameof(CanEdit)); OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(CanUseBleDiscovery));
         SaveCommand.NotifyCanExecuteChanged(); CancelCommand.NotifyCanExecuteChanged();
         SaveAndSwitchCommand.NotifyCanExecuteChanged(); NewProfileCommand.NotifyCanExecuteChanged(); RefreshPortsCommand.NotifyCanExecuteChanged();
         DiscardAndSwitchCommand.NotifyCanExecuteChanged(); StayCommand.NotifyCanExecuteChanged();
@@ -105,10 +127,49 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
     {
         if (Interlocked.Exchange(ref _stopped, 1) != 0) return;
         _lifetime.Cancel(); SaveCommand.Cancel(); RefreshPortsCommand.Cancel(); SaveAndSwitchCommand.Cancel();
+        if (BleDevices is not null)
+        {
+            BleDevices.PropertyChanged -= OnBleChanged;
+            await BleDevices.StopAsync();
+        }
+        Task[] pendingBle;
+        lock (_bleOperations) pendingBle = _bleOperations.ToArray();
+        await Task.WhenAll(pendingBle);
         await Control.StopAsync();
         try { await Task.WhenAll(new[] { SaveCommand.ExecutionTask, RefreshPortsCommand.ExecutionTask, SaveAndSwitchCommand.ExecutionTask }.OfType<Task>()); }
         catch (OperationCanceledException) { }
         _lifetime.Dispose();
+    }
+    public Task CloseBleEditorAsync() => BleDevices?.CancelAsync() ?? Task.CompletedTask;
+
+    private async Task SynchronizeBleEndpointAsync()
+    {
+        if (BleDevices is null || Volatile.Read(ref _stopped) != 0) return;
+        if (!IsBle && BleDevices.SelectedDevice is null && !BleDevices.IsScanning) return;
+        Interlocked.Increment(ref _loadingBle);
+        try { await BleDevices.LoadEndpointAsync(IsBle ? BleDeviceId : null, IsBle ? BleDeviceName : null); }
+        finally { Interlocked.Decrement(ref _loadingBle); }
+    }
+    private void OnBleChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
+    {
+        if (Volatile.Read(ref _stopped) != 0) return;
+        if (args.PropertyName == nameof(BleDeviceScanViewModel.SelectedDevice) && Volatile.Read(ref _loadingBle) == 0 && IsBle)
+        {
+            BleDeviceId = BleDevices?.SelectedDevice?.DeviceId;
+            BleDeviceName = BleDevices?.SelectedDevice?.Name;
+        }
+        NotifyControlChanged(); Control.RefreshActions();
+    }
+    private void TrackBle(Task task)
+    {
+        lock (_bleOperations) _bleOperations.Add(task);
+        _ = ObserveBleAsync(task);
+    }
+    private async Task ObserveBleAsync(Task task)
+    {
+        try { await task; }
+        catch (Exception error) { _logger.LogWarning(error, "BLE editor lifecycle failed"); }
+        finally { lock (_bleOperations) _bleOperations.Remove(task); }
     }
     private async Task SaveAsync(CancellationToken token)
     {

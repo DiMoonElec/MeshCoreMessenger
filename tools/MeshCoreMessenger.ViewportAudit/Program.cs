@@ -17,6 +17,7 @@ try
         try
         {
             if (args.Contains("--startup-window-only")) await UiWorkspaceIntegrationTests.NativeStartupWindowAudit.RunAsync();
+            else if (args.Contains("--ble-editor-only")) await NativeBleProfileAudit.RunAsync();
             else if (args.Contains("--native-notifications-only")) await UiWorkspaceIntegrationTests.NativeNotificationIntegrationAudit.RunAsync();
             else if (args.Contains("--placement-only")) await UiWorkspaceIntegrationTests.NativeWindowPlacementAudit.RunAsync();
             else if (args.Contains("--shutdown-only")) await UiWorkspaceIntegrationTests.NativeShutdownThreadAudit.RunAsync();

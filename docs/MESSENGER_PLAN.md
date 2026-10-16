@@ -2,7 +2,7 @@
 
 - [Как читать документацию](README.md) — выбор минимального набора разделов для задачи.
 - [current-state](messenger/plan/current-state.md) — Текущий статус, checkpoint и исходная актуализация.
-- [stage-ble](messenger/plan/stage-ble.md) — самостоятельный этап BLE: Windows GATT через .NET; BLE1–BLE7 и BLE9–BLE14 реализованы, BLE8 stock probe и drain до166bytes проверены, аппаратная граница длинного RX ожидает; BLE15–BLE18 не начаты.
+- [stage-ble](messenger/plan/stage-ble.md) — самостоятельный этап BLE: BLE1–BLE7 и BLE9–BLE14 реализованы; код BLE15 готов, ручная приёмка ожидается; BLE8 stock probe/drain до166bytes проверены, граница длинного RX ожидает; BLE16–BLE18 не начаты.
 - [stage-a](messenger/plan/stage-a.md) — Выполненный фундамент A1–A4: bootstrap, SQLite, barriers, offline startup.
 - [stage-b](messenger/plan/stage-b.md) — Границы, порядок и зависимости Stage B.
 - [b1-profiles](messenger/plan/b1-profiles.md) — B1: профили и transport/platform adapters.

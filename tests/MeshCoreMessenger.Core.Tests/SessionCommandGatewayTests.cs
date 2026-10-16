@@ -480,6 +480,8 @@ public sealed partial class SessionCommandGatewayTests
 
     private sealed class Client(byte[] contactKey, byte[] secret) : ICompanionClient
     {
+        public int? TransportTextLimit { get; set; }
+        public int? GetTransportTextByteLimit(bool isChannel, string? senderName) => TransportTextLimit;
         public MeshCoreConnectionState State { get; private set; }
         public bool IsConnected => State == MeshCoreConnectionState.Connected;
         public bool IsStarted { get; private set; }

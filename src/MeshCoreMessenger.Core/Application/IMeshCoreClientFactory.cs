@@ -13,6 +13,8 @@ public interface ICompanionClient : IAsyncDisposable
     MeshCoreConnectionState State { get; }
     bool IsConnected { get; }
     bool IsStarted { get; }
+    /// <summary>Optional live transport constraint; null preserves the protocol's existing limit.</summary>
+    int? GetTransportTextByteLimit(bool isChannel, string? senderName) => null;
 
     event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
     event EventHandler<MeshCoreClientErrorEventArgs>? BackgroundError;

@@ -16,6 +16,7 @@ public sealed class ComposerViewModel : ObservableObject
     private OutgoingTextOptions _options = new();
     private SendReadiness _readiness = SendReadiness.Offline;
     private ProcessedOutgoingText _processedText;
+    private Func<bool, int?>? _transportBudgetReader;
     private string _previewExplanation = string.Empty;
 
     public ComposerViewModel(DraftEditorViewModel? draft = null, IOutgoingTextProcessor? processor = null)
@@ -57,6 +58,11 @@ public sealed class ComposerViewModel : ObservableObject
     public bool CanSend => !_stopped && !_sending && _send is not null && SendCapture is not null &&
         IsReadyForSend && !string.IsNullOrWhiteSpace(Text);
     internal void ConfigureSend(Func<Task> send) { _send = send; InvalidateSend(); }
+    internal void ConfigureTextBudgetReader(Func<bool, int?> reader)
+    {
+        _transportBudgetReader = reader;
+        RefreshText();
+    }
     internal void SetSendContext(Guid nodeId, Guid sessionId, long generation, IReadOnlyList<OutgoingRecipient> targets)
     {
         var previousSlot = _selectedSlot;
@@ -96,6 +102,7 @@ public sealed class ComposerViewModel : ObservableObject
     internal void StopSend() { _stopped = true; InvalidateSend(); }
     private async Task SendAsync()
     {
+        RefreshText();
         if (!CanSend) return;
         _sending = true; _sendError = null; InvalidateSend();
         try { await _send!(); }
@@ -127,6 +134,7 @@ public sealed class ComposerViewModel : ObservableObject
         set
         {
             if (!SetProperty(ref _readiness, value)) return;
+            RefreshText();
             OnPropertyChanged(nameof(StatusLine));
             OnPropertyChanged(nameof(IsReadyForSend));
             InvalidateSend();
@@ -156,7 +164,11 @@ public sealed class ComposerViewModel : ObservableObject
 
     private void RefreshText()
     {
-        _processedText = _processor.Process(Text, Context, Options);
+        var context = _transportBudgetReader is null ? Context : Context with
+        {
+            TransportMaximumTextBytes = _transportBudgetReader(Context.IsChannel),
+        };
+        _processedText = _processor.Process(Text, context, Options);
         InvalidateSend();
         OnPropertyChanged(nameof(SendTooltip));
         OnPropertyChanged(nameof(ProcessedText));
