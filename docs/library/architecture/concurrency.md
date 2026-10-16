@@ -19,9 +19,9 @@ The Companion protocol has several distinct concurrency classes. They should not
 
 Serializes the immediate Companion command/response phase. It should be released when the immediate transaction completes.
 
-### Future MeshRequestGate
+### MeshRequestGate — REGION9
 
-Needed for remote Mesh operations where firmware tracks one shared pending remote request. It must remain held beyond `MSG_SENT` until the final remote response or timeout.
+Implemented by the session-owned internal MeshRequestCoordinator for binary replies. The gate remains held beyond MSG_SENT until the final remote response or timeout. All future login/status/path request APIs must use this same coordinator. Lock order is MeshRequestGate -> ScopeOperationGate -> CommandGate; scope and command gates cover only the immediate exchange.
 
 Conceptually:
 

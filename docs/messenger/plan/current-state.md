@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION9](region9-remote-runtime.md): MeshRequestGate, pre-TX deferred matcher, RX bind, bounded deadline и session cleanup. Library219/219. REGION8 отправлен ac0e578; следующий REGION10.
+
 16.10.2026: выполнен [REGION8](region8-neighbors.md): bounded full-key neighbor scan, RX observers и session cleanup. Library215/215. REGION7 отправлен0911b45; следующий REGION9. Origin/main подтверждён, push выполняется между подэтапами.
 
 16.10.2026: выполнен [REGION7](region7-discovery-wire.md): discovery codecs, control/binary typed packets, region CSV и immutable packed reply paths. Library211/211. Пользователь явно подтвердил origin/main; REGION1–6 отправлены успешно (remote b4d5a55). Продолжаем REGION8 с commit/push после каждого шага.

@@ -32,6 +32,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private Guid _sessionId;
     private readonly SemaphoreSlim _neighborScanGate = new(1, 1);
     private int _discoveryTag = System.Security.Cryptography.RandomNumberGenerator.GetInt32(1, int.MaxValue);
+    private MeshRequestCoordinator? _meshRequests;
     private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
@@ -123,6 +124,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 _temporaryScopeUnsupported = false;
                 _defaultFloodScope = NodeFloodScope.Unknown;
                 _sessionId = Guid.NewGuid();
+                _meshRequests = new MeshRequestCoordinator(_router, _receiveCts.Token);
                 _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;

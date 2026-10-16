@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Небольшой runtime для MSG_SENT→BINARY_RESPONSE.
 
@@ -41,11 +41,17 @@ library/architecture/concurrency.md; library/protocol/remote-requests.md; region
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION10](region10-request-regions.md).
+Добавлены session-owned MeshRequestCoordinator и BinaryResponseWaiter. Один MeshRequestGate удерживается до terminal binary response; observer установлен до TX. Tag привязывается в nonblocking MSG_SENT RX acceptance hook до completion; ответы до bind или с другим tag не кэшируются. Deadline начинается на RX bind, включает slow transport completion и ограничен1–60000ms (без override: firmware suggestion +1000ms, clamp1000–60000ms). Timer/observer удаляются на всех выходах; session token отменяет текущую операцию и очередь.
+
+Порядок для всех будущих remote login/status/path/binary API: MeshRequestGate → ScopeOperationGate → CommandGate. Scope/command gate освобождаются после immediate phase, radio wait держит только remote gate. В этом шаге добавлен runtime, public CMD57 соединяется в REGION10.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 219/219. Четыре новых cases: отсутствие кеша/wrong/late tag и deterministic timeout; gate до final с независимой local command и ACK; immediate ERROR, final timeout, cancel/disconnect/queued cancellation; MSG_SENT hook + final push до возврата transport write. Hardware не требуется.
+
+Следующий шаг — [REGION10](region10-request-regions.md).
