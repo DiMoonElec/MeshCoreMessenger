@@ -1,349 +1,146 @@
-# REGION — полная поддержка регионов Companion
+# REGION — последовательный план внедрения регионов
 
-[Оглавление](../../MESSENGER_PLAN.md) · [Протокол и исследование ноды](../../library/protocol/regions.md)
+[Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: анализ и проектирование выполнены. Реализация **не начата**.
-Названия новых типов/таблиц ниже — проект, не существующий API.
-GUI проектируется совместно с пользователем: документ задаёт сценарии и данные,
-но не утверждает экраны, кнопки, меню и оформление.
+16.10.2026: **REGION0 выполнен; REGION1–REGION34 не начаты.**
+Анализ и исходный проект сохранены в commit `2d4e5fe`.
+По запросу пользователя первоначальные десять крупных блоков заменены небольшими
+последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
+реализованных работ под прежними номерами не было.
 
-## Результат этапа
+- [Архитектура и общие контракты](region-design.md) — владельцы, модели, API, БД,
+  отправки, повторы, discovery и ограничения.
+- [Поведение ноды и wire](../../library/protocol/regions.md) — проверенные исходники,
+  default/override, ЛС/ACK, регионы репитеров и протокол обнаружения.
+- GUI будет спроектирован **совместно с пользователем в REGION26**.
+  REGION27–30 задают функциональные границы, их компоновка уточняется после этого.
 
-Приложение умеет вести локальный каталог регионов, находить доступные имена через
-репитеры, назначать scope каналу, читать/изменять default ноды и корректно отправлять
-с нужным scope. Управляемые приложением отправки, повторы и ЛС защищены от
-пересечения override; reconnect и смена ноды не переиспользуют старое состояние.
-Входящие сообщения, история, ACK, SQLite barriers и транспортные контракты сохраняются.
-Неподдерживаемые возможности объясняются отдельно и не ломают обычный приём.
+## Стратегия разбиения
 
-Полнота относится к Companion-сценариям, доступным прошивке. Администрирование
-RegionMap удалённых репитеров, GPS-геозоны, радиочастотные presets, синхронизация
-настроек с закрытым мобильным приложением и недоступный firmware private keystore
-не объявляются реализованными частями REGION. Ограничения и причины разобраны
-в [исследовании](../../library/protocol/regions.md).
+Использован формат [BLE](stage-ble.md) и [D](stage-d.md): один небольшой результат,
+один основной слой, отдельный файл задания, зависимости, 3 конкретных шага,
+обязательные проверки и явный критерий завершения. Нужные runtime- и storage-
+изменения сделаны отдельными заданиями, а не спрятаны внутри GUI.
+Существующие проекты, транспорта, DI и выполненные этапы не пересоздавать.
 
-## Текущее состояние и точки расширения
-
-| Уже существует | Что требуется REGION |
-| --- | --- |
-| `CommandType`: 54, 55, 57, 63, 64; `PacketType`: 1C, 8C, 8E | Encoders, typed packets/parsers, публичные методы и capabilities; enum недостаточно |
-| `MeshCoreClient`, `CommandDispatcher`, `PacketRouter`, `AckTracker` | Scope-aware составная отправка и deferred discovery collector |
-| `ChannelSecrets.DeriveHashtag` | Отдельный RegionKeys helper с region-правилами и byte limits; не подменять канал регионом |
-| `BleTextBudget` с консервативным `regionScoped=true` | Рассчитывать по выбранной операции/снимку scope; неизвестный scope остаётся консервативным |
-| `ICompanionClient` / `MeshCoreClientFactory` | Типизированные операции регионов без raw-команд в Core |
-| `CompanionSession`, `SessionCommandGateway`, `SessionCommandLease` | Capabilities/default snapshot; generation-bound region-команды и admission |
-| `DirectoryService`, `ContactRouteService`, `ConversationOperationGuard` | Координация discovery с изменениями контакта/пути; существующий lease не является async mutex всей отправки |
-| `MessageService`, `PrivateDeliveryCoordinator`, канальные повторы | Неизменяемый scope каждой попытки; один общий wire путь |
-| SQLite `DatabaseMigrator`, текущая версия 7, `DatabaseWorker` | Новая добавочная миграция, region store/read projections; номер выбрать по состоянию при реализации |
-| Desktop composer, карточка канала, история, settings | Позже совместно утвердить представление; сначала закончить Core-контракты |
-
-Базовые проекты, DI bootstrap, BLE/TCP/Serial и историю не пересоздавать.
-`MeshCoreSharp.dll` остаётся единственной проектной Companion-сборкой.
-
-## Владение состоянием и модель
-
-Нода — источник истины для постоянного default. Приложение — источник истины
-для каталога и назначений каналам. Каждое наблюдение default имеет SessionId,
-generation, timestamp и freshness; offline отображается последнее наблюдение,
-а не обещание текущего состояния устройства. Connect/reconnect читает данные,
-но не восстанавливает автоматически default, каталог на репитерах или отправки.
-
-Предлагаемые типы:
-
-- `RegionDefinition`: локальный id, display label, точное protocol name,
-  public/custom-key kind, key16, fingerprint, provenance и timestamps.
-- `FloodScopeSelection`: **InheritDefault / ExplicitRegion / ForceUnscoped**.
-  Unknown — состояние наблюдения/совместимости, не четвёртая пользовательская
-  команда. Пустая ссылка на регион не означает unscoped.
-- `NodeFloodScopeSnapshot`: Supported/Unsupported/Unknown, имя, key16 либо
-  KnownEmpty, freshness и session identity.
-- `RegionObservation`: имя, полный ключ репитера, LocalNodeId, время, источник,
-  SNR/RSSI при наличии и состояние запроса. Отдельно от сохранённого пользователем
-  каталога: discovery не удаляет и не заменяет настройки.
-- `ResolvedSendScope`: policy revision, mode, фактический key fingerprint,
-  snapshot имени/default, session identity, transport text budget и причина
-  неизвестности. Снимок копируется до постановки отправки в работу.
-
-Каталог и назначения ограничены `LocalNodeId`, определяемым полным ключом ноды,
-а не профилем/портом. Одна нода через разные транспорты использует те же настройки.
-Назначение канала привязывается к `(LocalNodeId, channel-secret fingerprint)`:
-переименование и другой слот с тем же секретом сохраняют назначение. Замена секрета
-создаёт другое назначение с InheritDefault; архивная история остаётся прежней.
-Scope не входит в identity канала и не меняет ChannelBindingGeneration.
-
-Один канал имеет одно предпочтение scope в приложении даже при нескольких слотах.
-При необходимости разовой отправки в иной регион контракт может принимать override
-операции; отдельные чаты для одного секрета по регионам создавать нельзя, поскольку
-входящий wire не позволяет достоверно разделить такую историю.
-
-Для публичного региона `#name` и `name` нормализуются только по одному служебному
-префиксу. Case сохраняется. Label можно менять независимо; изменение protocol name
-меняет ключ и создаёт новую definition, не переписывая историю отправок.
-Для обычных публичных имён — совместимый с RegionMap алфавит, без NUL/CSV-разделителя,
-непустое имя, не `*`, не `$...`, не повторный `#`. Лимиты проверять по UTF-8 bytes
-на каждом wire endpoint; default name занимает максимум 30 bytes с учётом реально
-передаваемого префикса. Не обрезать. Custom key ровно16, all-zero запрещён как
-ExplicitRegion, потому что firmware интерпретирует его как fallback к default.
-Не вычислять public key для неизвестного `$` региона из discovery.
-
-## Хранение и локальные операции
-
-Добавочные сущности SQLite, окончательные имена уточняются при реализации:
-
-| Таблица | Ключ / содержание |
-| --- | --- |
-| `Regions` | Id, NodeId, kind, protocol name, label, key16, fingerprint, timestamps, archived; node-scoped unique identity |
-| `ChannelRegionPreferences` | NodeId + ChannelId, mode, nullable RegionId, revision; CHECK соответствия mode/reference, FK без случайного каскадного сброса |
-| `NodeRegionSnapshots` | NodeId, последнее подтверждённое default, SessionId, generation, observed time; cache, не очередь записи на ноду |
-| `RegionObservations` | NodeId + repeater full key + exact name, first/last seen; ограничение объёма и срок хранения наблюдений |
-| `SendAttemptScopes` | AttemptId, requested mode, policy revision, name/fingerprint snapshot, effective-known flag; не FK, меняющий старую историю при удалении каталога |
-
-Хранить key material только там, где нужен для последующей отправки; custom keys
-не выводить в diagnostics/logs. Публичные region keys не являются секретом канала.
-Для воспроизводимых повторов нужен защищаемый приложением immutable key snapshot
-или ссылка на неизменяемую key version, которую нельзя удалить до завершения
-всех использующих её попыток. Одного fingerprint для отправки недостаточно.
-
-Существующим каналам миграция задаёт InheritDefault без отправки команд устройству.
-Исторические попытки получают LegacyUnknown: не вычислять им scope задним числом.
-Никаких массовых изменений истории или IncomingMessageEvents.
-Проверить migration rollback, FK, backup, schema-too-new и данные всех transport
-профилей. Записи проходят через DatabaseWorker; UI обновляется после commit.
-
-Операции `RegionService` (новый Core owner): список/добавление/переименование label,
-архивирование, назначение каналу, refresh/default mutation, запуск/отмена discovery.
-Изменение списка и предпочтения доступно offline, без отложенной передачи.
-Изменение default ноды — только online через session gateway с последующим GET.
-При timeout показывать неопределённость и перечитать, а не повторять SET автоматически.
-При несовпадении readback хранить фактическое состояние и отдельный результат ошибки.
-
-Удаление используемого региона не должно незаметно расширять охват до unscoped:
-либо отказ со списком назначений, либо явная транзакционная замена назначений
-на выбранную политику. Архив не удаляет snapshots истории и не меняет default ноды.
-Обнаруженные имена с одинаковым ключом объединяются в каталог, но источники
-наблюдений сохраняются; отсутствие имени в очередном ответе не удаляет его.
-
-## Библиотека: безопасная отправка
-
-Публичное направление API (имена предварительные):
-
-```csharp
-GetDefaultFloodScopeAsync(ct)
-SetDefaultFloodScopeAsync(definition, ct)
-ClearDefaultFloodScopeAsync(ct)
-SendChannelTextAsync(slot, text, timestamp, scope, ct)
-SendTextAsync(publicKey, text, timestamp, attempt, scope, ct)
-DiscoverRepeaterNeighborsAsync(options, ct)
-RequestRegionsAsync(repeater, replyPath, ct)
-```
-
-Не делать обычный GUI-путь из двух независимых публичных вызовов SetScope и Send.
-Команда 54 — деталь составной операции. Существующие overloads на поддерживаемой
-firmware должны входить в тот же механизм с InheritDefault, иначе legacy private
-send сможет попасть между установкой region и канальной отправкой.
-
-Предлагается внутренний `ScopeOperationGate`, общий для всех операций, которые
-читают/меняют временный scope или передают через него, и для SET/CLEAR default.
-Он не заменяет CommandGate и не удерживается до ACK или remote response:
-
-```text
-admission, target validation, immutable scope snapshot, durable attempt
-  -> acquire ScopeOperationGate
-  -> SET_FLOOD_SCOPE(mode/key), дождаться OK
-  -> SEND, дождаться локального OK или MSG_SENT
-  -> RESET override к InheritDefault, дождаться OK
-  -> release ScopeOperationGate
-ACK/deferred completion наблюдаются независимо
-```
-
-CommandGate берётся внутри на каждую immediate транзакцию; безопасные чтения
-и drain могут идти между ними, другая scope-зависимая передача — нет.
-RX/push и event queue работают непрерывно. Gate должен быть в библиотеке:
-блокировки только в MessageService не защищают других пользователей public API.
-Нужна матрица всех существующих/добавляемых transmit API; raw transmission при
-добавлении не должна обходить определённый контракт незаметно.
-
-ACK capacity и private-send admission ожидаются **до** ScopeOperationGate.
-Для remote requests порядок: MeshRequestGate → ScopeOperationGate → CommandGate;
-после immediate acceptance scope gate освобождается, remote gate остаётся до
-terminal response. Не захватывать gates в обратном порядке и не ждать GUI/SQLite
-в RX hook. Изменение default сериализуется со scope-зависимой отправкой, чтобы
-InheritDefault не менялся между resolution и передачей.
-
-При доступном свежем default InheritDefault разрешается в конкретный snapshot
-key/empty внутри согласованной операции; библиотека может временно отправить
-явный snapshot key для точности результата и повторов. Если default прочитать
-нельзя, effective scope остаётся Unknown; не обещать воспроизводимость и увеличенный
-unscoped budget. Пользовательский ExplicitRegion никогда не деградирует молча
-в InheritDefault/Unscoped при unsupported command.
-
-### Ошибки, отмена, восстановление
-
-- До установки scope отмена не отправляет текст. Ошибка SET не допускает SEND.
-- После подтверждённого SET и до SEND выполнить ограниченный cleanup, если
-  канал command/response ещё достоверен; отменённый пользовательский token
-  не должен немедленно отменять этот cleanup. Session stop прекращает его.
-- Timeout/cancellation после возможной передачи immediate-команды создаёт риск
-  позднего нетегированного OK. Не отправлять RESET/следующий SEND, который может
-  принять старый OK. Закрыть command admission этой сессии и инициировать её
-  завершение через существующий lifecycle; новая сессия не воспроизводит отправку.
-- После принятого SEND ошибка RESET означает «отправка принята, scope cleanup
-  не подтверждён», а не разрешение отправить текст повторно. Сохранить результат
-  SEND отдельно от ошибки состояния устройства; ACK-tracker живёт по прежним
-  правилам и может подтвердить доставку до закрытия соединения.
-- После reconnect временный override считать неизвестным. Не сбрасывать его
-  самим фактом connect: первая явно запрошенная отправка устанавливает свой
-  mode/key независимо от прошлого RAM-состояния. Default читается без записи.
-- Старые callbacks, discovery и readback не публикуются в новой generation.
-  Shutdown закрывает admission, отменяет и ждёт принадлежащие ему работы/записи.
-
-Firmware не обеспечивает транзакции между клиентами или crash-safe restoration.
-Автоматические flood PATH/ACK в ответ на входящее ЛС также используют глобальный
-override ноды. Gate приложения не предотвращает такой ответ в промежутке
-SET→SEND→RESET: абсолютной изоляции автономных ответов здесь нет. Проверить это
-на firmware/hardware отдельно; исправление требует firmware-поддержки scope
-конкретной передачи или независимого scope автоматических ответов.
-Основание: [уточнение про ЛС и ACK](../../library/protocol/regions.md#уточнение-лс-ack-и-асимметричные-маршруты).
-Если приложение аварийно завершится после SET, override может остаться на ноде.
-Другие приложения должны устанавливать собственный scope; одновременное управление
-одной нодой не поддерживается. Эти пределы не устраняются записью в SQLite.
-
-## Отправки, история, повторы и лимиты
-
-`MessageService` разрешает region policy вместе с текущей channel binding и
-session owner. Scope snapshot сохраняется до передачи, привязывается к попытке,
-а не к редактируемой настройке канала. Изменение выбора после admission не меняет
-уже принятую в работу попытку. Scope-ошибка до SEND отличима от возможной отправки,
-иначе существующее правило Unknown ошибочно предложит повтор неотправленного текста.
-
-Рекомендуемый контракт повторов: автоматические попытки одной логической отправки
-сохраняют исходный resolved scope; ручной «повтор» тоже использует snapshot,
-а «отправить как новое» разрешает текущие настройки. При LegacyUnknown или
-утраченном key snapshot точный повтор запрещён, доступна новая отправка.
-Выбор пользовательских формулировок и UX этого различия остаётся совместным.
-Изменение default во время private retry не должно менять охват незаметно.
-Private direct работает как раньше; flood fallback получает scope той же операции.
-Базовый application-сценарий ЛС — default ноды; отдельная настройка региона
-контакта не утверждена. Explicit scope в библиотечном API — техническая возможность,
-не требование повторить несуществующее per-contact поле штатного приложения.
-Не вводить новый retry/replay механизм и не менять количество уже разрешённых попыток.
-
-В истории показывать выбранный/эффективный scope исходящей попытки только при
-наличии данных; incoming scope = Unknown. Local OK канала не означает доставку
-региону или получателям. ACK ЛС подтверждает сообщение, не географию доставки.
-
-Budget вычислять из UTF-8 текста и sender prefix, transport constraints, radio
-overhead и resolved scope. На первом шаге сохранить существующие консервативные
-BLE пределы; увеличивать unscoped limit только при подтверждённом состоянии.
-Текущий gateway `GetTextByteLimit(nodeId, isChannel)` недостаточен для разных
-region preferences: добавить recipient/policy revision либо запрос готового
-send-admission snapshot. Composer и отправка используют одинаковую оценку,
-но последняя повторно проверяет её после ожидания gates. Без silent trim.
-Пределы TCP/Serial не менять попутно без отдельного доказанного расчёта.
-
-## Discovery в приложении
-
-`RegionDiscoveryService` координирует явный ограниченный поиск, используя типизированные
-методы библиотеки. Не создавать второй consumer `CompanionSession.Events`.
-Deferred matching живёт в библиотеке; Core получает результаты и прогресс через
-существующий session/generation ownership.
-
-1. Собрать zero-hop соседей с полным public key; объединить с выбранными известными
-   репитерами, для которых есть пригодный direct path. Dedupe по full key.
-2. Применить preflight контакта/маршрута. Нельзя молча переписать flood path.
-   Неизвестный сосед может вызвать firmware addContact; результат должен явно
-   учитывать это действие и дальнейший refresh справочника.
-3. Запрашивать репитеры последовательно под общим MeshRequestGate, с конечными
-   deadline, ограничением количества и без бесконечного повтора rate-limited запросов.
-4. Сохранять per-repeater outcomes: SuccessEmpty, SuccessPossiblyPartial,
-   NoDirectPath, Unsupported, Timeout, Cancelled, Malformed, ContactTableFull.
-   Timeout не означает «регионы не поддерживаются»; пустой CSV не означает ошибку.
-5. Строго разобрать UTF-8/CSV, ограничить размер, сохранить неизвестные варианты
-   диагностически, не вычислять фиктивные ключи. Частные имена — обнаружены,
-   но непригодны к отправке без предоставленного ключа.
-6. Discovery не выбирает регион автоматически. Пользователь сохраняет нужный
-   результат в каталог либо вводит публичное имя вручную.
-
-Для полного сценария «известный сосед с flood path» нужна отдельно обозначенная
-операция временного direct route: snapshot полного контакта, эксклюзивное владение
-его route на время запроса, изменение с readback, ограниченное восстановление
-после terminal response. Не восстанавливать поверх более нового advert/route:
-при конфликте обновить Directory и сообщить неопределённость. Ошибка восстановления
-не скрывается как успешный read-only discovery. Реализация зависит от готовности
-contact mutation/route ownership; D10 нельзя объявить выполненным заодно.
-Без этого пути первый релиз discovery обязан честно возвращать NoDirectPath,
-а REGION целиком не закрывается до согласованного полного сценария.
-
-## Совместимость
-
-Capabilities различать по функциям: TemporaryScope, ForceUnscoped, DefaultReadWrite,
-NeighborDiscovery, AnonymousRegions. Protocol version — подсказка; подтверждённый
-UNSUPPORTED_CMD отключает конкретную функцию в данной session. Неизвестную сборку
-не считать поддерживающей всё по строке `1.18`. Read-only GET/default probe не
-должен прерывать sync/history при штатном unsupported; timeout обрабатывается
-с учётом небезопасного позднего ответа, а не маскируется как unsupported.
-
-Без региона старые устройства продолжают прежние операции. Недоступные region
-операции возвращают typed Unsupported до передачи, где это можно определить.
-На устройстве без default API не выдавать Unknown за пустой default. Не использовать
-local CLI как скрытый fallback с другими побочными эффектами.
-
-## Подэтапы и критерии приёмки
-
-| Этап | Результат | Зависимости / проверка |
+| Блок | Подэтапы | Результат |
 | --- | --- | --- |
-| REGION0 | Этот анализ, закреплённые источники и проект | Выполнено 16.10.2026; аппаратные гипотезы перечислены отдельно |
-| REGION1 | Region types, derivation, capabilities, wire 54/63/64 и parser1C | Byte fixtures, NUL/UTF-8, clear/default/unscoped, malformed/unsupported; сверка целевой сборки |
-| REGION2 | ScopeOperationGate и все текущие text API в общем пути | REGION1; гонки channel A/B/private, отмена на каждой границе, late OK, cleanup failure, ACK не блокирует sends |
-| REGION3 | Control discovery + anon regions, deferred router и MeshRequestGate | REGION1/2; ответ до возврата SendAsync, wrong/late tags, multi-answer window, parser bounds, packed paths |
-| REGION4 | SQLite миграция, RegionService/store/projections, offline каталог | REGION1; временные БД, rollback, identity двух нод/профилей, delete/reference policy |
-| REGION5 | Session capabilities/default refresh и mutation readback | REGION2/4; reconnect без SET/replay, stale generation, external change, shutdown barriers |
-| REGION6 | Channel preferences, immutable send snapshots, retries, budget | REGION2/4/5; channel identity, смена настроек в очереди, legacy history и transport limits |
-| REGION7 | Discovery orchestration и контактные побочные эффекты | REGION3/4/5 + необходимые contact/route операции; partial/fail/cancel/restore conflicts |
-| REGION8 | Совместное проектирование GUI | Контракты REGION4–7; пользователь утверждает сценарии/макеты, затем отдельная реализация |
-| REGION9 | GUI интеграция и доступность | REGION6/7/8; fake sessions, light/dark, keyboard, offline, stale state, ошибки |
-| REGION10 | Общая regression и аппаратная приёмка | REGION1–9; TCP/Serial/BLE, реальная нода/репитер, reboot, отсутствие scope leak |
+| Библиотека | REGION1–11 | Scope API, безопасные отправки и две отдельные discovery операции |
+| Приложение | REGION12–25 | Каталог/БД, default, назначения, snapshots, повторы и discovery |
+| Совместный дизайн | REGION26 | Согласованные сценарии и представление в GUI |
+| Desktop | REGION27–31 | Небольшие UI-интеграции и автоматическая приёмка |
+| Железо и завершение | REGION32–34 | Проверка ноды/сети, восстановление настроек, инструкция |
 
-REGION1–7 проектируются без утверждения визуального дизайна. Это план, не разрешение
-автоматически реализовать все этапы. Текущий запрос закрывает REGION0.
+Внутри последовательности сначала pure types/codec, затем runtime/fake,
+далее Core contracts/schema/store/workflow и только потом GUI.
+Это уменьшает число незавершённых зависимостей в каждом задании.
+Два промежуточных рубежа (REGION11 и REGION25) проверяют готовый слой
+до перехода к следующему. Аппаратные шаги не подменяются fake-тестами.
 
-Обязательные дополнительные regression-сценарии:
+## Порядок и checklist
 
-- Два канала с разными scopes, unscoped при непустом default, InheritDefault после
-  explicit scope, private flood между канальными sends; точная wire последовательность.
-- `MessagesWaiting`, ADVERT и ACK между всеми immediate ответами; initial drain
-  и SQLite ingest продолжаются во время discovery и ожидания remote ответа.
-- Входящее ЛС во время temporary channel override: отдельно проверить scope
-  автоматически созданного firmware PATH/ACK; fake gate test сам по себе не
-  доказывает изоляцию такого ответа. Direct исходное ЛС + flood ACK при неизвестном
-  обратном пути; разные default scopes отправителя и получателя.
-- Команда принята, cleanup не подтверждён; новый send не принимает старый OK;
-  в БД нет ложного Failed для уже принятого SEND и нет автоматического replay.
-- Повтор того же текста с тем же timestamp сохраняет прежнюю политику scope;
-  смена region не создаёт новую channel identity и не сбрасывает unread/draft.
-- Дублированные/запоздалые discovery ответы, full-key/prefix mismatch, пустой/длинный
-  CSV, отсутствие NUL, invalid UTF-8, несколько источников одного региона,
-  `$` без ключа, ограничение контактов, изменение маршрута во время запроса.
-- Фактический default изменён другим клиентом между сессиями; каталог и назначения
-  сохраняются, нода не переписывается при подключении.
+Идти по номерам. Зависимость от предыдущего шага означает, что результаты более
+ранних этапов уже доступны; конкретные внешние условия приведены в файле шага.
+Все строки ниже пока открыты. REGION0 — завершённое исследование, не реализация.
 
-Аппаратная матрица: зафиксировать firmware hash и protocol; проверить GET/SET/clear
-default с восстановлением исходного значения и reboot persistence; получить
-список от согласованного репитера; подтвердить scoped/unscoped передачу по
-диагностике принимающей стороны, не только локальному OK. Проверить канал A→B→ЛС,
-disconnect/reconnect, остановку посередине операции и перенос настроек между
-TCP/Serial/BLE одной ноды. Передачи/мутации — в отдельно согласованном тестовом
-сценарии с известными исходными настройками, после fake/regression проверок.
+| Готово | Этап | Ограниченный результат |
+| --- | --- | --- |
+| ☐ | [REGION1](region1-models.md) | Типы scope и ключи регионов |
+| ☐ | [REGION2](region2-default-api.md) | Чтение и запись default ноды |
+| ☐ | [REGION3](region3-scope-lifecycle.md) | Жизненный цикл составной scope-операции |
+| ☐ | [REGION4](region4-channel-send.md) | Scope-aware отправка в канал |
+| ☐ | [REGION5](region5-private-send.md) | Scope-aware ЛС и ACK admission |
+| ☐ | [REGION6](region6-text-budget.md) | Библиотечный budget с учётом scope |
+| ☐ | [REGION7](region7-discovery-wire.md) | Форматы поиска соседей и регионов |
+| ☐ | [REGION8](region8-neighbors.md) | Сбор ответов соседних репитеров |
+| ☐ | [REGION9](region9-remote-runtime.md) | Общий gate и matcher удалённых запросов |
+| ☐ | [REGION10](region10-request-regions.md) | Запрос регионов одного репитера |
+| ☐ | [REGION11](region11-library-acceptance.md) | Регрессия библиотеки REGION |
+| ☐ | [REGION12](region12-core-models.md) | Прикладные модели и контракты |
+| ☐ | [REGION13](region13-catalog-schema.md) | Миграция каталога и назначений |
+| ☐ | [REGION14](region14-catalog-store.md) | Хранилище и read projections регионов |
+| ☐ | [REGION15](region15-catalog-service.md) | Локальные операции каталога и канала |
+| ☐ | [REGION16](region16-session-read.md) | Capabilities и чтение default в сессии |
+| ☐ | [REGION17](region17-default-service.md) | Изменение default ноды с readback |
+| ☐ | [REGION18](region18-attempt-storage.md) | Хранение scope исходящих попыток |
+| ☐ | [REGION19](region19-channel-application.md) | Region scope в отправке и повторе канала |
+| ☐ | [REGION20](region20-private-application.md) | Default scope в цикле ЛС |
+| ☐ | [REGION21](region21-application-budget.md) | Budget и admission для выбранного канала |
+| ☐ | [REGION22](region22-discovery-preflight.md) | Проверка целей discovery |
+| ☐ | [REGION23](region23-discovery-route.md) | Временный direct route и восстановление |
+| ☐ | [REGION24](region24-discovery-service.md) | Полный поиск и локальные наблюдения |
+| ☐ | [REGION25](region25-core-acceptance.md) | Сквозная приёмка Core |
+| ☐ | [REGION26](region26-gui-design.md) | Совместное проектирование GUI |
+| ☐ | [REGION27](region27-catalog-ui.md) | GUI каталога регионов |
+| ☐ | [REGION28](region28-selection-ui.md) | GUI default ноды и выбора канала |
+| ☐ | [REGION29](region29-discovery-ui.md) | GUI поиска регионов |
+| ☐ | [REGION30](region30-send-ui.md) | Composer и сведения о scope отправки |
+| ☐ | [REGION31](region31-desktop-acceptance.md) | Сквозная автоматическая приёмка Desktop |
+| ☐ | [REGION32](region32-hardware-local.md) | Аппаратная проверка default и транспортов |
+| ☐ | [REGION33](region33-hardware-mesh.md) | Аппаратная проверка discovery, ЛС и каналов |
+| ☐ | [REGION34](region34-completion.md) | Завершение REGION и инструкция |
 
-## Что обсудить по GUI отдельно
+Отсутствие реального устройства не блокирует REGION1–31: используются fake transport,
+fake session и временные БД. До production включения нужен итог REGION31;
+до объявления аппаратной совместимости — REGION32/33.
+Если не хватает данных целевой сборки, не подменять ими reference commit:
+зафиксировать сверенную версию в fixtures и pending проверку оборудования.
 
-Нужны пользовательские сценарии: каталог и ручное добавление; поиск с источником
-и неполнотой результата; три режима scope канала; default именно ноды; различие
-локального сохранения и изменения устройства; состояния offline/unsupported/unknown;
-отображение фактического scope исходящей попытки; удаление используемого региона;
-объяснение побочных действий discovery и результата восстановления маршрута.
+REGION23 реализует только нужное discovery владение route/mutation/readback.
+Если необходимые примитивы отсутствуют, добавить их в этом ограниченном scope;
+не начинать всю ветку D10 и не объявлять её завершённой.
+При обнаружении более крупной обязательной зависимости обновить план явно,
+сохранив возможность проверить текущий законченный результат.
 
-Открыты расположение этих действий, названия, форма выбора, показ в карточке/чате,
-разовые overrides и детализация истории. Реализацию этих решений начать после
-совместного обсуждения. До этого расширять Core/API и проверять их можно без
-выдуманного GUI-контракта.
+## Порядок работы агента
+
+1. Прочитать AGENTS.md, docs/README.md, этот индекс и ровно файл запрошенного шага.
+   Для Core/Desktop также прочитать current-state и обязательные ownership/identity/
+   agent-rules разделы из README. Не загружать все 34 задания.
+2. Прочитать перечисленные в задании разделы region-design/protocol и фактический
+   результат предшествующего шага. Старые checkpoints не заменяют актуальный код.
+3. Проверить git status и существующие API/tests/schema. Не переписывать чужие
+   изменения и не расширять scope ради будущих шагов.
+4. Реализовать три пункта задания, используя существующие fake seams и runner.
+   Сначала targeted проверки; полный suite — на рубеже слоя или если изменение
+   реально затрагивает общие механизмы.
+5. Проверить diff и записать actual commands/results, ошибки и ограничения в
+   «Результат выполнения». Обновить checkbox таблицы и current-state.
+6. Завершить выбранный шаг. Следующий выполняется по запросу пользователя;
+   план сам не запускает кодирование, радиооперации или публикацию.
+
+Для обычного запроса на шаг не требуются повторные согласования уже утверждённых
+технических решений. Отдельное участие пользователя требуется в REGION26 (GUI)
+и для конкретных аппаратных действий REGION32/33; использовать уже полученную
+авторизацию, если она покрывает сценарий. При отсутствии условий выполнить
+независимую подготовку и оставить соответствующую проверку pending.
+
+## Общие инварианты
+
+- Одна MeshCoreSharp.dll, логические transport frames, continuous RX,
+  subscribe-before-send, single-flight immediate и отдельный remote gate.
+- Scope канала хранится в приложении; default — на ноде; temporary override глобален.
+  Входящим сообщениям не приписывать текущий region, channel identity сохраняется.
+- Обычные ЛС используют default ноды; отдельный per-contact region GUI не требуется.
+  Library explicit scope — техническая возможность для контролируемой отправки.
+- ScopeOperationGate защищает управляемые клиентом команды. Автономный flood ACK
+  прошивки может воспользоваться temporary override; этот предел явно сохраняется.
+- Connect/reconnect не изменяет default и не повторяет отправки. Failed до SEND,
+  Accepted и Unknown после возможного SEND имеют разные последствия.
+- История/attempt snapshots immutable, SQLite один writer, full-key NodeId,
+  session generation, post-commit UI и существующие shutdown barriers.
+- Discovery возвращает потенциально неполный список. Изменения контактов/маршрутов
+  имеют отдельный owner и outcome; автоматическое «восстановление» поверх нового
+  route запрещено.
+
+Подробности этих правил — в тематических разделах [архитектуры](region-design.md).
+
+## Готовый запрос для следующей сессии
+
+> Выполни REGION1 по docs/messenger/plan/region1-models.md.
+> Сначала прочитай AGENTS.md и маршрут чтения в docs/README.md.
+> Проверь код и результаты зависимостей, затем реализуй только выбранный подэтап,
+> выполни его проверки и обнови документацию фактическими результатами.
+> Следующие подэтапы автоматически не начинай.
+
+Для продолжения заменить номер и имя файла на строку из таблицы.

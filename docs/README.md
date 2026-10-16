@@ -7,7 +7,8 @@ checkpoints описывают результаты на свою дату, а �
 
 ## Точки входа
 
-- [REGION — внедрение регионов](messenger/plan/stage-region.md) — проект и этапы;
+- [REGION — внедрение регионов](messenger/plan/stage-region.md) — порядок REGION1–REGION34 и отдельные задания;
+  [общие контракты](messenger/plan/region-design.md) — читать только разделы своего шага;
   [поведение ноды и wire](library/protocol/regions.md) — источники, хранение, discovery и scope.
 
 - [Старт агентской сессии](CODEX_START.md) — порядок чтения и готовый prompt.
@@ -45,6 +46,7 @@ checkpoints описывают результаты на свою дату, а �
 
 | Задача | Дополнительные разделы |
 | --- | --- |
+| Регионы / flood scope / discovery репитеров | [REGION](messenger/plan/stage-region.md), затем файл одного выбранного REGION1–34 и перечисленные в нём разделы [контрактов](messenger/plan/region-design.md) и [протокола](library/protocol/regions.md); GUI сначала REGION26 |
 | BLE-транспорт и BLE-профили | [Stage BLE](messenger/plan/stage-ble.md), затем один выбранный BLE1–BLE18 и результаты зависимостей; для wire — layers/runtime/framing, для application — connections/identity/shutdown |
 | Shell, стили, новые UI-компоненты | [UI-план](messenger/plan/ui-components.md), [node-scoped UI](messenger/architecture/node-scoped-ui.md), [владельцы компонентов](messenger/ui-analysis/components.md), [риски UI](messenger/ui-analysis/risks.md) |
 | История, scroll, unread | [C4 position API](messenger/plan/c4-history-api.md), [C5 viewport](messenger/plan/c5-history-window.md), [C6 unread](messenger/plan/c6-unread.md); выбрать затрагиваемую часть |
