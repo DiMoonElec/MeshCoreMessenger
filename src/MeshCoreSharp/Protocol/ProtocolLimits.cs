@@ -11,6 +11,9 @@ public static class ProtocolLimits
     public const int ChannelNameSize = 32;
     public const int MaxChannelNameUtf8Bytes = ChannelNameSize - 1;
     public const int ChannelSecretSize = 16;
+    public const int RegionKeySize = 16;
+    public const int RegionNameSize = 31;
+    public const int MaxRegionNameUtf8Bytes = RegionNameSize - 1;
     public const int MaxTextBytes = 160;
     /// <summary>Largest plain-text attempt that does not require the firmware's extended-attempt payload.</summary>
     public const byte MaxBasicTextAttempt = 3;

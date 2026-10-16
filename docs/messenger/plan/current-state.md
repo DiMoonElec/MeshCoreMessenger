@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION1](region1-models.md): immutable key16, scope selection, default observation и public/custom region models. Library regression 182/182. По запросу пользователя продолжаем последовательно без остановки между подэтапами; следующий REGION2. CatCore разрешена для аппаратных проверок.
+
 16.10.2026: пользователь подтвердил BLE на Heltec V4 и V3 с прошивкой 1.17.0;
 V4 заработала после обновления с 1.16. Зарегистрированы
 [два отложенных бага подключения новой ноды](../../testing/ble-first-connection-bugs.md):
