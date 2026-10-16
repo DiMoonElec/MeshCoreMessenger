@@ -1,3 +1,12 @@
+16.10.2026: реализован [BLE11](ble11-profile-store.md): SQLite store сохраняет/читает
+BLE endpoint и display name, TCP/Serial mapping сохранён. Targeted Core **57/57**,
+Windows/portable locked restore и solution Release builds без warnings/errors.
+Только временные БД; production GUI/DI и реальные подключения не менялись.
+Следующий этап — BLE12. Автопереход остановлен перед application integration:
+для завершения BLE8 требуется подготовленная очередь с реальными RX174–176-byte
+сообщениями; существующий backlog не трогать без подготовки. Полный Core после
+BLE10 — 411/411, после BLE11 выполнены targeted tests; native macOS не проверялся.
+
 16.10.2026: реализован [BLE10](ble10-schema.md), SQLite v7: третий transport,
 BLE columns/CHECK, атомарная перестройка ConnectionProfiles с сохранением Sessions,
 FK check, rollback и backup. Targeted 47/47, полный Core 411/411 после актуализации

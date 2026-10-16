@@ -62,11 +62,13 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
                 INSERT INTO ConnectionProfiles (
                     Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
                     DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-                    AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc)
+                    AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc,
+                    BleDeviceId, BleDeviceName)
                 VALUES (
                     $id, $name, $transport, $tcpHost, $tcpPort, $serialPortName, $baudRate,
                     $dtrEnable, $rtsEnable, $openDelayMilliseconds, $commandTimeoutMilliseconds,
-                    $acknowledgementTimeoutMilliseconds, $autoConnect, $reconnect, $createdUtc, $updatedUtc)
+                    $acknowledgementTimeoutMilliseconds, $autoConnect, $reconnect, $createdUtc, $updatedUtc,
+                    $bleDeviceId, $bleDeviceName)
                 ON CONFLICT(Id) DO UPDATE SET
                     Name = excluded.Name,
                     Transport = excluded.Transport,
@@ -74,6 +76,8 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
                     TcpPort = excluded.TcpPort,
                     SerialPortName = excluded.SerialPortName,
                     BaudRate = excluded.BaudRate,
+                    BleDeviceId = excluded.BleDeviceId,
+                    BleDeviceName = excluded.BleDeviceName,
                     DtrEnable = excluded.DtrEnable,
                     RtsEnable = excluded.RtsEnable,
                     OpenDelayMilliseconds = excluded.OpenDelayMilliseconds,
@@ -90,6 +94,8 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
             command.Parameters.AddWithValue("$tcpPort", (object?)profile.TcpPort ?? DBNull.Value);
             command.Parameters.AddWithValue("$serialPortName", (object?)profile.SerialPortName ?? DBNull.Value);
             command.Parameters.AddWithValue("$baudRate", (object?)profile.BaudRate ?? DBNull.Value);
+            command.Parameters.AddWithValue("$bleDeviceId", (object?)profile.BleDeviceId ?? DBNull.Value);
+            command.Parameters.AddWithValue("$bleDeviceName", (object?)profile.BleDeviceName ?? DBNull.Value);
             command.Parameters.AddWithValue("$dtrEnable", profile.DtrEnable);
             command.Parameters.AddWithValue("$rtsEnable", profile.RtsEnable);
             command.Parameters.AddWithValue("$openDelayMilliseconds", profile.OpenDelayMilliseconds);
@@ -122,12 +128,15 @@ internal sealed class SqliteConnectionProfileStore(DatabaseWorker writer, Databa
         Reconnect = result.GetBoolean(13),
         CreatedUtc = DateTimeOffset.Parse(result.GetString(14), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
         UpdatedUtc = DateTimeOffset.Parse(result.GetString(15), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind),
+        BleDeviceId = result.IsDBNull(16) ? null : result.GetString(16),
+        BleDeviceName = result.IsDBNull(17) ? null : result.GetString(17),
     };
 
     private const string SelectColumns = """
         SELECT Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
                DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
-               AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc
+               AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect, CreatedUtc, UpdatedUtc,
+               BleDeviceId, BleDeviceName
         FROM ConnectionProfiles
         """;
 }
