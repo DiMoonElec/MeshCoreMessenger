@@ -106,7 +106,7 @@ internal static class BleContractTests
 
     private static async Task GattOperations()
     {
-        var session = new FakeBleGattSession();
+        var session = new FakeBleGattSession { AutoCompleteUnsubscriptions = false };
         var received = new List<byte[]>();
         Exception? disconnected = null;
         ushort mtu = 0;

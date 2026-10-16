@@ -17,6 +17,10 @@ internal sealed class BleReceiveSession : IAsyncDisposable
     private Exception? _error;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     private readonly TimeProvider _time;
+    private int _activeIo;
+    private TaskCompletionSource? _idle;
+    private bool _subscriptionAttempted;
+    internal Exception? CleanupError { get; private set; }
 
     internal BleReceiveSession(BleGattOpenResult prepared, BleMeshCoreTransportOptions options, TimeProvider? time = null)
     {
@@ -52,7 +56,11 @@ internal sealed class BleReceiveSession : IAsyncDisposable
         {
             cancellationToken.ThrowIfCancellationRequested();
             CheckLink();
-            var subscription = _connection.EnableNotificationsAsync(cancellationToken);
+            var subscription = StartNativeOperation(() =>
+            {
+                _subscriptionAttempted = true;
+                return _connection.EnableNotificationsAsync(cancellationToken);
+            });
             Observe(subscription);
             await Task.WhenAny(subscription, _terminated.Task).WaitAsync(cancellationToken).ConfigureAwait(false);
             ThrowIfStopped();
@@ -98,7 +106,7 @@ internal sealed class BleReceiveSession : IAsyncDisposable
             wait.Token.ThrowIfCancellationRequested();
             started = true;
             // Copy before native I/O: the caller may reuse its buffer after cancellation returns.
-            var writing = native.WriteAsync(frame.ToArray(), wait.Token);
+            var writing = StartNativeOperation(() => native.WriteAsync(frame.ToArray(), wait.Token));
             Observe(writing);
             await Task.WhenAny(writing, _terminated.Task).WaitAsync(wait.Token).ConfigureAwait(false);
             ThrowIfStopped();
@@ -162,15 +170,76 @@ internal sealed class BleReceiveSession : IAsyncDisposable
             _error = error;
             _frames.Writer.TryComplete(error);
             _terminated.TrySetResult();
-            // Native cleanup can wait for an uninterruptible CCCD operation. Never run it on a GATT callback.
-            CleanupCompletion = Task.Run(async () =>
-            {
-                _connection.NotificationReceived -= OnNotification;
-                _connection.Disconnected -= OnDisconnected;
-                _connection.MaxPduSizeChanged -= OnMtuChanged;
-                await _prepared.Attempt.CloseAsync(error).ConfigureAwait(false);
-            });
+            // The I/O reservation is made before invoking native code, even if it calls back synchronously.
+            var idle = _idle?.Task ?? Task.CompletedTask;
+            CleanupCompletion = Task.Run(() => CleanupAsync(idle, error));
             Observe(CleanupCompletion);
+        }
+    }
+
+    private Task StartNativeOperation(Func<Task> start)
+    {
+        lock (_sync)
+        {
+            ThrowIfStopped();
+            if (_activeIo++ == 0) _idle = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task operation;
+            try { operation = start(); }
+            catch { EndNativeOperation(); throw; }
+            _ = ObserveNativeCompletionAsync(operation);
+            return operation;
+        }
+    }
+
+    private async Task ObserveNativeCompletionAsync(Task operation)
+    {
+        try { await operation.ConfigureAwait(false); }
+        catch { /* The caller reports the primary outcome; late faults are observed here. */ }
+        finally { lock (_sync) EndNativeOperation(); }
+    }
+
+    private void EndNativeOperation()
+    {
+        if (--_activeIo == 0) _idle!.TrySetResult();
+    }
+
+    private async Task CleanupAsync(Task idle, Exception? error)
+    {
+        var errors = new List<Exception>();
+        void Detach(Action action)
+        {
+            try { action(); } catch (Exception failure) { errors.Add(failure); }
+        }
+        Detach(() => _connection.NotificationReceived -= OnNotification);
+        Detach(() => _connection.Disconnected -= OnDisconnected);
+        Detach(() => _connection.MaxPduSizeChanged -= OnMtuChanged);
+        await idle.ConfigureAwait(false);
+        if (_subscriptionAttempted && _connection.IsLinkConnected)
+        {
+            using var deadline = new CancellationTokenSource(_options.ShutdownTimeout, _time);
+            Task? disabling = null;
+            try
+            {
+                disabling = _connection.DisableNotificationsAsync(deadline.Token);
+                await disabling.WaitAsync(deadline.Token).ConfigureAwait(false);
+            }
+            catch (Exception failure)
+            {
+                errors.Add(failure is OperationCanceledException && deadline.IsCancellationRequested
+                    ? new TimeoutException("BLE CCCD disable exceeded the shutdown deadline.", failure) : failure);
+                // Caller shutdown is bounded; physical cleanup retains ownership until native I/O ends.
+                if (disabling is not null)
+                    try { await disabling.ConfigureAwait(false); }
+                    catch (Exception lateError) { if (!ReferenceEquals(failure, lateError)) errors.Add(lateError); }
+            }
+        }
+        try { await _prepared.Attempt.CloseAsync(error).ConfigureAwait(false); }
+        catch (Exception failure) { errors.Add(failure); }
+        if (errors.Count != 0)
+        {
+            CleanupError = new AggregateException("BLE session cleanup failed.", errors);
+            if (error is not null) error.Data["BleCleanupError"] = CleanupError;
+            throw CleanupError;
         }
     }
 
@@ -188,9 +257,10 @@ internal sealed class BleReceiveSession : IAsyncDisposable
         CancellationToken.None, TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
         TaskScheduler.Default);
 
-    public ValueTask DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         Stop();
-        return new(CleanupCompletion);
+        try { await CleanupCompletion.WaitAsync(_options.ShutdownTimeout, _time).ConfigureAwait(false); }
+        catch (TimeoutException) { /* CleanupCompletion still owns and observes late native work. */ }
     }
 }

@@ -1,3 +1,13 @@
+16.10.2026: после BLE6 `a84b404` по новому запросу выполнен [BLE7](ble7-lifecycle.md).
+Добавлены isolated generations для повторного Connect, общий retire/cleanup,
+ShutdownTimeout (2 s), best-effort CCCD disable, ожидание actual native I/O до
+освобождения ресурсов и public CleanupCompletion для позднего cleanup/diagnostics.
+Disconnect/Dispose ограничивают ожидание caller, завершение старой generation не
+влияет на новую. Library **165/165 Windows**, **163/163 portable**, обе Release
+solution builds/locked restore успешны без warnings/errors. Hardware/native macOS
+не проверялись, production DI/Core/DB/runtime не менялись. **Следующий подэтап — BLE8**;
+он в текущем запросе не начат.
+
 16.10.2026: BLE5 зафиксирован и отправлен в origin/main коммитом `4d85b30`, затем
 выполнен [BLE6](ble6-send.md). Добавлены Windows BleMeshCoreTransport и logical-frame
 SendAsync: один WriteWithResponse, write gate/deadline, terminal unknown outcome

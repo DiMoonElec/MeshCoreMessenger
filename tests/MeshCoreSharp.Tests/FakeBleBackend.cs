@@ -50,11 +50,19 @@ internal sealed class FakeBleGattSession : IBleGattSession
     internal Channel<Write> Writes { get; } = Channel.CreateUnbounded<Write>();
     internal ControlledBleOperation<bool>? Disposal { get; init; }
     internal Action? OnMtuRead { get; set; }
+    internal Action? OnWrite { get; set; }
     internal bool HasPreparationHandlers => Disconnected is not null || MaxPduSizeChanged is not null;
     internal int DisposeCount;
+    internal bool AutoCompleteUnsubscriptions { get; init; } = true;
 
     public Task EnableNotificationsAsync(CancellationToken cancellationToken) => Queue(Subscriptions, cancellationToken);
-    public Task DisableNotificationsAsync(CancellationToken cancellationToken) => Queue(Unsubscriptions, cancellationToken);
+    public Task DisableNotificationsAsync(CancellationToken cancellationToken)
+    {
+        var operation = new ControlledBleOperation<bool>(cancellationToken);
+        Unsubscriptions.Writer.TryWrite(operation);
+        if (AutoCompleteUnsubscriptions) operation.Complete(true);
+        return operation.Task;
+    }
 
     private static Task Queue(Channel<ControlledBleOperation<bool>> queue, CancellationToken cancellationToken)
     {
@@ -67,6 +75,7 @@ internal sealed class FakeBleGattSession : IBleGattSession
     {
         var operation = new ControlledBleOperation<bool>(cancellationToken);
         Writes.Writer.TryWrite(new(frame.ToArray(), operation));
+        OnWrite?.Invoke();
         return operation.Task;
     }
 

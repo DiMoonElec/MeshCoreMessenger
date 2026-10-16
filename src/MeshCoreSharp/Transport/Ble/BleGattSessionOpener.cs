@@ -72,7 +72,8 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
             CleanupCompletion = opening is not null && !adopted
                 ? DisposeLateResultAsync(opening, attempt, cleanup) : cleanup;
             Observe(CleanupCompletion);
-            try { await cleanup.ConfigureAwait(false); }
+            try { await cleanup.WaitAsync(options.ShutdownTimeout, time).ConfigureAwait(false); }
+            catch (TimeoutException) { failure.Data["BleCleanupPending"] = true; }
             catch (Exception cleanupError) { failure.Data["BleCleanupError"] = cleanupError; }
             System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
             throw;
@@ -131,9 +132,11 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
         {
             connection = await opening.ConfigureAwait(false);
         }
-        catch
+        catch (Exception error)
         {
             // Open failure owns partial cleanup. Await observes the late failure after caller cancellation.
+            if (error.Data["BleCleanupError"] is Exception cleanupError)
+                throw new AggregateException("Late BLE open failed to release partial native resources.", cleanupError);
             return;
         }
         if (connection is not null) await attempt.AdoptSessionAsync(connection).ConfigureAwait(false);

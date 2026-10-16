@@ -10,6 +10,8 @@ public sealed record BleMeshCoreTransportOptions
     public TimeSpan OpenTimeout { get; init; } = TimeSpan.FromSeconds(15);
     /// <summary>Deadline for one GATT write after acquiring the write gate.</summary>
     public TimeSpan WriteTimeout { get; init; } = TimeSpan.FromSeconds(15);
+    /// <summary>Maximum caller wait for shutdown and best-effort CCCD disable. Late I/O keeps its owner.</summary>
+    public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(2);
     public int ReceiveQueueCapacity { get; init; } = 256;
     /// <summary>Maximum complete logical frame; the default matches the current firmware baseline.</summary>
     public int MaximumFrameSize { get; init; } = ProtocolLimits.CurrentFirmwareMaxFrameSize;
@@ -24,6 +26,8 @@ public sealed record BleMeshCoreTransportOptions
             throw new ArgumentOutOfRangeException(nameof(OpenTimeout));
         if (WriteTimeout <= TimeSpan.Zero || WriteTimeout.TotalMilliseconds > uint.MaxValue - 1)
             throw new ArgumentOutOfRangeException(nameof(WriteTimeout));
+        if (ShutdownTimeout <= TimeSpan.Zero || ShutdownTimeout.TotalMilliseconds > uint.MaxValue - 1)
+            throw new ArgumentOutOfRangeException(nameof(ShutdownTimeout));
         if (ReceiveQueueCapacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(ReceiveQueueCapacity));
         if (MaximumFrameSize <= 0 || MaximumFrameSize > ushort.MaxValue - BleGattProfile.AttributeValueOverhead)
