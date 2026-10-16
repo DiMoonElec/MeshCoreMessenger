@@ -4,7 +4,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     private static readonly Migration[] Migrations =
     [
@@ -15,6 +15,7 @@ internal static class DatabaseMigrator
         new(5, "Private delivery cycles and route evidence", PrivateDeliverySql),
         new(6, "Private incoming retry event identities", IncomingRetryIdentitiesSql),
         new(7, "BLE connection profiles", BleProfilesSql, RebuildProfiles: true),
+        new(8, "Node-scoped region catalogue and observations", RegionsSql, VerifyForeignKeys: true),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
@@ -95,14 +96,14 @@ internal static class DatabaseMigrator
                 restore.ExecuteNonQuery();
             }
 
-            if (migration.RebuildProfiles)
+            if (migration.RebuildProfiles || migration.VerifyForeignKeys)
             {
                 using var check = connection.CreateCommand();
                 check.Transaction = transaction;
                 check.CommandText = "PRAGMA foreign_key_check;";
                 using var result = check.ExecuteReader();
                 if (result.Read())
-                    throw new DatabaseStorageException("Foreign key check failed during profile table migration.");
+                    throw new DatabaseStorageException($"Foreign key check failed during migration {migration.Version}.");
             }
 
             using (var history = connection.CreateCommand())
@@ -141,7 +142,7 @@ internal static class DatabaseMigrator
         }
     }
 
-    private sealed record Migration(int Version, string Name, string Sql, bool RebuildProfiles = false);
+    private sealed record Migration(int Version, string Name, string Sql, bool RebuildProfiles = false, bool VerifyForeignKeys = false);
 
     private const string BleProfilesSql = """
         CREATE TABLE ConnectionProfiles_Ble (
@@ -201,6 +202,68 @@ internal static class DatabaseMigrator
             SELECT EventId,Id FROM Messages WHERE Direction=0 AND EventId IS NOT NULL;
         CREATE INDEX IX_Messages_PrivateRetry ON Messages(ConversationId,WireTimestamp,TextType)
             WHERE Direction=0 AND MessageKind=0 AND ResolutionState=1 AND TextType=0;
+        """;
+
+    private const string RegionsSql = """
+        CREATE UNIQUE INDEX UX_Sessions_Id_Node ON Sessions(Id,NodeId);
+        CREATE TABLE Regions (
+            Id TEXT NOT NULL PRIMARY KEY,
+            NodeId TEXT NOT NULL,
+            Kind INTEGER NOT NULL CHECK(Kind IN(0,1)),
+            ProtocolName TEXT NOT NULL CHECK(length(CAST(ProtocolName AS BLOB)) BETWEEN 1 AND 30 AND instr(ProtocolName,char(0))=0 AND instr(ProtocolName,',')=0 AND ProtocolName NOT IN('*','#','$')),
+            Label TEXT NOT NULL CHECK(length(trim(Label))>0 AND instr(Label,char(0))=0),
+            Key BLOB NOT NULL CHECK(typeof(Key)='blob' AND length(Key)=16 AND Key<>zeroblob(16)),
+            KeyFingerprint BLOB NOT NULL CHECK(typeof(KeyFingerprint)='blob' AND length(KeyFingerprint)=32),
+            Provenance INTEGER NOT NULL CHECK(Provenance IN(0,1)),
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL CHECK(UpdatedUtc>=CreatedUtc),
+            Archived INTEGER NOT NULL DEFAULT 0 CHECK(Archived IN(0,1)),
+            FOREIGN KEY(NodeId) REFERENCES Nodes(Id) ON DELETE CASCADE,
+            UNIQUE(Id,NodeId),
+            UNIQUE(NodeId,KeyFingerprint)
+        );
+        CREATE INDEX IX_Regions_Node_Archived ON Regions(NodeId,Archived,Label);
+        CREATE TABLE ChannelRegionPreferences (
+            NodeId TEXT NOT NULL,
+            ChannelId TEXT NOT NULL,
+            Mode INTEGER NOT NULL DEFAULT 0 CHECK(Mode IN(0,1,2)),
+            RegionId TEXT,
+            Revision INTEGER NOT NULL DEFAULT 0 CHECK(Revision>=0),
+            PRIMARY KEY(NodeId,ChannelId),
+            FOREIGN KEY(ChannelId,NodeId) REFERENCES Channels(Id,NodeId) ON DELETE CASCADE,
+            FOREIGN KEY(RegionId,NodeId) REFERENCES Regions(Id,NodeId) ON DELETE RESTRICT,
+            CHECK((Mode=1 AND RegionId IS NOT NULL) OR (Mode IN(0,2) AND RegionId IS NULL))
+        );
+        CREATE INDEX IX_ChannelRegionPreferences_Region ON ChannelRegionPreferences(RegionId,NodeId);
+        INSERT INTO ChannelRegionPreferences(NodeId,ChannelId,Mode,RegionId,Revision)
+            SELECT NodeId,Id,0,NULL,0 FROM Channels;
+        CREATE TABLE NodeRegionSnapshots (
+            NodeId TEXT NOT NULL PRIMARY KEY,
+            SessionId TEXT,
+            Generation INTEGER CHECK(Generation IS NULL OR Generation>=0),
+            ObservedUtc TEXT,
+            Support INTEGER NOT NULL CHECK(Support IN(0,1,2)),
+            State INTEGER NOT NULL CHECK(State IN(0,1,2)),
+            Name TEXT,
+            Key BLOB,
+            FOREIGN KEY(NodeId) REFERENCES Nodes(Id) ON DELETE CASCADE,
+            FOREIGN KEY(SessionId,NodeId) REFERENCES Sessions(Id,NodeId) ON DELETE RESTRICT,
+            CHECK(State=0 OR (Support=2 AND SessionId IS NOT NULL AND Generation IS NOT NULL AND ObservedUtc IS NOT NULL)),
+            CHECK((State IN(0,1) AND Name IS NULL AND Key IS NULL) OR
+                (State=2 AND Name IS NOT NULL AND instr(Name,char(0))=0 AND length(CAST(Name AS BLOB))<=30
+                    AND Key IS NOT NULL AND typeof(Key)='blob' AND length(Key)=16))
+        );
+        CREATE TABLE RegionObservations (
+            NodeId TEXT NOT NULL,
+            RepeaterPublicKey BLOB NOT NULL CHECK(typeof(RepeaterPublicKey)='blob' AND length(RepeaterPublicKey)=32),
+            ProtocolName TEXT NOT NULL CHECK(length(CAST(ProtocolName AS BLOB)) BETWEEN 1 AND 30 AND instr(ProtocolName,char(0))=0 AND instr(ProtocolName,',')=0),
+            Source INTEGER NOT NULL CHECK(Source IN(0,1)),
+            FirstSeenUtc TEXT NOT NULL,
+            LastSeenUtc TEXT NOT NULL CHECK(LastSeenUtc>=FirstSeenUtc),
+            PRIMARY KEY(NodeId,RepeaterPublicKey,ProtocolName),
+            FOREIGN KEY(NodeId) REFERENCES Nodes(Id) ON DELETE CASCADE
+        );
+        CREATE INDEX IX_RegionObservations_Node_LastSeen ON RegionObservations(NodeId,LastSeenUtc);
         """;
 
     private const string InitialSchemaSql = """

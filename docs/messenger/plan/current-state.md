@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION13](region13-catalog-schema.md), schema8: catalogue/preferences/default observations/discovery evidence, composite node FK, inherited policies, backup/rollback tests. Targeted Core45/45. REGION12 отправлен1bcce04; следующий REGION14. Реальная пользовательская БД не открывалась.
+
 16.10.2026: выполнен [REGION12](region12-core-models.md): immutable node/channel-scoped DTO и repository contracts, CHECK/delete/CAS invariants. Targeted Core5/5; Core Release0 warnings/errors. REGION11 отправленa76c449; следующий REGION13 (schema7→8 на временных БД).
 
 16.10.2026: выполнен [REGION11](region11-library-acceptance.md), [отчёт](../../testing/region-library.md): Windows library225/225, portable223/223, Core460/460; Windows/portable locked restore и Release solution builds зелёные. Исправлены fake CMD54 и definite-response hook failure; hardware не проверялся. REGION10 отправлен30be202. Следующий REGION12, продолжаем автоматически с commit/push между этапами по явному запросу пользователя.

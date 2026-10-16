@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Добавочная SQLite миграция region-данных.
 
@@ -41,11 +41,17 @@ region-design.md: «Хранение и локальные операции»; a
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION14](region14-catalog-store.md).
+Добавлена schema8 migration после7: Regions, ChannelRegionPreferences, NodeRegionSnapshots, RegionObservations и индексы; существующим Channels созданы InheritDefault/revision0. Catalogue identity уникальна по node/fingerprint; key16 ненулевой BLOB, fingerprint32. Composite FK region/channel/session с NodeId отвергают cross-node references. Referenced region delete RESTRICT; observation retention не затрагивает catalogue. Snapshot различает Unknown/KnownEmpty/configured pair, не хранит ложную current-session freshness.
+
+Использованы существующие DatabaseWorker backup и transactional migration conventions. Для новой миграции добавлена явная pre-commit foreign_key_check без повторного восстановления profile indexes/triggers (оно требуется только BLE rebuild). Старые BLE migration assertions используют CurrentVersion при полном upgrade. SendAttemptScopes остаётся REGION18; пользовательская БД не открывалась.
+
+Проверка: dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --no-restore -- -noLogo -class MeshCoreMessenger.Core.Tests.RegionMigrationTests -class MeshCoreMessenger.Core.Tests.BleProfileMigrationTests -class MeshCoreMessenger.Core.Tests.LocalStorageTests -class MeshCoreMessenger.Core.Tests.RegionModelTests — 45/45. Шесть новых migration cases: schema7/empty/schema1 upgrades, same-node FK и checks/UTF8 boundary, injected history failure с rollback всех новых объектов/version/preferences, preexisting FK corruption, version7 backup и reopen без повторного backup. Все проверки на временных БД.
+
+Следующий шаг — [REGION14](region14-catalog-store.md).

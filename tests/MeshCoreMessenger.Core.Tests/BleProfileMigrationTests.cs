@@ -26,7 +26,7 @@ public sealed class BleProfileMigrationTests
 
         DatabaseMigrator.ApplyPending(connection);
 
-        Assert.Equal(7, Number(connection, "PRAGMA user_version;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "PRAGMA user_version;"));
         Assert.Equal(1, Number(connection, "PRAGMA foreign_keys;"));
         Assert.Empty(Rows(connection, "PRAGMA foreign_key_check;"));
         Assert.Equal(profiles, Rows(connection, """
@@ -44,7 +44,7 @@ public sealed class BleProfileMigrationTests
         Assert.Equal("trigger fired", Rows(connection, "SELECT Value FROM Settings WHERE Key='marker';")[0][0]);
         Assert.Throws<SqliteException>(() => Execute(connection, "DELETE FROM ConnectionProfiles WHERE Id='tcp';"));
         DatabaseMigrator.ApplyPending(connection);
-        Assert.Equal(7, Number(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "SELECT COUNT(*) FROM SchemaMigrations;"));
     }
 
     [Theory]
