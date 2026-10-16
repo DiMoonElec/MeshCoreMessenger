@@ -29,24 +29,27 @@ internal sealed class ScopeOperationCoordinator(CommandDispatcher dispatcher, Ti
 
     internal Task<ScopeOperationResult<T>> ExecuteAsync<T>(FloodScopeSelection scope,
         Func<CancellationToken, Task<T>> send, CancellationToken token) =>
-        WithGateAsync(async ct =>
+        WithGateAsync(ct => ExecuteUnderGateAsync(scope, send, ct), token);
+
+    internal async Task<ScopeOperationResult<T>> ExecuteUnderGateAsync<T>(FloodScopeSelection scope,
+        Func<CancellationToken, Task<T>> send, CancellationToken ct)
+    {
+        await SetAsync(scope, ct).ConfigureAwait(false);
+        T accepted;
+        try
         {
-            await SetAsync(scope, ct).ConfigureAwait(false);
-            T accepted;
-            try
-            {
-                ct.ThrowIfCancellationRequested();
-                accepted = await send(ct).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Definite send rejection or cancellation before SEND still needs cleanup.
-                // Ambiguous dispatcher failures have already stopped this session.
-                await TryResetAsync().ConfigureAwait(false);
-                throw;
-            }
-            return new ScopeOperationResult<T>(accepted, await TryResetAsync().ConfigureAwait(false));
-        }, token);
+            ct.ThrowIfCancellationRequested();
+            accepted = await send(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Definite send rejection or cancellation before SEND still needs cleanup.
+            // Ambiguous dispatcher failures have already stopped this session.
+            await TryResetAsync().ConfigureAwait(false);
+            throw;
+        }
+        return new ScopeOperationResult<T>(accepted, await TryResetAsync().ConfigureAwait(false));
+    }
 
     private Task<OkPacket> SetAsync(FloodScopeSelection scope, CancellationToken ct) =>
         dispatcher.SendAsync<OkPacket>(CommandType.SetFloodScopeKey, CompanionCommands.SetFloodScope(scope),

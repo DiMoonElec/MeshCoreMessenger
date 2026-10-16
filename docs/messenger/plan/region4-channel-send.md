@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Одна канальная отправка с атомарным относительно других команд выбором scope.
 
@@ -41,11 +41,19 @@ region-design.md: «Библиотека: безопасная отправка�
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION5](region5-private-send.md).
+Добавлен scope overload SendChannelTextAsync(slot,text,timestamp,scope,ct), выполнен SET→SEND→RESET. Legacy channel/private и SET/CLEAR default используют общий scope gate. Результаты канала/ЛС сохраняют ScopeCleanupError отдельно от acceptance. Private ACK waiter запускается до RESET; capacity ожидается до scope gate. Shutdown ждёт tracked scope teardown.
+
+Совместимость: DEVICE_INFO сохраняет protocol version в текущей session; explicit scope при отсутствии версии выполняет read-only query. v8+ допускает temporary key, v12+ force-unscoped. Подтверждённый UNSUPPORTED_CMD отключает temporary scope на сессию; explicit возвращает NotSupportedException, legacy продолжает прежний путь. До получения protocol version обычные legacy sends сохраняют прежний wire path, всегда внутри общего gate; они не заявляют известный effective scope. Application startup уже читает DEVICE_INFO; расширенные capabilities остаются REGION16.
+
+Матрица transmit API: channel/private text проходят coordinator; default SET/CLEAR проходят gate; advertisement использует firmware default key напрямую (MyMesh.cpp CMD_SEND_SELF_ADVERT), временный override его не определяет. Безопасные reads, incoming drain и push не берут scope gate. Discovery transmit добавляется REGION8/10; публичного raw transmit API нет. Автономные firmware ACK по-прежнему не изолируются gate.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 200/200. Шесть новых cases: concurrent A/B scopes с timestamps; legacy private и mutation между SET/SEND; force-unscoped при default; accepted+RESET error; old firmware; unsupported explicit; safe read и push между фазами. Hardware проверка будет REGION32/33.
+
+Следующий шаг — [REGION5](region5-private-send.md).

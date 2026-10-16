@@ -26,6 +26,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private AckTracker? _ackTracker;
     private ScopeOperationCoordinator? _scopeOperations;
     private Task _scopeTeardown = Task.CompletedTask;
+    private byte? _firmwareProtocolVersion;
+    private bool _temporaryScopeUnsupported;
     private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
@@ -113,6 +115,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 _receiveCts = new CancellationTokenSource();
                 _dispatcher.StartSession();
                 _scopeOperations = new ScopeOperationCoordinator(_dispatcher, _options.CommandTimeout, _receiveCts.Token);
+                _firmwareProtocolVersion = null;
+                _temporaryScopeUnsupported = false;
                 _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;
@@ -183,6 +187,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public async Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
     {
         EnsureReady();
+        var session = _scopeOperations;
         var packet = await _dispatcher.SendAsync<DeviceInfoPacket>(
             CommandType.DeviceQuery,
             CompanionCommands.DeviceQuery(_options.ApplicationProtocolVersion),
@@ -190,6 +195,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
             _options.CommandTimeout,
             cancellationToken).ConfigureAwait(false);
 
+        if (ReferenceEquals(session, _scopeOperations)) _firmwareProtocolVersion = packet.Info.FirmwareProtocolVersion;
         return packet.Info;
     }
 
@@ -308,18 +314,18 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public async Task SetDefaultFloodScopeAsync(RegionDefinition region, CancellationToken cancellationToken = default)
     {
         EnsureReady();
-        await _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
+        await _scopeOperations!.WithGateAsync(ct => _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
             CompanionCommands.SetDefaultFloodScope(region), nameof(SetDefaultFloodScopeAsync), _options.CommandTimeout,
-            cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+            ct, type => type == PacketType.Ok, invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Explicitly clears persistent default preferences without changing temporary override.</summary>
     public async Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
     {
         EnsureReady();
-        await _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
+        await _scopeOperations!.WithGateAsync(ct => _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
             CompanionCommands.ClearDefaultFloodScope(), nameof(ClearDefaultFloodScopeAsync), _options.CommandTimeout,
-            cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+            ct, type => type == PacketType.Ok, invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Reads one local channel slot, including an empty slot. Invalid indices produce a firmware error.</summary>
@@ -464,11 +470,17 @@ public sealed class MeshCoreClient : IAsyncDisposable
         var pending = await tracker.BeginAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var sent = await _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendTextMessage, command,
-                nameof(SendTextAsync), _options.CommandTimeout, pending.Token,
-                type => type == PacketType.MessageSent, onAccepted: packet => pending.Bind(packet.Info)).ConfigureAwait(false);
-            pending.ReleaseSendGate();
-            return new TextMessageSendResult(timestamp, sent.Info, pending.WaitForDeliveryAsync());
+            var operation = await RunScopeSendAsync(FloodScopeSelection.InheritDefault, async (ct, guarded) =>
+            {
+                var sent = await _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendTextMessage, command,
+                    nameof(SendTextAsync), _options.CommandTimeout, ct,
+                    type => type == PacketType.MessageSent, onAccepted: packet => pending.Bind(packet.Info),
+                    invalidateOnUncertainResponse: guarded).ConfigureAwait(false);
+                pending.ReleaseSendGate();
+                // Start delivery before RESET: an immediate ACK remains confirmed even if cleanup closes RX.
+                return new TextMessageSendResult(timestamp, sent.Info, pending.WaitForDeliveryAsync());
+            }, pending.Token).ConfigureAwait(false);
+            return operation.AcceptedSend with { ScopeCleanupError = operation.CleanupError };
         }
         catch
         {
@@ -486,19 +498,59 @@ public sealed class MeshCoreClient : IAsyncDisposable
     }
 
     /// <summary>Sends once with the supplied wire timestamp, for durable application-owned retries.</summary>
-    public async Task<ChannelMessageSendResult> SendChannelTextAsync(
+    public Task<ChannelMessageSendResult> SendChannelTextAsync(
         byte channelIndex, string text, uint timestamp, CancellationToken cancellationToken = default)
+        => SendChannelTextAsync(channelIndex, text, timestamp, FloodScopeSelection.InheritDefault, cancellationToken);
+
+    /// <summary>Sends once with an explicit flood policy, then restores temporary scope to default.</summary>
+    public async Task<ChannelMessageSendResult> SendChannelTextAsync(
+        byte channelIndex, string text, uint timestamp, FloodScopeSelection scope, CancellationToken cancellationToken = default)
     {
         EnsureReady();
+        ArgumentNullException.ThrowIfNull(scope);
         ObserveMessageTimestamp(timestamp);
         var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
         if (_transport is IBleClientPolicy ble)
             _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Channel, SelfInfo.Name).MaximumTextBytes);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
-        await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
-            nameof(SendChannelTextAsync), _options.CommandTimeout, linked.Token,
-            type => type == PacketType.Ok).ConfigureAwait(false);
-        return new ChannelMessageSendResult(channelIndex, timestamp);
+        var operation = await RunScopeSendAsync(scope, async (ct, guarded) =>
+        {
+            await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
+                nameof(SendChannelTextAsync), _options.CommandTimeout, ct,
+                type => type == PacketType.Ok, invalidateOnUncertainResponse: guarded).ConfigureAwait(false);
+            return new ChannelMessageSendResult(channelIndex, timestamp);
+        }, linked.Token).ConfigureAwait(false);
+        return operation.AcceptedSend with { ScopeCleanupError = operation.CleanupError };
+    }
+
+    private Task<ScopeOperationResult<T>> RunScopeSendAsync<T>(FloodScopeSelection scope,
+        Func<CancellationToken, bool, Task<T>> send, CancellationToken token)
+    {
+        var coordinator = _scopeOperations!;
+        return coordinator.WithGateAsync(async ct =>
+        {
+            if (scope.Mode != FloodScopeMode.InheritDefault && _firmwareProtocolVersion is null)
+                await GetDeviceInfoAsync(ct).ConfigureAwait(false);
+            ct.ThrowIfCancellationRequested();
+            var supported = _firmwareProtocolVersion >= 8 && !_temporaryScopeUnsupported;
+            if (scope.Mode != FloodScopeMode.InheritDefault &&
+                (!supported || scope.Mode == FloodScopeMode.ForceUnscoped && _firmwareProtocolVersion < 12))
+                throw new NotSupportedException("The requested flood policy is unsupported by this session.");
+            if (!supported) return new ScopeOperationResult<T>(await send(ct, false).ConfigureAwait(false), null);
+            try
+            {
+                return await coordinator.ExecuteUnderGateAsync(scope, inner => send(inner, true), ct).ConfigureAwait(false);
+            }
+            catch (MeshCoreCommandException error) when (error.Command == CommandType.SetFloodScopeKey &&
+                error.ErrorCode == MeshCoreErrorCode.UnsupportedCommand)
+            {
+                ct.ThrowIfCancellationRequested();
+                _temporaryScopeUnsupported = true;
+                if (scope.Mode != FloodScopeMode.InheritDefault)
+                    throw new NotSupportedException("Firmware rejected temporary flood scope.", error);
+                return new ScopeOperationResult<T>(await send(ct, false).ConfigureAwait(false), null);
+            }
+        }, token);
     }
 
     private void ObserveMessageTimestamp(uint timestamp)
@@ -531,6 +583,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
+            await _scopeTeardown.WaitAsync(cancellationToken).ConfigureAwait(false);
             if (_state == MeshCoreConnectionState.Disconnected)
                 return;
 
