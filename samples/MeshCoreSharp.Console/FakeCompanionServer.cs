@@ -12,6 +12,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private Task? _serverTask;
     private NetworkStream? _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
+    public byte[] DefaultFloodScopeResponse { get; set; } = [(byte)PacketType.DefaultFloodScope];
     private readonly ConcurrentQueue<byte[]> _messages = new(
     [
         BuildMessage(PacketType.ContactMessageReceivedV3, "Hello from Alice"),
@@ -196,6 +197,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 CommandType.DeviceQuery => BuildDeviceInfo(),
                 CommandType.GetDeviceTime => BuildCurrentTime(),
                 CommandType.GetBatteryAndStorage => BuildBattery(),
+                CommandType.GetDefaultFloodScope => DefaultFloodScopeResponse.ToArray(),
                 _ => throw new InvalidDataException($"Unexpected command: {type}"),
             };
             await WriteFrameAsync(stream, 0x3E, response);

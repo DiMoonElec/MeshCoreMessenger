@@ -22,7 +22,17 @@ public sealed partial class IncomingMessageStoreTests
         using (var connection = new SqliteConnection($"Data Source={c.DatabasePath};Pooling=False"))
         {
             connection.Open(); using var command = connection.CreateCommand();
-            command.CommandText = "DROP TABLE IncomingMessageEvents; DROP INDEX IX_Messages_PrivateRetry; DELETE FROM SchemaMigrations WHERE Version>=6; PRAGMA user_version=5;";
+            command.CommandText = """
+                DROP TABLE ChannelRegionPreferences;
+                DROP TABLE Regions;
+                DROP TABLE NodeRegionSnapshots;
+                DROP TABLE RegionObservations;
+                DROP INDEX UX_Sessions_Id_Node;
+                DROP TABLE IncomingMessageEvents;
+                DROP INDEX IX_Messages_PrivateRetry;
+                DELETE FROM SchemaMigrations WHERE Version>=6;
+                PRAGMA user_version=5;
+                """;
             command.ExecuteNonQuery();
         }
         await c.ReopenAsync();

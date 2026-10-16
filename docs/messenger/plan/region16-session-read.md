@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Read-only подключение library API к Core и startup.
 
@@ -41,11 +41,15 @@ region-design.md: «Владение состоянием и модель», «�
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION17](region17-default-service.md).
+Реализованы typed adapter seams, session-specific capabilities и read-only GET default после identification до открытия команд. Snapshot содержит NodeId/SessionId/generation; постоянный кеш читается как Offline. Unsupported относится только к конкретной функции, неизвестная поддержка не подменяется успешной. Timeout/отмена завершают сессию существующим lifecycle. Подключение не вызывает SET/RESET/discovery.
+
+Проверки: новые RegionSessionTests покрывают admission, KnownEmpty/Unknown/Unsupported, reconnect, другую ноду на endpoint, поздний ответ после отмены и failed-start teardown. BLE integration проверяет отсутствие мутаций на startup. Release solution build: 0 warnings/errors; Desktop AppBootstrapTests: 6/6. Полный Core: 485/485 (`dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --no-build -- -noLogo -parallelMode none`). Отдельный BLE integration: 9/9. Синтетические downgrade fixtures очищают также объекты schema8.
+
+Аппаратные проверки не выполнялись; они остаются REGION32–33. По запросу пользователя работа остановлена после REGION16; следующий шаг — [REGION17](region17-default-service.md).

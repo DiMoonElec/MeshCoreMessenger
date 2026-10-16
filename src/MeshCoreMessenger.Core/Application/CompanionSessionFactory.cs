@@ -8,7 +8,8 @@ public sealed class CompanionSessionFactory(
     INodeStore nodes,
     ISessionStore sessions,
     IDurableSessionCompletion sessionCompletions,
-    TimeProvider timeProvider) : ICompanionSessionFactory
+    TimeProvider timeProvider,
+    IRegionStore? regions = null) : ICompanionSessionFactory
 {
     public async Task<CompanionSession> CreateAsync(
         ConnectionProfile profile,
@@ -38,7 +39,8 @@ public sealed class CompanionSessionFactory(
                 nodes,
                 sessions,
                 sessionCompletions,
-                timeProvider);
+                timeProvider,
+                regions);
         }
         catch
         {

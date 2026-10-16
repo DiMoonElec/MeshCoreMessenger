@@ -26,6 +26,27 @@ public interface ICompanionClient : IAsyncDisposable
 
     Task ConnectAsync(CancellationToken cancellationToken = default);
     Task<SelfInfo> StartAsync(CancellationToken cancellationToken = default);
+    Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<DeviceInfo>(new NotSupportedException("Device info is not implemented by this adapter."));
+    Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException<NodeFloodScope>(new NotSupportedException("Region readback is not implemented by this adapter."));
+    Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Region configuration is not implemented by this adapter."));
+    Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default) =>
+        Task.FromException(new NotSupportedException("Region configuration is not implemented by this adapter."));
+    MessageTextBudget? GetTextBudget(TextMessageKind kind, FloodScopeSelection scope) => null;
+    Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions options, CancellationToken cancellationToken = default) =>
+        Task.FromException<NeighborDiscoveryResult>(new NotSupportedException("Neighbor discovery is not implemented by this adapter."));
+    Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> publicKey, ReplyPath path, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default) =>
+        Task.FromException<RegionNamesResponse>(new NotSupportedException("Region discovery is not implemented by this adapter."));
+    Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> publicKey, string text, uint timestamp, byte attempt,
+        FloodScopeSelection scope, CancellationToken cancellationToken = default) => scope.Mode == FloodScopeMode.InheritDefault
+            ? SendTextAsync(publicKey, text, timestamp, attempt, cancellationToken)
+            : Task.FromException<TextMessageSendResult>(new NotSupportedException("Explicit scope is not implemented by this adapter."));
+    Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, FloodScopeSelection scope,
+        CancellationToken cancellationToken = default) => scope.Mode == FloodScopeMode.InheritDefault
+            ? SendChannelTextAsync(slot, text, timestamp, cancellationToken)
+            : Task.FromException<ChannelMessageSendResult>(new NotSupportedException("Explicit scope is not implemented by this adapter."));
     Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default);
     Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default) =>
         Task.FromException<Contact>(new NotSupportedException("Single contact reading is not implemented by this adapter."));

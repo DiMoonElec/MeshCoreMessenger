@@ -285,7 +285,7 @@ public sealed class CompanionSessionTests
         }
     }
 
-    private sealed class FakeCompanionClient(SelfInfo selfInfo) : ICompanionClient
+    internal sealed class FakeCompanionClient(SelfInfo selfInfo) : ICompanionClient
     {
         private EventHandler<MeshCoreConnectionStateChangedEventArgs>? _connectionStateChanged;
         private EventHandler<MeshCoreClientErrorEventArgs>? _backgroundError;
@@ -297,6 +297,18 @@ public sealed class CompanionSessionTests
         public Func<CancellationToken, Task>? ConnectAction { get; set; }
         public Func<CancellationToken, Task<SelfInfo>>? StartAction { get; set; }
         public Func<CancellationToken, Task>? DisconnectAction { get; set; }
+        public Func<CancellationToken, Task<DeviceInfo>>? DeviceInfoAction { get; set; }
+        public Func<CancellationToken, Task<NodeFloodScope>>? RegionReadAction { get; set; }
+        public Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
+        {
+            if (DeviceInfoAction is null) return Task.FromException<DeviceInfo>(new NotSupportedException());
+            Calls.Add("GetDeviceInfo"); return DeviceInfoAction(cancellationToken);
+        }
+        public Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
+        {
+            if (RegionReadAction is null) return Task.FromException<NodeFloodScope>(new NotSupportedException());
+            Calls.Add("GetDefaultFloodScope"); return RegionReadAction(cancellationToken);
+        }
         public MeshCoreConnectionState State { get; private set; } = MeshCoreConnectionState.Disconnected;
         public bool IsConnected => State == MeshCoreConnectionState.Connected;
         public bool IsStarted { get; private set; }

@@ -40,6 +40,9 @@ public sealed class BleIntegrationTests
         Assert.Equal(3, f.Scalar("SELECT COUNT(*) FROM Messages"));
         Assert.Contains(device.Commands, x => x[0] == (byte)CommandType.SyncNextMessage);
         Assert.DoesNotContain(device.Commands, x => x[0] is (byte)CommandType.SendTextMessage or (byte)CommandType.SendChannelTextMessage);
+        Assert.Contains(device.Commands, x => x[0] == (byte)CommandType.GetDefaultFloodScope);
+        Assert.DoesNotContain(device.Commands, x => x[0] is (byte)CommandType.SetFloodScopeKey or (byte)CommandType.SetDefaultFloodScope
+            or (byte)CommandType.SendControlData or (byte)CommandType.SendAnonymousRequest);
         Assert.True(device.Disposed);
         Assert.Equal(1, f.Scalar("SELECT COUNT(*) FROM Sessions WHERE EndedUtc IS NOT NULL"));
     }
@@ -146,8 +149,15 @@ public sealed class BleIntegrationTests
             new(ConversationKind.Contact, key), new(draft, "BLE16 тест 👋", 1), new()), cancellationToken: Token);
         if (disconnect)
         {
-            await Wait(() => f.Supervisor.Snapshot.Generation > owner.Generation &&
-                f.Supervisor.Snapshot.State == ConnectionSupervisorState.Online);
+            try
+            {
+                await Wait(() => f.Supervisor.Snapshot.Generation > owner.Generation &&
+                    f.Supervisor.Snapshot.State == ConnectionSupervisorState.Online);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new InvalidOperationException($"Reconnect failed: {f.Supervisor.Snapshot}; errors: {string.Join("; ", f.Errors.Select(e => e.ToString()))}");
+            }
             Assert.Equal(SendAttemptState.Unknown, (await f.ReadAttempt(node, result.MessageId)).State);
             Assert.Single(device.Commands, x => x[0] == (byte)CommandType.SendTextMessage);
             Assert.DoesNotContain(f.Devices[^1].Commands, x => x[0] == (byte)CommandType.SendTextMessage);

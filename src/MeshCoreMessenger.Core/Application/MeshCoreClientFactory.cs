@@ -29,6 +29,18 @@ public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
 internal sealed class MeshCoreClientAdapter(MeshCoreClient client, MeshCoreClientOptions? options = null,
     IBleTextBudgetProvider? bleBudgets = null) : ICompanionClient
 {
+    public Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default) => client.GetDeviceInfoAsync(cancellationToken);
+    public Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default) => client.GetDefaultFloodScopeAsync(cancellationToken);
+    public Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default) => client.SetDefaultFloodScopeAsync(definition, cancellationToken);
+    public Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default) => client.ClearDefaultFloodScopeAsync(cancellationToken);
+    public MessageTextBudget GetTextBudget(TextMessageKind kind, FloodScopeSelection scope) => client.GetTextBudget(kind, scope);
+    public Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions options, CancellationToken cancellationToken = default) => client.DiscoverRepeaterNeighborsAsync(options, cancellationToken);
+    public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> publicKey, ReplyPath path, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default) =>
+        responseTimeout is { } timeout ? client.RequestRegionsAsync(publicKey, path, timeout, cancellationToken) : client.RequestRegionsAsync(publicKey, path, cancellationToken);
+    public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> publicKey, string text, uint timestamp, byte attempt, FloodScopeSelection scope, CancellationToken cancellationToken = default) =>
+        client.SendTextAsync(publicKey, text, timestamp, attempt, scope, cancellationToken);
+    public Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, FloodScopeSelection scope, CancellationToken cancellationToken = default) =>
+        client.SendChannelTextAsync(slot, text, timestamp, scope, cancellationToken);
     public int? GetTransportTextByteLimit(bool isChannel, string? senderName) => bleBudgets?.GetTextBudget(
         isChannel ? BleTextMessageKind.Channel : BleTextMessageKind.Private, senderName).MaximumTextBytes;
     public TimeSpan? GetAcknowledgementWaitDuration(uint suggestedMilliseconds) => options is null ? null

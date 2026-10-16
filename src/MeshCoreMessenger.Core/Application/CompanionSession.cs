@@ -4,6 +4,8 @@ using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreSharp;
 using MeshCoreSharp.Models;
+using MeshCoreSharp.Exceptions;
+using MeshCoreSharp.Protocol;
 
 namespace MeshCoreMessenger.Core.Application;
 
@@ -22,6 +24,7 @@ public sealed class CompanionSession : IAsyncDisposable
     private int _closed;
     private SessionCommandScope? _commands;
     private int _disposed;
+    private readonly IRegionStore? _regions;
 
     internal CompanionSession(
         Guid sessionId,
@@ -31,7 +34,8 @@ public sealed class CompanionSession : IAsyncDisposable
         INodeStore nodes,
         ISessionStore sessions,
         IDurableSessionCompletion sessionCompletions,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IRegionStore? regions = null)
     {
         SessionId = sessionId;
         Generation = generation;
@@ -41,6 +45,7 @@ public sealed class CompanionSession : IAsyncDisposable
         _sessions = sessions;
         _sessionCompletions = sessionCompletions;
         _timeProvider = timeProvider;
+        _regions = regions;
 
         _client.ConnectionStateChanged += OnConnectionStateChanged;
         _client.BackgroundError += OnBackgroundError;
@@ -57,6 +62,8 @@ public sealed class CompanionSession : IAsyncDisposable
     public Guid? LocalNodeId { get; private set; }
     public LocalNodeIdentity? LocalNode { get; private set; }
     public CompanionSessionState State => _state;
+    public RegionCapabilities RegionCapabilities { get; private set; } = RegionCapabilities.Unknown;
+    public NodeRegionSnapshot? DefaultRegion { get; private set; }
     public ChannelReader<CompanionSessionEvent> Events => _events.Reader;
 
     internal event EventHandler<CompanionSessionLifecycleEventArgs>? LifecycleChanged;
@@ -65,7 +72,7 @@ public sealed class CompanionSession : IAsyncDisposable
     {
         EnsureIdentified();
         if (_commands is not null) throw new InvalidOperationException("Command admission has already been opened for this session.");
-        return _commands = gateway.Open(new(LocalNodeId!.Value, SessionId, Generation, LocalNode!.Name), _client);
+        return _commands = gateway.Open(new(LocalNodeId!.Value, SessionId, Generation, LocalNode!.Name, RegionCapabilities, DefaultRegion), _client);
     }
 
     internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
@@ -150,6 +157,8 @@ public sealed class CompanionSession : IAsyncDisposable
                 LocalNodeId = node.Id;
                 await _sessions.BindNodeAsync(SessionId, node.Id, cancellationToken).ConfigureAwait(false);
 
+                await ReadInitialRegionStateAsync(cancellationToken).ConfigureAwait(false);
+
                 SetState(CompanionSessionState.Identified);
                 return new CompanionSessionStartResult(
                     SessionId,
@@ -189,6 +198,40 @@ public sealed class CompanionSession : IAsyncDisposable
             // The original connect/start exception remains the primary failure. CloseCoreAsync
             // already attempted every cleanup step and persisted the end marker where possible.
         }
+    }
+
+    private async Task ReadInitialRegionStateAsync(CancellationToken token)
+    {
+        try
+        {
+            var device = await _client.GetDeviceInfoAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            RegionCapabilities = RegionCapabilities.FromProtocolVersion(device.FirmwareProtocolVersion);
+        }
+        catch (NotSupportedException) { /* Missing adapter seam is unknown firmware evidence. */ }
+        catch (MeshCoreCommandException error) when (error.ErrorCode == MeshCoreErrorCode.UnsupportedCommand) { }
+
+        var value = NodeFloodScope.Unknown;
+        try
+        {
+            value = await _client.GetDefaultFloodScopeAsync(token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            RegionCapabilities = RegionCapabilities with { DefaultReadWrite = RegionSupport.Supported };
+        }
+        catch (NotSupportedException) { }
+        catch (MeshCoreCommandException error) when (error.ErrorCode == MeshCoreErrorCode.UnsupportedCommand)
+        {
+            RegionCapabilities = RegionCapabilities with { DefaultReadWrite = RegionSupport.Unsupported };
+        }
+        // Timeout or malformed known responses propagate to the existing failed-start teardown.
+        // No uncorrelated response from this session can enter a later command admission.
+        token.ThrowIfCancellationRequested();
+        var snapshot = new NodeRegionSnapshot(LocalNodeId!.Value, SessionId, Generation, _timeProvider.GetUtcNow(),
+            RegionCapabilities.DefaultReadWrite, value, value.State == NodeFloodScopeState.Unknown
+                ? RegionSnapshotFreshness.Unknown : RegionSnapshotFreshness.CurrentSession);
+        if (_regions is not null) await _regions.SaveNodeSnapshotAsync(snapshot, token).ConfigureAwait(false);
+        token.ThrowIfCancellationRequested();
+        DefaultRegion = snapshot;
     }
 
     public async Task StopAsync(
@@ -241,6 +284,9 @@ public sealed class CompanionSession : IAsyncDisposable
         }
 
         _commands?.Close();
+        if (DefaultRegion is { } snapshot && snapshot.Freshness == RegionSnapshotFreshness.CurrentSession)
+            DefaultRegion = new(snapshot.NodeId, snapshot.SessionId, snapshot.Generation, snapshot.ObservedUtc,
+                snapshot.Support, snapshot.Value, RegionSnapshotFreshness.Offline);
         SetState(CompanionSessionState.Stopping);
         Exception? cleanupError = null;
         try

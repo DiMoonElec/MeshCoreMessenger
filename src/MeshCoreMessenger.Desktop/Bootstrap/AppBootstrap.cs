@@ -50,6 +50,8 @@ public static class AppBootstrap
         services.AddSingleton(storage.ReadStates);
         services.AddSingleton(storage.Drafts);
         services.AddSingleton(storage.ConversationDirectory);
+        services.AddSingleton(storage.Regions);
+        services.AddSingleton<IRegionService, RegionService>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISearchDelay, SystemSearchDelay>();
         services.AddSingleton<IDraftDelay, SystemDraftDelay>();

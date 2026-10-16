@@ -6,7 +6,8 @@ using MeshCoreSharp.Protocol;
 
 namespace MeshCoreMessenger.Core.Application;
 
-public sealed record SessionCommandOwner(Guid NodeId, Guid SessionId, long Generation, string SenderName);
+public sealed record SessionCommandOwner(Guid NodeId, Guid SessionId, long Generation, string SenderName,
+    RegionCapabilities? RegionCapabilities = null, NodeRegionSnapshot? DefaultRegion = null);
 public abstract record SessionCommandTarget;
 public sealed record NodeCommandTarget : SessionCommandTarget;
 public sealed record ContactCommandTarget(ReadOnlyMemory<byte> PublicKey) : SessionCommandTarget;
@@ -16,6 +17,8 @@ public sealed record ChannelSlotCommandTarget(byte Slot) : SessionCommandTarget;
 public interface ISessionCommandGateway
 {
     int? GetTextByteLimit(Guid nodeId, bool isChannel) => null;
+    NodeRegionSnapshot? GetDefaultRegion(Guid nodeId) => null;
+    RegionCapabilities? GetRegionCapabilities(Guid nodeId) => null;
     SessionCommandLease Acquire(Guid nodeId, SessionCommandTarget target, CancellationToken cancellationToken = default);
 }
 
@@ -26,6 +29,15 @@ public sealed class SessionCommandGateway(
 {
     private readonly object _gate = new();
     private SessionCommandScope? _active;
+
+    public NodeRegionSnapshot? GetDefaultRegion(Guid nodeId)
+    {
+        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.Owner.DefaultRegion : null;
+    }
+    public RegionCapabilities? GetRegionCapabilities(Guid nodeId)
+    {
+        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.Owner.RegionCapabilities : null;
+    }
 
     public int? GetTextByteLimit(Guid nodeId, bool isChannel)
     {
@@ -94,6 +106,7 @@ internal sealed class SessionCommandScope(
     private readonly HashSet<Guid> _attempts = [];
     private bool _operationsCompleted;
     internal bool OperationsCompleted { get { lock (Gate) return _operationsCompleted; } }
+    internal bool IsOpen { get { lock (Gate) return !_closed && client.IsConnected && client.IsStarted; } }
     private Task _cancellation = Task.CompletedTask;
     internal SessionCommandOwner Owner { get; } = owner;
     internal IOutgoingMessageStore Messages { get; } = messages;
