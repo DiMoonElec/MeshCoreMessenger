@@ -12,6 +12,8 @@ public sealed record BleMeshCoreTransportOptions
     public TimeSpan WriteTimeout { get; init; } = TimeSpan.FromSeconds(15);
     /// <summary>Maximum caller wait for shutdown and best-effort CCCD disable. Late I/O keeps its owner.</summary>
     public TimeSpan ShutdownTimeout { get; init; } = TimeSpan.FromSeconds(2);
+    /// <summary>Deadline for checking a potentially truncated notification against the full TX value.</summary>
+    public TimeSpan NotificationReadTimeout { get; init; } = TimeSpan.FromSeconds(5);
     public int ReceiveQueueCapacity { get; init; } = 256;
     /// <summary>Maximum complete logical frame; the default matches the current firmware baseline.</summary>
     public int MaximumFrameSize { get; init; } = ProtocolLimits.CurrentFirmwareMaxFrameSize;
@@ -28,6 +30,8 @@ public sealed record BleMeshCoreTransportOptions
             throw new ArgumentOutOfRangeException(nameof(WriteTimeout));
         if (ShutdownTimeout <= TimeSpan.Zero || ShutdownTimeout.TotalMilliseconds > uint.MaxValue - 1)
             throw new ArgumentOutOfRangeException(nameof(ShutdownTimeout));
+        if (NotificationReadTimeout <= TimeSpan.Zero || NotificationReadTimeout.TotalMilliseconds > uint.MaxValue - 1)
+            throw new ArgumentOutOfRangeException(nameof(NotificationReadTimeout));
         if (ReceiveQueueCapacity <= 0)
             throw new ArgumentOutOfRangeException(nameof(ReceiveQueueCapacity));
         if (MaximumFrameSize <= 0 || MaximumFrameSize > ushort.MaxValue - BleGattProfile.AttributeValueOverhead)

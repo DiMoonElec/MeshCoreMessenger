@@ -34,7 +34,7 @@ internal sealed class FakeBleBackend : IBleBackend
     }
 }
 
-internal sealed class FakeBleGattSession : IBleGattSession
+internal sealed class FakeBleGattSession : IBleGattSession, IBleGattValueReader
 {
     internal sealed record Write(ReadOnlyMemory<byte> Frame, ControlledBleOperation<bool> Operation);
     public BleGattCapabilities Capabilities { get; init; } = new(true, true, true, true, true);
@@ -48,6 +48,13 @@ internal sealed class FakeBleGattSession : IBleGattSession
     internal Channel<ControlledBleOperation<bool>> Subscriptions { get; } = Channel.CreateUnbounded<ControlledBleOperation<bool>>();
     internal Channel<ControlledBleOperation<bool>> Unsubscriptions { get; } = Channel.CreateUnbounded<ControlledBleOperation<bool>>();
     internal Channel<Write> Writes { get; } = Channel.CreateUnbounded<Write>();
+    internal Channel<ControlledBleOperation<ReadOnlyMemory<byte>>> Reads { get; } = Channel.CreateUnbounded<ControlledBleOperation<ReadOnlyMemory<byte>>>();
+    public Task<ReadOnlyMemory<byte>> ReadNotificationValueAsync(CancellationToken cancellationToken)
+    {
+        var operation = new ControlledBleOperation<ReadOnlyMemory<byte>>(cancellationToken);
+        Reads.Writer.TryWrite(operation);
+        return operation.Task;
+    }
     internal ControlledBleOperation<bool>? Disposal { get; init; }
     internal Action? OnMtuRead { get; set; }
     internal Action? OnWrite { get; set; }

@@ -154,7 +154,7 @@ internal static class BleReceiveTests
             await using var owner = receiver;
             await using var reader = receiver.ReceiveAsync().GetAsyncEnumerator();
             var read = reader.MoveNextAsync().AsTask();
-            if (mtu) native.EmitMaxPduSize(23); else native.EmitDisconnect();
+            if (mtu) native.EmitMaxPduSize(0); else native.EmitDisconnect();
             var error = await Throws<MeshCoreBleTransportException>(() => read);
             Check(error.Reason == (mtu ? MeshCoreBleFailureReason.InsufficientMtu : MeshCoreBleFailureReason.DeviceUnreachable));
         }

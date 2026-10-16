@@ -23,7 +23,9 @@ internal static class WindowsBleProbe
                 MaximumFrameSize = args.MaximumFrameSize,
             });
             Console.WriteLine("BLE8 read-only probe: APP_START, DEVICE_QUERY, GET_DEVICE_TIME, GET_CONTACTS, GET_CHANNEL only.");
-            Console.WriteLine($"Logical frame limit={args.MaximumFrameSize} bytes. A reduced diagnostic limit does not establish full firmware frame compatibility.");
+            Console.WriteLine($"Logical frame ceiling={args.MaximumFrameSize} bytes; outgoing writes use the current ATT payload budget.");
+            if (args.MaximumFrameSize < MeshCoreSharp.Protocol.ProtocolLimits.CurrentFirmwareMaxFrameSize)
+                Console.WriteLine("The explicit diagnostic frame ceiling also limits RX; omit --frame-limit for the stock firmware probe.");
             await BleReadOnlyProbe.RunAsync(new(native), args.Cycles,
                 () => native.MaxPduSize, () => native.CleanupCompletion, cancellation.Token);
             Console.WriteLine(args.MaximumFrameSize == MeshCoreSharp.Protocol.ProtocolLimits.CurrentFirmwareMaxFrameSize

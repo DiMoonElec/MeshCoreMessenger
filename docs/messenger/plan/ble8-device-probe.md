@@ -2,8 +2,8 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: probe реализован 16.10.2026; read-only subset проверен на ноде;
-полное закрытие заблокировано MTU176/min179.**
+**Статус: probe реализован 16.10.2026; default stock read-only обмен проверен;
+аппаратная граница RX174–176 ожидает отдельной тестовой очереди.**
 
 **Цель:** Проверить главный аппаратный риск до интеграции БД и UI.
 
@@ -36,6 +36,13 @@
 - [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
+
+После первоначального probe пользователь явно потребовал совместимость без изменения
+firmware и без theoretical max-frame gate. [Актуальная реализация/проверки](../../testing/ble-stock-firmware.md):
+dynamic BLE TX budgets, отдельный полный TX read для пограничного RX, default native
+probe при MTU176 без override. Library 179/179 Windows, 177/177 portable. TCP/Serial
+не менялись. Full-size incoming cases проверены fake, аппаратная граница пока нет:
+существующий пользовательский backlog не выгружался. Ниже сохранён первый checkpoint.
 
 16.10.2026: добавлены явные `--ble-probe <device-id> [cycles=2] [--frame-limit N]`
 и `--ble-probe-self-test` в существующий console sample. CLI parsing и command allowlist

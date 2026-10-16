@@ -4,6 +4,7 @@ using MeshCoreSharp;
 using MeshCoreSharp.Protocol;
 using MeshCoreSharp.Transport;
 using MeshCoreSharp.Transport.Tcp;
+using MeshCoreSharp.Transport.Ble;
 
 internal sealed record BleProbeArguments(string DeviceId, int Cycles, int MaximumFrameSize)
 {
@@ -103,6 +104,8 @@ internal static class BleReadOnlyProbe
                 Console.WriteLine($"GATT Ready; ATT MTU={getMtu()?.ToString() ?? "n/a (self-test)"}");
                 var self = await client.StartAsync(cancellationToken);
                 Console.WriteLine($"SelfInfo: name={self.Name}");
+                if (getMtu() is { } mtu)
+                    Console.WriteLine($"BLE UTF-8 text budgets: private={BleTextBudget.Calculate(mtu, BleTextMessageKind.Private).MaximumTextBytes}; channel={BleTextBudget.Calculate(mtu, BleTextMessageKind.Channel, self.Name).MaximumTextBytes}; unknown scope uses the conservative regional radio overhead.");
                 var device = await client.GetDeviceInfoAsync(cancellationToken);
                 Console.WriteLine($"DeviceInfo: model={device.Model}; version={device.SemanticVersion}; build={device.FirmwareBuild}; protocol={device.FirmwareProtocolVersion}");
                 var time = await client.GetDeviceTimeAsync(cancellationToken);

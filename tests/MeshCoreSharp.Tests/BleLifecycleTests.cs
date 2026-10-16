@@ -73,7 +73,7 @@ internal static class BleLifecycleTests
         await using var transport = new BleFrameTransport(Options, platform, TimeProvider.System);
         var read = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var native = new FakeBleGattSession { OnMtuRead = () => read.TrySetResult() };
-        native.EmitMaxPduSize(23);
+        native.EmitMaxPduSize(0);
         var opening = transport.ConnectAsync();
         (await platform.Opens.Reader.ReadAsync()).Operation.Complete(native);
         await read.Task.WaitAsync(TimeSpan.FromSeconds(5));

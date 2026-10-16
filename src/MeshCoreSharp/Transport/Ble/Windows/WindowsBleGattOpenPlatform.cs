@@ -72,7 +72,7 @@ internal static class WindowsBleGattErrors
         "Windows BLE device access failed.", error, nativeHResult: error.HResult);
 }
 
-internal sealed class WindowsBleGattConnection : IBleGattSession
+internal sealed class WindowsBleGattConnection : IBleGattSession, IBleGattValueReader
 {
     private readonly SemaphoreSlim _ioGate = new(1, 1);
     private readonly object _disposeSync = new();
@@ -109,6 +109,33 @@ internal sealed class WindowsBleGattConnection : IBleGattSession
 
     public Task DisableNotificationsAsync(CancellationToken cancellationToken) =>
         SetNotificationsAsync(GattClientCharacteristicConfigurationDescriptorValue.None, cancellationToken);
+
+    public async Task<ReadOnlyMemory<byte>> ReadNotificationValueAsync(CancellationToken cancellationToken)
+    {
+        await _ioGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
+            cancellationToken.ThrowIfCancellationRequested();
+            var characteristic = SendToApp ?? throw new InvalidOperationException("NUS TX was not discovered.");
+            if (!characteristic.CharacteristicProperties.HasFlag(GattCharacteristicProperties.Read))
+                throw new MeshCoreBleTransportException(MeshCoreBleFailureReason.IncompleteNotification,
+                    "The BLE TX value cannot be read to verify a possibly truncated notification.");
+            // WinRT reads the complete characteristic value (Read Blob for a long value), bypassing its cache.
+            var result = await characteristic.ReadValueAsync(BluetoothCacheMode.Uncached).AsTask().ConfigureAwait(false);
+            CheckStatus(result.Status, result.ProtocolError);
+            cancellationToken.ThrowIfCancellationRequested();
+            using var reader = DataReader.FromBuffer(result.Value);
+            var bytes = new byte[reader.UnconsumedBufferLength];
+            reader.ReadBytes(bytes);
+            return bytes;
+        }
+        catch (Exception error) when (error is COMException or UnauthorizedAccessException)
+        {
+            throw WindowsBleGattErrors.FromNative(error);
+        }
+        finally { _ioGate.Release(); }
+    }
 
     public async Task WriteAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken)
     {

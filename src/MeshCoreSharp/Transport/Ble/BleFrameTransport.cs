@@ -4,7 +4,7 @@ namespace MeshCoreSharp.Transport.Ble;
 
 // Each attempt owns its cancellation, receiver, and cleanup. No completion mutates a later attempt.
 internal sealed class BleFrameTransport(BleMeshCoreTransportOptions options, IBleGattOpenPlatform platform,
-    TimeProvider time) : IMeshCoreTransport
+    TimeProvider time) : IMeshCoreTransport, IBleClientPolicy
 {
     private sealed class Generation
     {
@@ -25,6 +25,15 @@ internal sealed class BleFrameTransport(BleMeshCoreTransportOptions options, IBl
     internal Task CleanupCompletion { get { lock (_sync) return Task.WhenAll(_cleanupTasks); } }
     public bool IsConnected { get { lock (_sync) return _current is { Stopped: false, Receiver.IsConnected: true }; } }
     internal ushort? MaxPduSize { get { lock (_sync) return _current is { Stopped: false } current ? current.Receiver?.MaxPduSize : null; } }
+    public void SetSelfInfo(MeshCoreSharp.Models.SelfInfo self)
+    {
+        lock (_sync) (_current?.Receiver ?? throw new MeshCoreTransportException("BLE is not connected.")).SetSenderName(self.Name);
+    }
+    public BleTextBudget GetTextBudget(BleTextMessageKind kind, string? senderName = null, bool regionScoped = true)
+    {
+        lock (_sync) return (_current?.Receiver ?? throw new MeshCoreTransportException("BLE is not connected."))
+            .GetTextBudget(kind, senderName, regionScoped);
+    }
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -84,7 +93,7 @@ internal sealed class BleFrameTransport(BleMeshCoreTransportOptions options, IBl
                     ? new MeshCoreBleTransportException(error.Data["BleOpenPhase"] as string == "Mtu"
                             ? MeshCoreBleFailureReason.InsufficientMtu : MeshCoreBleFailureReason.DeviceUnreachable,
                         error.Data["BleOpenPhase"] as string == "Mtu"
-                            ? $"BLE MTU {error.Data["BleMtu"]} did not reach required {options.MaximumFrameSize + BleGattProfile.AttributeValueOverhead}."
+                            ? $"BLE MTU {error.Data["BleMtu"]} did not reach the ATT minimum {BleGattProfile.MinimumAttMtu}."
                             : "BLE opening and notification subscription exceeded the open deadline.", error)
                     : error;
             generation.OpenCleanup = generation.Receiver is null && prepared is not null

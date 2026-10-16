@@ -1,3 +1,16 @@
+16.10.2026: по новому явному запросу пользователя [исправлена совместимость BLE со
+штатной firmware](../../testing/ble-stock-firmware.md). Connect не требует theoretical
+MTU179, TX text budget считается по actual MTU, Companion/radio headers, UTF-8 имени
+и region transport codes; никакого silent trim. Public BLE GetTextBudget и BLE-only
+hooks в MeshCoreClient; TCP/Serial limits и common encoder/parser не менялись.
+Длинный RX проверяется отдельно: полный uncached TX read, prefix/sequence checks,
+strict plain-text UTF-8, явный IncompleteNotification при неоднозначности. Firmware
+и protocol version не менялись. Stock Heltec V3/1.18 MTU176 прошёл 2 default probe
+цикла без frame-limit override; private160/channel143 bytes для её имени. Library
+**179/179 Windows**, **177/177 portable**, обе solution builds/locked restore и sample
+self-tests зелёные. Существующий backlog не трогали; RX174–176 на железе остаётся
+для отдельной подготовленной очереди (fake cases зелёные). BLE9 и далее не начаты.
+
 16.10.2026: после BLE7 `d96b5ff` выполнена подготовка и аппаратная часть
 [BLE8](ble8-device-probe.md), но этап полностью **не закрыт**. Heltec V3 фактически
 сообщил `v1.18.0-07a833bb`, protocol14, ATT MTU176. Default transport требует179;

@@ -16,6 +16,7 @@ public enum MeshCoreBleFailureReason
     ReceiveQueueOverflow,
     InvalidFrame,
     WriteOutcomeUnknown,
+    IncompleteNotification,
 }
 
 /// <summary>A BLE failure with platform-neutral diagnostics. Never include pairing secrets in the message.</summary>

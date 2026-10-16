@@ -41,6 +41,12 @@ internal interface IBleGattSession : IBleGattNotifications
     // cancellation of a caller's wait alone does not imply native I/O completed.
 }
 
+internal interface IBleGattValueReader
+{
+    // Uncached read of the complete current TX value, including ATT Read Blob when required.
+    Task<ReadOnlyMemory<byte>> ReadNotificationValueAsync(CancellationToken cancellationToken);
+}
+
 internal sealed record BleGattCapabilities(
     bool HasCompanionService,
     bool HasAppToCompanionCharacteristic,

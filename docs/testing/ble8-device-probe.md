@@ -2,8 +2,12 @@
 
 16.10.2026. [План BLE8](../messenger/plan/ble8-device-probe.md).
 
-**Статус: read-only diagnostic subset прошёл; полное закрытие BLE8 заблокировано
-расхождением MTU.** Default transport policy не ослаблена.
+**Исторический результат первого probe:** read-only diagnostic subset прошёл,
+старая policy MTU179 блокировала default Connect. По последующему прямому запросу
+пользователя она заменена BLE-only actual-frame/text budgets и отдельной RX verification.
+Default probe теперь проходит без override; актуальный результат и ограничения —
+в [отчёте совместимости штатной прошивки](ble-stock-firmware.md). Ниже сохранены
+первоначальные наблюдения, а не текущая рекомендация менять firmware.
 
 ## Среда
 

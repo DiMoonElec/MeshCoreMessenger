@@ -3,7 +3,7 @@
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
-**Статус: BLE1–BLE7 реализованы; BLE8 частично проверен, blocker MTU;
+**Статус: BLE1–BLE7 реализованы; BLE8 stock read-only probe прошёл, аппаратная граница длинного RX ожидает;
 BLE9–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
@@ -20,9 +20,11 @@ Windows transport и WriteWithResponse, проверен MeshCoreClient чере
 tests 152/152 Windows и 150/150 portable. В [BLE7](ble7-lifecycle.md) завершены
 generation lifecycle, повторный Connect и bounded shutdown/CCCD disable;
 tests 165/165 Windows и 163/163 portable. В [BLE8](ble8-device-probe.md) diagnostic
-read-only обмен с Heltec V3/1.18 прошёл при frame limit 173, но default minimum MTU 179
-не достигнут (actual 176). [Отчёт/blocker](../../testing/ble8-device-probe.md).
-Library tests после MTU diagnostics fix: 166/166 Windows и 164/164 portable. BLE8 не закрыт.
+read-only обмен с Heltec V3/1.18 сначала прошёл при frame limit 173.
+Затем по прямому указанию пользователя theoretical MTU gate удалён: default probe
+проходит при MTU176; TX budgets динамические, пограничный RX проверяется uncached read.
+[Актуальный отчёт](../../testing/ble-stock-firmware.md): 179/179 Windows и 177/177 portable.
+Аппаратная проверка RX174–176 требует отдельной тестовой очереди; BLE8 целиком не закрыт.
 После BLE2 восемь Core failures [разобраны и исправлены](../../testing/windows-core-suite.md):
 Core 389/389. Полная Desktop suite остаётся незавершённой; исторические результаты
 BLE1/BLE2 в их отчётах сохранены.
@@ -96,24 +98,25 @@ provider лишь создаёт её public transport. Общий MeshCoreClien
 
 ## Wire-контракт, требующий подтверждения на ноде
 
-BLE8, 16.10.2026: на Heltec V3 / firmware 1.18 фактически получен ATT MTU **176**,
-тогда как default policy требует **179**. Тег companion-v1.18.0, commit
-`81dbae592ffad40b4212bc0b37e82b38da08f4bc`, задаёт ESP32 BLE MTU равным
-MAX_FRAME_SIZE=176. Поэтому probe может явно выбрать `--frame-limit 173` для
-исследования read-only обмена. Это diagnostic subset, не изменение default policy
-и не подтверждение целостности кадров 174–176 bytes. Полное закрытие BLE8/production
-gate остаётся заблокированным до решения этого wire-contract расхождения.
+BLE8, 16.10.2026: на Heltec V3 / firmware v1.18.0-07a833bb фактически получен ATT MTU
+**176**. По явному запросу пользователя это не препятствует Connect. Default RX ceiling
+176 сохранён, TX ограничивается фактической ATT value и бюджетом конкретной команды.
+Регион учитывается в radio budget, имя отправителя — в channel text budget.
+Пограничный notification проверяется uncached read полного TX value; при смене value
+или невозможности подтвердить целостность partial text не доставляется. Подробнее:
+[формулы и ограничения штатного BLE](../../testing/ble-stock-firmware.md).
 
 - NUS service: `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`.
 - App → node: RX `6E400002-B5A3-F393-E0A9-E50E24DCCA9E`, WriteWithResponse.
 - Node → app: TX `6E400003-B5A3-F393-E0A9-E50E24DCCA9E`, Notify.
 - Рабочая модель: одна GATT value = один Companion frame. Рассмотренная ESP32
   прошивка принимает отдельную write как кадр; нарезка по 20 bytes не подходит.
-- Для первой версии требовать MTU не меньше `targeted max frame + 3`:
-  при текущем локальном baseline 176 bytes это **179**. Проверять actual MaxPduSize,
-  при необходимости ограниченно ждать MaxPduSizeChanged. Не начинать APP_START при
-  недостаточном MTU, поскольку даже короткий запрос может дать длинный ответ.
-  Это консервативное ограничение нашего клиента, не универсальный предел Windows.
+- Проверять actual MaxPduSize, но не блокировать Connect по теоретическому max frame.
+  Допустимый TX frame — min(MaximumFrameSize, MTU−3); текст дополнительно ограничивается
+  firmware/radio/header/sender budgets. MTU change пересчитывает лимит, queued send
+  проверяется снова до write. Слишком большой frame отклоняется без усечения и fault.
+  RX ceiling не равен MTU−3; full notification либо проверенный полный Read передаётся
+  decoder без stream wrapper. Неподтверждённый пограничный frame даёт явную ошибку.
 - Windows может выполнять поддерживаемые ATT long operations, но это не гарантирует
   reassembly firmware и целостность notifications. Long-write/chunk fallback отложен.
 - В BLE8 сверить firmware version/исходный commit и фактические длинные TX/RX.

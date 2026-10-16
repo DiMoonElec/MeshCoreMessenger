@@ -100,7 +100,7 @@ var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat
     .Concat(EventBarrierTests.Cases).Concat(TextValidationTests.Cases)
     .Concat(BuildTargetTests.Cases).Concat(BleContractTests.Cases).Concat(BleDiscoveryTests.Cases)
     .Concat(BleGattOpenTests.Cases).Concat(BleReceiveTests.Cases).Concat(BleSendTests.Cases)
-    .Concat(BleLifecycleTests.Cases).ToArray();
+    .Concat(BleLifecycleTests.Cases).Concat(BleStockFirmwareTests.Cases).ToArray();
 foreach (var test in allTests)
 {
     try

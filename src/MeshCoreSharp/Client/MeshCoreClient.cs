@@ -6,6 +6,7 @@ using MeshCoreSharp.Protocol.Packets;
 using MeshCoreSharp.Protocol.Parsing;
 using MeshCoreSharp.Runtime;
 using MeshCoreSharp.Transport;
+using MeshCoreSharp.Transport.Ble;
 
 namespace MeshCoreSharp;
 
@@ -140,6 +141,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
             cancellationToken).ConfigureAwait(false);
 
         SelfInfo = packet.Info;
+        if (_transport is IBleClientPolicy ble) ble.SetSelfInfo(packet.Info);
         _started = true;
         messagePump?.Start(_options.AutoReceiveMessages);
         return packet.Info;
@@ -419,6 +421,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     {
         EnsureReady();
         var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp, attempt);
+        if (_transport is IBleClientPolicy ble)
+            _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Private).MaximumTextBytes);
         cancellationToken.ThrowIfCancellationRequested();
         ObserveMessageTimestamp(timestamp);
         var tracker = _ackTracker!;
@@ -453,6 +457,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         ObserveMessageTimestamp(timestamp);
         var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
+        if (_transport is IBleClientPolicy ble)
+            _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Channel, SelfInfo.Name).MaximumTextBytes);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
         await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
             nameof(SendChannelTextAsync), _options.CommandTimeout, linked.Token,

@@ -3,7 +3,7 @@ namespace MeshCoreSharp.Transport.Ble;
 /// <summary>Windows native BLE transport for one explicitly selected Companion endpoint.</summary>
 /// <remarks>Exchanges logical frames. A successful write is not a Companion response or a mesh ACK.
 /// Explicit Connect after disconnect/failure creates a new generation. Reconnect policy belongs to the application.</remarks>
-public sealed class BleMeshCoreTransport : IMeshCoreTransport
+public sealed class BleMeshCoreTransport : IMeshCoreTransport, IBleClientPolicy
 {
     private readonly BleFrameTransport _transport;
 
@@ -19,6 +19,10 @@ public sealed class BleMeshCoreTransport : IMeshCoreTransport
     public bool IsConnected => _transport.IsConnected;
     /// <summary>Actual negotiated ATT MTU of the Ready generation, or null when disconnected.</summary>
     public ushort? MaxPduSize => _transport.MaxPduSize;
+    /// <summary>Current BLE UTF-8 text budget; channel name defaults to the SelfInfo sender name.</summary>
+    public BleTextBudget GetTextBudget(BleTextMessageKind kind, string? senderName = null, bool regionScoped = true) =>
+        _transport.GetTextBudget(kind, senderName, regionScoped);
+    void IBleClientPolicy.SetSelfInfo(MeshCoreSharp.Models.SelfInfo self) => _transport.SetSelfInfo(self);
     /// <summary>Physical cleanup of all generations created so far, including late native I/O.
     /// Disconnect/Dispose limit their caller wait to ShutdownTimeout; inspect this task for late cleanup errors.</summary>
     public Task CleanupCompletion => _transport.CleanupCompletion;

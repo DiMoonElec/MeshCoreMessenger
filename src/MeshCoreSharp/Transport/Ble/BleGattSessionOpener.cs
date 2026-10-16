@@ -51,7 +51,7 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
             ValidateCapabilities(connection.Capabilities);
             waitingForMtu = true;
             await WaitForMtuAsync(connection,
-                checked((ushort)(options.MaximumFrameSize + BleGattProfile.AttributeValueOverhead)),
+                BleGattProfile.MinimumAttMtu,
                 lifetime.Token).ConfigureAwait(false);
             lifetime.Token.ThrowIfCancellationRequested();
             // Still Opening: only BLE5 may mark Ready after successful CCCD subscription.
@@ -66,7 +66,7 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
                     : deadline.IsCancellationRequested
                         ? new MeshCoreBleTransportException(waitingForMtu
                                 ? MeshCoreBleFailureReason.InsufficientMtu : MeshCoreBleFailureReason.DeviceUnreachable,
-                            waitingForMtu ? $"BLE MTU {connection?.MaxPduSize} did not reach required {options.MaximumFrameSize + BleGattProfile.AttributeValueOverhead} before the open deadline."
+                            waitingForMtu ? $"BLE MTU {connection?.MaxPduSize} did not reach the ATT minimum {BleGattProfile.MinimumAttMtu} before the open deadline."
                                 : "Opening the BLE endpoint timed out.", error)
                         : error;
             failure.Data["BleOpenPhase"] = waitingForMtu ? "Mtu" : "NativeOpen";
