@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
+using MeshCoreMessenger.Core.Persistence.Sqlite;
 using MeshCoreSharp.Models;
 using Xunit;
 
@@ -21,7 +22,7 @@ public sealed partial class IncomingMessageStoreTests
         using (var connection = new SqliteConnection($"Data Source={c.DatabasePath};Pooling=False"))
         {
             connection.Open(); using var command = connection.CreateCommand();
-            command.CommandText = "DROP TABLE IncomingMessageEvents; DROP INDEX IX_Messages_PrivateRetry; DELETE FROM SchemaMigrations WHERE Version=6; PRAGMA user_version=5;";
+            command.CommandText = "DROP TABLE IncomingMessageEvents; DROP INDEX IX_Messages_PrivateRetry; DELETE FROM SchemaMigrations WHERE Version>=6; PRAGMA user_version=5;";
             command.ExecuteNonQuery();
         }
         await c.ReopenAsync();
@@ -29,7 +30,7 @@ public sealed partial class IncomingMessageStoreTests
         var retry = await c.Storage.IncomingMessages.StoreAsync(original with { EventId = Guid.NewGuid() }, CancellationToken);
         Assert.False(replay.Inserted); Assert.False(retry.Inserted); Assert.Equal(first.MessageId, retry.MessageId);
         using var current = OpenReadOnly(c.DatabasePath);
-        Assert.Equal(6, ScalarInt(current, "PRAGMA user_version;"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, ScalarInt(current, "PRAGMA user_version;"));
         Assert.Equal(1, ScalarInt(current, "SELECT COUNT(*) FROM Messages;"));
         Assert.Equal(2, ScalarInt(current, "SELECT COUNT(*) FROM IncomingMessageEvents;"));
         var backup = Assert.Single(Directory.GetFiles(Path.Combine(c.Root, "backups"), "*.db"));

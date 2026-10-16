@@ -4,7 +4,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static class DatabaseMigrator
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private static readonly Migration[] Migrations =
     [
@@ -14,6 +14,7 @@ internal static class DatabaseMigrator
         new(4, "Contact route descriptors", ContactRoutesSql),
         new(5, "Private delivery cycles and route evidence", PrivateDeliverySql),
         new(6, "Private incoming retry event identities", IncomingRetryIdentitiesSql),
+        new(7, "BLE connection profiles", BleProfilesSql, RebuildProfiles: true),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)
@@ -33,14 +34,75 @@ internal static class DatabaseMigrator
 
     private static void Apply(SqliteConnection connection, Migration migration)
     {
+        if (!migration.RebuildProfiles)
+        {
+            ApplyTransaction(connection, migration);
+            return;
+        }
+
+        // SQLite's generalized ALTER TABLE procedure: disable FK enforcement before
+        // BEGIN, rebuild the parent, check all references before COMMIT, restore after.
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys;";
+        var foreignKeys = Convert.ToInt32(pragma.ExecuteScalar());
+        try
+        {
+            pragma.CommandText = "PRAGMA foreign_keys=OFF;";
+            pragma.ExecuteNonQuery();
+            pragma.CommandText = "PRAGMA foreign_keys;";
+            if (Convert.ToInt32(pragma.ExecuteScalar()) != 0)
+                throw new DatabaseStorageException("Profile table migration must run outside an existing transaction.");
+            ApplyTransaction(connection, migration);
+        }
+        finally
+        {
+            pragma.CommandText = foreignKeys == 0 ? "PRAGMA foreign_keys=OFF;" : "PRAGMA foreign_keys=ON;";
+            pragma.ExecuteNonQuery();
+        }
+    }
+
+    private static void ApplyTransaction(SqliteConnection connection, Migration migration)
+    {
         using var transaction = connection.BeginTransaction();
         try
         {
+            var profileObjects = new List<string>();
+            if (migration.RebuildProfiles)
+            {
+                using var objects = connection.CreateCommand();
+                objects.Transaction = transaction;
+                objects.CommandText = """
+                    SELECT sql FROM sqlite_schema
+                    WHERE tbl_name='ConnectionProfiles' AND type IN ('index','trigger') AND sql IS NOT NULL
+                    ORDER BY type, name;
+                    """;
+                using var result = objects.ExecuteReader();
+                while (result.Read()) profileObjects.Add(result.GetString(0));
+            }
+
             using (var schema = connection.CreateCommand())
             {
                 schema.Transaction = transaction;
                 schema.CommandText = migration.Sql;
                 schema.ExecuteNonQuery();
+            }
+
+            foreach (var sql in profileObjects)
+            {
+                using var restore = connection.CreateCommand();
+                restore.Transaction = transaction;
+                restore.CommandText = sql;
+                restore.ExecuteNonQuery();
+            }
+
+            if (migration.RebuildProfiles)
+            {
+                using var check = connection.CreateCommand();
+                check.Transaction = transaction;
+                check.CommandText = "PRAGMA foreign_key_check;";
+                using var result = check.ExecuteReader();
+                if (result.Read())
+                    throw new DatabaseStorageException("Foreign key check failed during profile table migration.");
             }
 
             using (var history = connection.CreateCommand())
@@ -79,7 +141,55 @@ internal static class DatabaseMigrator
         }
     }
 
-    private sealed record Migration(int Version, string Name, string Sql);
+    private sealed record Migration(int Version, string Name, string Sql, bool RebuildProfiles = false);
+
+    private const string BleProfilesSql = """
+        CREATE TABLE ConnectionProfiles_Ble (
+            Id TEXT NOT NULL PRIMARY KEY,
+            Name TEXT NOT NULL CHECK (length(Name) > 0),
+            Transport INTEGER NOT NULL CHECK (Transport IN (0, 1, 2)),
+            TcpHost TEXT,
+            TcpPort INTEGER CHECK (TcpPort BETWEEN 1 AND 65535),
+            SerialPortName TEXT,
+            BaudRate INTEGER CHECK (BaudRate > 0),
+            DtrEnable INTEGER NOT NULL CHECK (DtrEnable IN (0, 1)),
+            RtsEnable INTEGER NOT NULL CHECK (RtsEnable IN (0, 1)),
+            OpenDelayMilliseconds INTEGER NOT NULL CHECK (OpenDelayMilliseconds >= 0),
+            CommandTimeoutMilliseconds INTEGER NOT NULL CHECK (CommandTimeoutMilliseconds > 0),
+            AcknowledgementTimeoutMilliseconds INTEGER NOT NULL CHECK (AcknowledgementTimeoutMilliseconds > 0),
+            AutoConnect INTEGER NOT NULL CHECK (AutoConnect IN (0, 1)),
+            Reconnect INTEGER NOT NULL CHECK (Reconnect IN (0, 1)),
+            ExpectedNodePublicKey BLOB CHECK (ExpectedNodePublicKey IS NULL OR length(ExpectedNodePublicKey) = 32),
+            CreatedUtc TEXT NOT NULL,
+            UpdatedUtc TEXT NOT NULL,
+            BleDeviceId TEXT,
+            BleDeviceName TEXT,
+            CHECK (
+                (Transport = 0 AND TcpHost IS NOT NULL AND length(TcpHost) > 0 AND TcpPort IS NOT NULL
+                    AND SerialPortName IS NULL AND BaudRate IS NULL AND BleDeviceId IS NULL AND BleDeviceName IS NULL)
+                OR
+                (Transport = 1 AND SerialPortName IS NOT NULL AND length(SerialPortName) > 0 AND BaudRate IS NOT NULL
+                    AND TcpHost IS NULL AND TcpPort IS NULL AND BleDeviceId IS NULL AND BleDeviceName IS NULL)
+                OR
+                (Transport = 2 AND BleDeviceId IS NOT NULL
+                    -- Reject whitespace-only IDs using the .NET whitespace character set.
+                    AND length(trim(BleDeviceId, char(9,10,11,12,13,32,133,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,8200,8201,8202,8232,8233,8239,8287,12288))) > 0
+                    AND TcpHost IS NULL AND TcpPort IS NULL AND SerialPortName IS NULL AND BaudRate IS NULL)
+            )
+        );
+        INSERT INTO ConnectionProfiles_Ble (
+            Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
+            DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
+            AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
+            ExpectedNodePublicKey, CreatedUtc, UpdatedUtc)
+        SELECT Id, Name, Transport, TcpHost, TcpPort, SerialPortName, BaudRate,
+            DtrEnable, RtsEnable, OpenDelayMilliseconds, CommandTimeoutMilliseconds,
+            AcknowledgementTimeoutMilliseconds, AutoConnect, Reconnect,
+            ExpectedNodePublicKey, CreatedUtc, UpdatedUtc
+        FROM ConnectionProfiles;
+        DROP TABLE ConnectionProfiles;
+        ALTER TABLE ConnectionProfiles_Ble RENAME TO ConnectionProfiles;
+        """;
 
     private const string IncomingRetryIdentitiesSql = """
         CREATE TABLE IncomingMessageEvents (

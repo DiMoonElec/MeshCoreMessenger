@@ -1,3 +1,9 @@
+16.10.2026: реализован [BLE10](ble10-schema.md), SQLite v7: третий transport,
+BLE columns/CHECK, атомарная перестройка ConnectionProfiles с сохранением Sessions,
+FK check, rollback и backup. Targeted 47/47, полный Core 411/411 после актуализации
+старого migration fixture. Только временные БД; UI/store mapping пока не менялись.
+Следующий этап — BLE11.
+
 16.10.2026: реализован [BLE9](ble9-profile-model.md): portable BLE profile/draft,
 строгая изоляция транспортных полей, нормализация manager. Targeted Core tests
 18/18, solution Release build без warnings/errors. БД и GUI не менялись.
