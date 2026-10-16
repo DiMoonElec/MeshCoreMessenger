@@ -98,6 +98,7 @@ var failed = 0;
 var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat(ChannelStatsTests.Cases)
     .Concat(SendTests.Cases).Concat(AdvertisementTests.Cases).Concat(ContactMutationTests.Cases)
     .Concat(EventBarrierTests.Cases).Concat(TextValidationTests.Cases).Concat(RegionModelTests.Cases).Concat(RegionDefaultTests.Cases)
+    .Concat(RegionScopeTests.Cases)
     .Concat(BuildTargetTests.Cases).Concat(BleContractTests.Cases).Concat(BleDiscoveryTests.Cases)
     .Concat(BleGattOpenTests.Cases).Concat(BleReceiveTests.Cases).Concat(BleSendTests.Cases)
     .Concat(BleLifecycleTests.Cases).Concat(BleStockFirmwareTests.Cases).ToArray();

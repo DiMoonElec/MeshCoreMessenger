@@ -14,6 +14,29 @@ internal sealed class CommandDispatcher : IDisposable
     private readonly PacketRouter _router;
     private readonly SemaphoreSlim _commandGate = new(1, 1);
     private bool _disposed;
+    private Exception? _admissionFailure;
+    private long _generation;
+    internal Action<Exception>? SessionInvalidated { get; set; }
+
+    internal void StartSession()
+    {
+        Interlocked.Increment(ref _generation);
+        Volatile.Write(ref _admissionFailure, null);
+    }
+
+    internal void InvalidateSession(Exception error)
+    {
+        if (Interlocked.CompareExchange(ref _admissionFailure, error, null) is null)
+            SessionInvalidated?.Invoke(error);
+    }
+
+    private void CheckAdmission(long generation)
+    {
+        if (generation != Interlocked.Read(ref _generation))
+            throw new MeshCoreTransportException("The command belongs to an earlier session.");
+        if (Volatile.Read(ref _admissionFailure) is { } failure)
+            throw new MeshCoreTransportException("Command admission is closed; reconnect explicitly.", failure);
+    }
 
     public CommandDispatcher(IMeshCoreTransport transport, PacketRouter router)
     {
@@ -29,7 +52,8 @@ internal sealed class CommandDispatcher : IDisposable
         CancellationToken cancellationToken = default,
         Func<PacketType, bool>? acceptsType = null,
         Func<TPacket, bool>? acceptsPacket = null,
-        Action<TPacket>? onAccepted = null)
+        Action<TPacket>? onAccepted = null,
+        bool invalidateOnUncertainResponse = false)
         where TPacket : CompanionPacket
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -44,15 +68,21 @@ internal sealed class CommandDispatcher : IDisposable
         if (timeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(timeout));
 
+        var generation = Interlocked.Read(ref _generation);
+        CheckAdmission(generation);
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         var transaction = new SinglePacketTransaction<TPacket>(acceptsType, acceptsPacket, onAccepted);
+        var attempted = false;
 
         try
         {
+            CheckAdmission(generation);
+            cancellationToken.ThrowIfCancellationRequested();
             // Critical protocol ordering: install the response matcher before
             // writing the command. A local companion can answer immediately.
             _router.Register(transaction);
 
+            attempted = true;
             await _transport.SendAsync(command, cancellationToken).ConfigureAwait(false);
 
             CompanionPacket response;
@@ -78,6 +108,15 @@ internal sealed class CommandDispatcher : IDisposable
 
             return typed;
         }
+        catch (Exception error) when (invalidateOnUncertainResponse && attempted && error is not MeshCoreCommandException)
+        {
+            // Close admission before releasing CommandGate: a late untagged OK must not
+            // satisfy another transaction. A definite ERROR is safe to recover from.
+            if (generation == Interlocked.Read(ref _generation) &&
+                Interlocked.CompareExchange(ref _admissionFailure, error, null) is null)
+                SessionInvalidated?.Invoke(error);
+            throw;
+        }
         finally
         {
             _router.Unregister(transaction);
@@ -96,10 +135,13 @@ internal sealed class CommandDispatcher : IDisposable
         CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        var generation = Interlocked.Read(ref _generation);
+        CheckAdmission(generation);
         await _commandGate.WaitAsync(cancellationToken).ConfigureAwait(false);
         ContactsTransaction? transaction = null;
         try
         {
+            CheckAdmission(generation);
             transaction = new ContactsTransaction(inactivityTimeout, absoluteTimeout);
             _router.Register(transaction);
             await _transport.SendAsync(command, cancellationToken).ConfigureAwait(false);

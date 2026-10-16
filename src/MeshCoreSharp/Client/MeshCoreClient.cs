@@ -24,6 +24,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private Task? _receiveTask;
     private MessagePump? _messagePump;
     private AckTracker? _ackTracker;
+    private ScopeOperationCoordinator? _scopeOperations;
+    private Task _scopeTeardown = Task.CompletedTask;
     private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
@@ -47,6 +49,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
             throw new ArgumentOutOfRangeException(nameof(options), "Invalid ACK timeout bounds or margin.");
 
         _dispatcher = new CommandDispatcher(_transport, _router);
+        _dispatcher.SessionInvalidated = InvalidateScopeSession;
         _events = new ClientEventQueue();
     }
 
@@ -87,6 +90,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
             if (_state == MeshCoreConnectionState.Connected)
                 return;
 
+            await _scopeTeardown.ConfigureAwait(false);
+
             // An explicitly requested connection after a fault starts a fresh pump/session.
             if (_receiveCts is not null)
             {
@@ -106,6 +111,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
             {
                 await _transport.ConnectAsync(cancellationToken).ConfigureAwait(false);
                 _receiveCts = new CancellationTokenSource();
+                _dispatcher.StartSession();
+                _scopeOperations = new ScopeOperationCoordinator(_dispatcher, _options.CommandTimeout, _receiveCts.Token);
                 _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;
@@ -631,6 +638,32 @@ public sealed class MeshCoreClient : IAsyncDisposable
             messagePump?.Stop();
             ackTracker.Stop();
         }
+    }
+
+    private void InvalidateScopeSession(Exception error)
+    {
+        var closed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _scopeTeardown = closed.Task;
+        _started = false;
+        _messagePump?.Stop();
+        SetState(MeshCoreConnectionState.Faulted);
+        RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(error));
+        _receiveCts?.Cancel();
+        _ = CloseInvalidScopeSessionAsync(closed);
+    }
+
+    private async Task CloseInvalidScopeSessionAsync(TaskCompletionSource closed)
+    {
+        try { await _transport.DisconnectAsync().ConfigureAwait(false); }
+        catch (Exception error) { RaiseSafely(BackgroundError, new MeshCoreClientErrorEventArgs(error)); }
+        finally { closed.TrySetResult(); }
+    }
+
+    internal Task<ScopeOperationResult<T>> ExecuteScopeOperationAsync<T>(FloodScopeSelection scope,
+        Func<CancellationToken, Task<T>> send, CancellationToken token = default)
+    {
+        EnsureReady();
+        return _scopeOperations!.ExecuteAsync(scope, send, token);
     }
 
     private void EnsureConnected()

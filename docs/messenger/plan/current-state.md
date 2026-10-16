@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION3](region3-scope-lifecycle.md): session-owned scope coordinator, guarded command admission и fault teardown; accepted SEND отделён от cleanup failure. Library194/194. REGION2: fde94f5; далее REGION4. Push ожидает точного подтверждения origin/main после отказа auto-review.
+
 16.10.2026: выполнен [REGION2](region2-default-api.md): GET/SET/CLEAR default, exact-length parsing и fake transport tests. Library 185/185; следующий REGION3. REGION1 сохранён отдельным коммитом f4a0aec. Пользователь запросил commit и push между этапами; push ожидает подтверждения точного origin после отказа automatic approval review.
 
 16.10.2026: выполнен [REGION1](region1-models.md): immutable key16, scope selection, default observation и public/custom region models. Library regression 182/182. По запросу пользователя продолжаем последовательно без остановки между подэтапами; следующий REGION2. CatCore разрешена для аппаратных проверок.

@@ -94,6 +94,18 @@ internal static class CompanionCommands
     public static byte[] GetChannel(byte index) => [(byte)CommandType.GetChannel, index];
 
     public static byte[] GetDefaultFloodScope() => [(byte)CommandType.GetDefaultFloodScope];
+
+    public static byte[] SetFloodScope(FloodScopeSelection scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        return scope.Mode switch
+        {
+            FloodScopeMode.InheritDefault => [(byte)CommandType.SetFloodScopeKey, 0],
+            FloodScopeMode.ForceUnscoped => [(byte)CommandType.SetFloodScopeKey, 1],
+            FloodScopeMode.ExplicitRegion => [(byte)CommandType.SetFloodScopeKey, 0, .. scope.Key!.ToArray()],
+            _ => throw new ArgumentOutOfRangeException(nameof(scope)),
+        };
+    }
     public static byte[] ClearDefaultFloodScope() => [(byte)CommandType.SetDefaultFloodScope];
 
     public static byte[] SetDefaultFloodScope(RegionDefinition region)
