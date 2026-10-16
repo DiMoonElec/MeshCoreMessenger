@@ -36,6 +36,13 @@ public sealed class ConnectionFailureClassifier : IConnectionFailureClassifier
             MeshCoreProtocolException => ConnectionFailureDisposition.NeedsAttention,
             MeshCoreCommandException => ConnectionFailureDisposition.NeedsAttention,
             ReceiveDrainTimeoutException => ConnectionFailureDisposition.Transient,
+            MeshCoreBleTransportException ble => ble.Reason switch
+            {
+                MeshCoreBleFailureReason.AdapterUnavailable or MeshCoreBleFailureReason.RadioOff or
+                MeshCoreBleFailureReason.DeviceUnreachable or MeshCoreBleFailureReason.TransportFailure or
+                MeshCoreBleFailureReason.WriteOutcomeUnknown => ConnectionFailureDisposition.Transient,
+                _ => ConnectionFailureDisposition.NeedsAttention,
+            },
             MeshCoreTransportException => ConnectionFailureDisposition.Transient,
             MeshCoreTimeoutException => ConnectionFailureDisposition.Transient,
             SocketException => ConnectionFailureDisposition.Transient,

@@ -1,3 +1,8 @@
+16.10.2026: реализован [BLE13](ble13-supervisor.md): typed BLE errors проверяются
+до generic transport exception, permanent причины требуют внимания без фонового
+pairing/retry; временные используют прежний backoff. Supervisor59/59, полный Core446/446.
+Send/retry policy не менялась, аппаратные off/on/sleep остаются BLE17. Далее — BLE14.
+
 16.10.2026: реализован [BLE12](ble12-factory.md): injectable transport factory,
 Windows Desktop provider и UI access dispatcher в DI, общий client/session сохранён.
 Core tests26/26, AppBootstrap5/5 Windows и5/5 portable; обе Release builds/locked

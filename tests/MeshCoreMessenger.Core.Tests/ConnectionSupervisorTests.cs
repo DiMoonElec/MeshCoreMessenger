@@ -7,7 +7,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class ConnectionSupervisorTests
+public sealed partial class ConnectionSupervisorTests
 {
     [Fact]
     public async Task SenderNameBelongsToOnlineSessionAndIsClearedBeforeNextConnection()

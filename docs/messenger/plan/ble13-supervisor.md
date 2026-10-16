@@ -2,7 +2,7 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: запланирован 15.10.2026; реализация не начата.**
+**Статус: реализован 16.10.2026.**
 
 **Цель:** Сопоставить новые причины отказа с состояниями приложения.
 
@@ -30,11 +30,32 @@
 
 **Ручная проверка:** Off/on и sleep проверяются на железе в BLE17.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; фактические результаты записаны ниже.
-- [ ] Статус подэтапа, checklist Stage BLE и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; фактические результаты записаны ниже.
+- [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
 
-Пока отсутствует. При выполнении записать дату, изменения, команды и результаты
-проверок, оставшиеся ограничения. Не заменять реальные результаты планом.
+16.10.2026: ConnectionFailureClassifier разбирает MeshCoreBleTransportException до
+общего MeshCoreTransportException. AdapterUnavailable, RadioOff, DeviceUnreachable,
+TransportFailure и WriteOutcomeUnknown — Transient. Остальные typed BLE причины —
+NeedsAttention: pairing/access/platform, характеристики/MTU, invalid frame, overflow
+и неподтверждённое incoming notification. Для последних двух автоматический reconnect
+не восстанавливает уже потерянные данные; повторять такой drain в фоне не следует.
+Invalid endpoint остаётся ArgumentException/NeedsAttention. Рекурсивное распознавание
+single-inner AggregateException сохранено.
+
+WriteOutcomeUnknown разрешает переподключение, **не повтор отправки**: существующая
+политика статусов/ACK/повторов не менялась. Supervisor, provider и transport не получили
+новых retry loops, send/config команд. Backoff, reconnect=false, ручной Disconnect,
+generation и sleep/resume остаются у прежнего owner. Локализация BLE ошибок редактора
+относится к BLE15; typed причины и disposition уже доступны приложению.
+
+`dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --
+-class MeshCoreMessenger.Core.Tests.ConnectionSupervisorTests` — **59/59**:
+все15 typed причин (также nested aggregate), permanent failures без retry,
+off/unavailable/lost/unknown-write → backoff → fresh generation, reconnect=false,
+ручное отключение; прежние switch/open, late generation, shutdown, power tests сохранены.
+Новые тесты ожидают регистрацию fake delay отдельно от публикации RetryWaiting,
+поскольку это разные события. Полный Core suite — **446/446**.
+Аппаратные off/on и sleep не выполнялись, остаются в BLE17. Следующий этап — BLE14.

@@ -4,7 +4,7 @@
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
 **Статус: BLE1–BLE7 реализованы; BLE8 stock read-only probe прошёл, аппаратная граница длинного RX ожидает;
-BLE9–BLE12 реализованы; BLE13–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
+BLE9–BLE13 реализованы; BLE14–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
 незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)
@@ -188,7 +188,7 @@ BLE8, 16.10.2026: на Heltec V3 / firmware v1.18.0-07a833bb фактическ�
 - [x] [BLE10 — Миграция SQLite для третьего транспорта](ble10-schema.md).
 - [x] [BLE11 — Хранение BLE-профилей](ble11-profile-store.md).
 - [x] [BLE12 — Подключение транспорта через DI](ble12-factory.md).
-- [ ] [BLE13 — Ошибки BLE и существующий reconnect](ble13-supervisor.md).
+- [x] [BLE13 — Ошибки BLE и существующий reconnect](ble13-supervisor.md).
 - [ ] [BLE14 — Поиск устройств в модели представления](ble14-scan-ui.md).
 - [ ] [BLE15 — BLE в существующем редакторе подключения](ble15-profile-ui.md).
 - [ ] [BLE16 — Автоматическая приёмка полного пути](ble16-integration.md).
