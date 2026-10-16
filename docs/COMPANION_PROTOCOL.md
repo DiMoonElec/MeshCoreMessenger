@@ -1,5 +1,7 @@
 # Companion protocol: оглавление
 
+- [regions](library/protocol/regions.md) — REGION: хранение регионов, default/override, discovery, ограничения firmware и закреплённые источники.
+
 - [Как читать документацию](README.md) — выбор минимального набора разделов для задачи.
 - [sources](library/protocol/sources.md) — Приоритет источников и ограничения спецификации.
 - [framing](library/protocol/framing.md) — Логические кадры, TCP/Serial/BLE и размеры.

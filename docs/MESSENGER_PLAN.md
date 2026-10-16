@@ -1,5 +1,7 @@
 # План MeshCoreMessenger: оглавление
 
+- [REGION](messenger/plan/stage-region.md) — анализ и проект полной Companion-поддержки регионов; REGION0 выполнен, реализация не начата, GUI проектируется совместно.
+
 - [Как читать документацию](README.md) — выбор минимального набора разделов для задачи.
 - [current-state](messenger/plan/current-state.md) — Текущий статус, checkpoint и исходная актуализация.
 - [stage-ble](messenger/plan/stage-ble.md) — самостоятельный этап BLE: BLE1–BLE7 и BLE9–BLE14 реализованы; код BLE15 готов, ручная приёмка ожидается; BLE8 stock probe/drain до166bytes проверены, граница длинного RX ожидает; BLE16–BLE18 не начаты.

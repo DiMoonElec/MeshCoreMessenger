@@ -7,6 +7,9 @@ checkpoints описывают результаты на свою дату, а �
 
 ## Точки входа
 
+- [REGION — внедрение регионов](messenger/plan/stage-region.md) — проект и этапы;
+  [поведение ноды и wire](library/protocol/regions.md) — источники, хранение, discovery и scope.
+
 - [Старт агентской сессии](CODEX_START.md) — порядок чтения и готовый prompt.
 - [Текущее состояние Messenger](messenger/plan/current-state.md) — статус Stage C.
 - [Desktop-интеграция S1–S7](messenger/plan/stage-s.md) — отдельная нелинейная ветка: S1–S5 реализованы, Windows-сценарий S1 и визуальная приёмка S2 подтверждены пользователем; macOS/Windows приёмка S3 подтверждена пользователем, S4 ограничен двумя подписями навигации, S5 проверен через fake adapter; S6: базовая работа macOS/Windows подтверждена пользователем; S7 не начат.
