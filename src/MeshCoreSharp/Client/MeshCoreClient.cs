@@ -456,11 +456,26 @@ public sealed class MeshCoreClient : IAsyncDisposable
     /// <summary>Sends plain text once with an application-owned wire timestamp and basic attempt (0–3).</summary>
     /// <remarks>The recipient is a full 32-byte key. ACK tags come from MSG_SENT, never a local hash.
     /// The cancellation token also governs Delivery. Cancellation/timeout does not retract or retry a send.</remarks>
-    public async Task<TextMessageSendResult> SendTextAsync(
+    public Task<TextMessageSendResult> SendTextAsync(
         ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp, byte attempt,
         CancellationToken cancellationToken = default)
+        => SendTextAsync(recipientPublicKey, text, timestamp, attempt, FloodScopeSelection.InheritDefault, cancellationToken);
+
+    /// <summary>Sends once to a contact with a supplied timestamp, attempt and outgoing flood policy.</summary>
+    public Task<TextMessageSendResult> SendTextAsync(Contact recipient, string text, uint timestamp, byte attempt,
+        FloodScopeSelection scope, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(recipient);
+        return SendTextAsync(recipient.PublicKey, text, timestamp, attempt, scope, cancellationToken);
+    }
+
+    /// <summary>Sends once with a flood policy; direct routing and asynchronous ACK semantics are unchanged.</summary>
+    public async Task<TextMessageSendResult> SendTextAsync(
+        ReadOnlyMemory<byte> recipientPublicKey, string text, uint timestamp, byte attempt,
+        FloodScopeSelection scope, CancellationToken cancellationToken = default)
     {
         EnsureReady();
+        ArgumentNullException.ThrowIfNull(scope);
         var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp, attempt);
         if (_transport is IBleClientPolicy ble)
             _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Private).MaximumTextBytes);
@@ -470,7 +485,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         var pending = await tracker.BeginAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var operation = await RunScopeSendAsync(FloodScopeSelection.InheritDefault, async (ct, guarded) =>
+            var operation = await RunScopeSendAsync(scope, async (ct, guarded) =>
             {
                 var sent = await _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendTextMessage, command,
                     nameof(SendTextAsync), _options.CommandTimeout, ct,

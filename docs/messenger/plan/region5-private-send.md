@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Поддержка scope в существующих перегрузках ЛС.
 
@@ -41,11 +41,15 @@ region-design.md: «Библиотека: безопасная отправка�
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION6](region6-text-budget.md).
+Добавлены explicit scope overloads SendTextAsync для full key и Contact с timestamp/attempt. Legacy overloads направлены в тот же путь с InheritDefault. AckTracker admission/circular window ожидаются до ScopeGate, RX Bind выполняется до обработки следующего ACK. Delivery запускается после MSG_SENT до RESET и возвращается независимо от cleanup outcome; ошибки preparation идентифицируются по SetFloodScopeKey / NotSupportedException, guarded SEND timeout сохраняет SendTextAsync operation и закрывает admission. Формат private command/ACK, direct/flood routing и число попыток не менялись.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 204/204. Четыре новых cases: MSG_SENT+ACK до завершения transport write; timestamp/attempt; восемь concurrent Delivery с девятым capacity waiter и независимым channel send; SET error без private TX; принятый MSG_SENT и подтверждённый ACK при RESET error. Предыдущие private cancellation/window/duplicate-tag tests также проходят. Аппаратная проверка и асимметричные маршруты остаются REGION33.
+
+Следующий шаг — [REGION6](region6-text-budget.md).

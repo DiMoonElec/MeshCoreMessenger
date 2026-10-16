@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION5](region5-private-send.md): explicit scope private overloads, ACK до write completion, capacity/channel independence и confirmed delivery при cleanup error. Library204/204. REGION4: 931806d; далее REGION6. Push ожидает ответа на уточнение origin/main.
+
 16.10.2026: выполнен [REGION4](region4-channel-send.md): scope-aware channel sends; общий gate legacy private/channel и default mutations; отдельный cleanup error. Library200/200; REGION3: 8f44eb7. Далее REGION5; push пока ожидает подтверждения origin/main.
 
 16.10.2026: выполнен [REGION3](region3-scope-lifecycle.md): session-owned scope coordinator, guarded command admission и fault teardown; accepted SEND отделён от cleanup failure. Library194/194. REGION2: fde94f5; далее REGION4. Push ожидает точного подтверждения origin/main после отказа auto-review.
