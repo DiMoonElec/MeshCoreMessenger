@@ -32,9 +32,10 @@ internal sealed record BleProbeArguments(string DeviceId, int Cycles, int Maximu
     }
 }
 
-// Defense against accidentally enabling message draining or adding a configuration command to this probe.
-// Log only types/lengths: channel keys, contact details, messages and raw buffers never enter the report.
-internal sealed class ReadOnlyProbeTransport(IMeshCoreTransport inner) : IMeshCoreTransport
+// Default mode blocks queue consumption; only the explicit queue probe adds SYNC_NEXT_MESSAGE.
+// Statistics contain types/lengths only. The queue probe may separately capture local raw frames.
+internal sealed class ReadOnlyProbeTransport(IMeshCoreTransport inner, bool allowMessageDrain = false,
+    Action<ReadOnlyMemory<byte>>? captureReceived = null) : IMeshCoreTransport
 {
     private readonly object _sync = new();
     private readonly Dictionary<byte, (int Count, int Min, int Max)> _received = [];
@@ -43,12 +44,13 @@ internal sealed class ReadOnlyProbeTransport(IMeshCoreTransport inner) : IMeshCo
     public Task ConnectAsync(CancellationToken cancellationToken = default) => inner.ConnectAsync(cancellationToken);
     public Task DisconnectAsync(CancellationToken cancellationToken = default) => inner.DisconnectAsync(cancellationToken);
     public ValueTask DisposeAsync() => inner.DisposeAsync();
-    internal static bool Allows(CommandType type) => type is CommandType.AppStart or CommandType.DeviceQuery
-        or CommandType.GetDeviceTime or CommandType.GetContacts or CommandType.GetChannel;
+    internal static bool Allows(CommandType type, bool allowMessageDrain = false) => type is CommandType.AppStart or CommandType.DeviceQuery
+        or CommandType.GetDeviceTime or CommandType.GetContacts or CommandType.GetChannel
+        || allowMessageDrain && type == CommandType.SyncNextMessage;
 
     public ValueTask SendAsync(ReadOnlyMemory<byte> frame, CancellationToken cancellationToken = default)
     {
-        if (frame.IsEmpty || !Allows((CommandType)frame.Span[0]))
+        if (frame.IsEmpty || !Allows((CommandType)frame.Span[0], allowMessageDrain))
             throw new InvalidOperationException("The BLE read-only probe blocked a command outside its allowlist.");
         lock (_sync) Record(_sent, frame);
         return inner.SendAsync(frame, cancellationToken);
@@ -59,6 +61,7 @@ internal sealed class ReadOnlyProbeTransport(IMeshCoreTransport inner) : IMeshCo
         await foreach (var frame in inner.ReceiveAsync(cancellationToken).ConfigureAwait(false))
         {
             lock (_sync) Record(_received, frame);
+            captureReceived?.Invoke(frame);
             yield return frame;
         }
     }
@@ -142,8 +145,13 @@ internal static class BleProbeSelfTest
         var allowed = new[] { CommandType.AppStart, CommandType.DeviceQuery, CommandType.GetDeviceTime,
             CommandType.GetContacts, CommandType.GetChannel };
         for (var value = 0; value <= byte.MaxValue; value++)
+        {
             if (ReadOnlyProbeTransport.Allows((CommandType)value) != allowed.Contains((CommandType)value))
                 throw new InvalidOperationException("Probe command allowlist mismatch.");
+            if (ReadOnlyProbeTransport.Allows((CommandType)value, true) !=
+                (allowed.Contains((CommandType)value) || (CommandType)value == CommandType.SyncNextMessage))
+                throw new InvalidOperationException("Queue probe command allowlist mismatch.");
+        }
 #if WINDOWS
         await using (var dispatcher = new BleProbeDispatcher())
         {
@@ -169,6 +177,7 @@ internal static class BleProbeSelfTest
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         await BleReadOnlyProbe.RunAsync(transport, 1, () => null, () => Task.CompletedTask, timeout.Token);
         await server.Completion;
+        await BleQueueProbe.SelfTestAsync();
         Console.WriteLine("BLE PROBE SELF-TEST PASSED (no Bluetooth used)");
         return 0;
     }

@@ -7,7 +7,7 @@ using MeshCoreSharp.Transport.Ble;
 
 internal static class WindowsBleProbe
 {
-    internal static async Task<int> RunAsync(BleProbeArguments args)
+    internal static async Task<int> RunAsync(BleProbeArguments args, string? queueCapturePath = null)
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(4));
         ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
@@ -22,6 +22,13 @@ internal static class WindowsBleProbe
                 OpenTimeout = TimeSpan.FromSeconds(30),
                 MaximumFrameSize = args.MaximumFrameSize,
             });
+            if (queueCapturePath is not null)
+            {
+                Console.WriteLine("BLE queue probe: explicitly drains queued messages to a local capture; no radio sends or configuration writes.");
+                await BleQueueProbe.RunAsync(native, queueCapturePath, () => native.MaxPduSize,
+                    () => native.CleanupCompletion, cancellation.Token);
+                return 0;
+            }
             Console.WriteLine("BLE8 read-only probe: APP_START, DEVICE_QUERY, GET_DEVICE_TIME, GET_CONTACTS, GET_CHANNEL only.");
             Console.WriteLine($"Logical frame ceiling={args.MaximumFrameSize} bytes; outgoing writes use the current ATT payload budget.");
             if (args.MaximumFrameSize < MeshCoreSharp.Protocol.ProtocolLimits.CurrentFirmwareMaxFrameSize)

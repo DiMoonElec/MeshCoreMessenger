@@ -1,3 +1,10 @@
+16.10.2026: по отдельному разрешению пользователя [проверен BLE queue drain](../../testing/ble-stock-firmware.md#аппаратный-приём-подготовленных-сообщений):
+60 сообщений (3 ЛС/57 channel), NO_MORE_MESSAGES, MTU176, без ошибок; ЛС150bytes
+и тело тестового канала137bytes получены целиком (кадры166/160). Sample получил
+opt-in drain/capture, Windows/portable self-tests зелёные; обычный probe остаётся
+read-only. Reconnect после drain успешен. Реальных кадров>=173 не было, поэтому
+BLE8 RX174–176/recovery всё ещё не подтверждён. BLE12 не начат; Desktop/БД не менялись.
+
 16.10.2026: реализован [BLE11](ble11-profile-store.md): SQLite store сохраняет/читает
 BLE endpoint и display name, TCP/Serial mapping сохранён. Targeted Core **57/57**,
 Windows/portable locked restore и solution Release builds без warnings/errors.

@@ -19,8 +19,10 @@ Disconnect/physical cleanup, повторный Connect. Разное число
 Получены473 CONTACT frames по148bytes, SelfInfo73, DeviceInfo82, ChannelInfo50.
 Лог метаданных: ignored `artifacts/ble-stock-fix/probe-default.log`.
 Текстовые budgets для фактического имени `RnD CatCore🐈`: **private160, channel143**.
-Ни RF send, ни SYNC_NEXT_MESSAGE на реальной ноде, ни изменение конфигурации/прошивки
-не выполнялись. Существующий пользовательский backlog не трогали.
+В первоначальном probe ни RF send, ни SYNC_NEXT_MESSAGE на реальной ноде, ни изменение
+конфигурации/прошивки не выполнялись. Позднее пользователь подготовил сообщения и
+отдельно разрешил чтение всей очереди: результат ниже в разделе
+[аппаратного приёма сообщений](#аппаратный-приём-подготовленных-сообщений).
 
 ## Проверенные формулы
 
@@ -130,13 +132,78 @@ invalid UTF-8, timeout/cancellation/late completion и полный MeshCoreClie
 MTU и успешного stock-MTU connect, сохранив cancellation/disconnect cleanup сценарии.
 
 На реальной ноде подтверждён default read-only probe и actual budgets. Recovery именно
-174–176-byte message на железе **не проверен**: для этого нужен выделенный тест с
-подготовленной очередью, а не слив существующего backlog. Native macOS не проверялся.
+174–176-byte message на железе **не проверен**: в последующем согласованном чтении
+очереди максимальный входящий message frame составил166bytes (подробности ниже).
+Native macOS не проверялся.
 Эти пределы нельзя объявлять аппаратно подтверждёнными на основании fake tests.
 
 Windows/ATT источники: [ReadValueAsync](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.genericattributeprofile.gattcharacteristic.readvalueasync),
 [BluetoothCacheMode](https://learn.microsoft.com/en-us/uwp/api/windows.devices.bluetooth.bluetoothcachemode),
 [ATT notification MTU−3](https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Core-54/out/en/host/attribute-protocol--att-.html).
+
+## Аппаратный приём подготовленных сообщений
+
+16.10.2026: пользователь отправил тестовые сообщения в отдельный канал и ЛС,
+затем **явно разрешил прочитать всю очередь**, включая возможные другие сообщения.
+SYNC_NEXT_MESSAGE удаляет элементы firmware queue; это не read-only операция.
+Первый запуск был отклонён автоматической проверкой разрешений и не выполнялся;
+после отдельного согласия выполнен один drain до NO_MORE_MESSAGES.
+
+Добавлен opt-in режим sample:
+
+```text
+dotnet run --project samples/MeshCoreSharp.Console -c Release -- --ble-drain-probe <device-id> <new-local-capture.jsonl>
+```
+
+Он выполняет APP_START, DEVICE_QUERY, явный DrainMessagesAsync и FlushEventsAsync,
+закрывает соединение и ожидает physical cleanup. AutoReceiveMessages=false.
+Transport allowlist дополнен только SYNC_NEXT_MESSAGE при явно выбранном drain;
+обычный `--ble-probe` по-прежнему запрещает эту команду. RF send, SET_TIME и любые
+конфигурационные writes запрещены. Capture создаётся с CreateNew до connect;
+копии полученных logical frames и decoded text буферизуются в памяти и сохраняются
+в finally. File I/O не выполняется в RX callbacks. Это диагностический capture,
+не durable ingest: при аварийном завершении процесса до записи буфер может потеряться.
+
+Нода: Heltec V3 `v1.18.0-07a833bb`, ATT MTU176, обычный RX ceiling176 без override.
+Результат: **60 decoded messages**, **61 SYNC_NEXT_MESSAGE**, финальный NO_MORE_MESSAGES,
+без background/probe errors. Из них 3 ЛС и57 канальных сообщений, все plain text.
+
+| Полученные кадры | Количество | Logical frame bytes | UTF-8 text bytes |
+| --- | ---: | ---: | ---: |
+| Contact V3, 0x10 | 3 | 31–166 | 15–150 |
+| Channel legacy, 0x08 | 6 | 22–120 | 14–112 |
+| Channel V3, 0x11 | 51 | 21–160 | 10–149, включая sender prefix |
+
+В тестовом канале (slot3) получены три сообщения. Длинное содержит **137 ASCII bytes
+тела +12 bytes префикса** (имя из10 латинских символов с пробелом и `": "`), всего149
+байт текста и160байт V3 кадра. Его цифровая последовательность сравнена целиком с
+ожидаемыми137 цифрами; окончание `567` сохранено. В ЛС получены150 ASCII bytes,
+сравнены все150 цифр, окончание `890` сохранено; полный V3 кадр166bytes. Отдельные
+короткие сообщения с подсказками концов и кириллицей тоже получены. Во всех60 текстах
+нет replacement character U+FFFD, strict UTF-8 представление корректно. Это подтверждает
+целостность данных в этих случаях, но не является побайтовой сверкой всех остальных
+сообщений с оригиналами отправителей.
+
+**Граница остаётся непроверенной:** ни одного кадра >=173bytes не получено. При
+MTU176 обычный ATT payload173bytes, поэтому проверка полного TX read для пограничного
+notification не задействована. Телефон ограничивает длины отправки; принятые150/137
+не доказывают отсутствие проблем при библиотечных160bytes или RX174–176. Наличие
+региона в тестовом канале этим capture не установлено; отдельного сравнения127/137
+для scoped/unscoped не было. Текущие budgets по этим измерениям не изменялись.
+
+После drain выполнен отдельный обычный `--ble-probe <device-id> 1`: MTU176,237 контактов
+по148bytes,40 слотов каналов (4 заполнены), device/time info и clean disconnect прошли.
+Число контактов может меняться между snapshots; конфигурация не исправлялась.
+
+Локальные ignored artifacts: `artifacts/ble8-queue/capture-20261016-1.jsonl`,
+`probe-20261016-1.log`, `reconnect-20261016-1.log`. Capture содержит тексты и raw bytes,
+в Git не включён. SHA256 capture:
+`D08A8DAAC51035B4DC94DFACD99FA02999B16AB7733289F17A29A63393653EBB`.
+
+Sample `--ble-probe-self-test` проверяет прежний read-only сценарий, allowlist обоих
+режимов для всех256 command bytes и новый drain/capture через localhost fake,
+включая private/channel/binary queue items. Windows и portable варианты прошли.
+Библиотека, TCP/Serial и production Desktop не менялись.
 
 ## Отложенные исправления
 

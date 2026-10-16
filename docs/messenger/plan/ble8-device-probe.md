@@ -3,7 +3,7 @@
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
 **Статус: probe реализован 16.10.2026; default stock read-only обмен проверен;
-аппаратная граница RX174–176 ожидает отдельной тестовой очереди.**
+разрешённый drain с RX до166bytes проверен; аппаратная граница RX174–176 не достигнута.**
 
 **Цель:** Проверить главный аппаратный риск до интеграции БД и UI.
 
@@ -37,12 +37,26 @@
 
 ## Результат выполнения
 
+16.10.2026: по новому запросу пользователя добавлен отдельный opt-in
+`--ble-drain-probe <device-id> <new-local-capture.jsonl>`. После явного разрешения
+читать всю очередь получены60 сообщений (3 ЛС,57 канальных),61 SYNC_NEXT_MESSAGE
+до NO_MORE_MESSAGES, без ошибок. Тестовые цифровые строки150bytes в ЛС и137bytes
+тела канала сравнены целиком; кадры166/160bytes соответственно. Кириллица и концы
+сохранены. Read-only reconnect после drain:237 контактов,40slots, clean cleanup.
+Windows/portable sample self-tests прошли; capture остаётся локальным/ignored.
+[Подробности](../../testing/ble-stock-firmware.md#аппаратный-приём-подготовленных-сообщений).
+Кадров>=173 не было из-за доступных длин отправки телефона, поэтому recovery полного
+TX value и RX174–176 аппаратно не подтверждены; этот остаточный пункт не закрывается
+по успешному приёму166bytes. RF send/config writes не выполнялись. Старый запрет
+drain в исходном scope ниже не относится к этой отдельно разрешённой проверке.
+
 После первоначального probe пользователь явно потребовал совместимость без изменения
 firmware и без theoretical max-frame gate. [Актуальная реализация/проверки](../../testing/ble-stock-firmware.md):
 dynamic BLE TX budgets, отдельный полный TX read для пограничного RX, default native
 probe при MTU176 без override. Library 179/179 Windows, 177/177 portable. TCP/Serial
 не менялись. Full-size incoming cases проверены fake, аппаратная граница пока нет:
-существующий пользовательский backlog не выгружался. Ниже сохранён первый checkpoint.
+на исходном checkpoint пользовательский backlog не выгружался. Последующий явно
+разрешённый drain описан выше; ниже сохранён первый checkpoint.
 
 16.10.2026: добавлены явные `--ble-probe <device-id> [cycles=2] [--frame-limit N]`
 и `--ble-probe-self-test` в существующий console sample. CLI parsing и command allowlist
