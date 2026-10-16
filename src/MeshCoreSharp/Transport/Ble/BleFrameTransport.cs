@@ -24,6 +24,7 @@ internal sealed class BleFrameTransport(BleMeshCoreTransportOptions options, IBl
     private bool _disposed;
     internal Task CleanupCompletion { get { lock (_sync) return Task.WhenAll(_cleanupTasks); } }
     public bool IsConnected { get { lock (_sync) return _current is { Stopped: false, Receiver.IsConnected: true }; } }
+    internal ushort? MaxPduSize { get { lock (_sync) return _current is { Stopped: false } current ? current.Receiver?.MaxPduSize : null; } }
 
     public Task ConnectAsync(CancellationToken cancellationToken = default)
     {
@@ -80,8 +81,11 @@ internal sealed class BleFrameTransport(BleMeshCoreTransportOptions options, IBl
             var failure = error is OperationCanceledException && cancellationToken.IsCancellationRequested
                 ? new OperationCanceledException(cancellationToken)
                 : error is OperationCanceledException && deadline.IsCancellationRequested
-                    ? new MeshCoreBleTransportException(MeshCoreBleFailureReason.DeviceUnreachable,
-                        "BLE opening and notification subscription exceeded the open deadline.", error)
+                    ? new MeshCoreBleTransportException(error.Data["BleOpenPhase"] as string == "Mtu"
+                            ? MeshCoreBleFailureReason.InsufficientMtu : MeshCoreBleFailureReason.DeviceUnreachable,
+                        error.Data["BleOpenPhase"] as string == "Mtu"
+                            ? $"BLE MTU {error.Data["BleMtu"]} did not reach required {options.MaximumFrameSize + BleGattProfile.AttributeValueOverhead}."
+                            : "BLE opening and notification subscription exceeded the open deadline.", error)
                     : error;
             generation.OpenCleanup = generation.Receiver is null && prepared is not null
                 ? prepared.Attempt.CloseAsync(failure) : opener.CleanupCompletion;

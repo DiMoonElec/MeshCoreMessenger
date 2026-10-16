@@ -17,6 +17,8 @@ public sealed class BleMeshCoreTransport : IMeshCoreTransport
     }
 
     public bool IsConnected => _transport.IsConnected;
+    /// <summary>Actual negotiated ATT MTU of the Ready generation, or null when disconnected.</summary>
+    public ushort? MaxPduSize => _transport.MaxPduSize;
     /// <summary>Physical cleanup of all generations created so far, including late native I/O.
     /// Disconnect/Dispose limit their caller wait to ShutdownTimeout; inspect this task for late cleanup errors.</summary>
     public Task CleanupCompletion => _transport.CleanupCompletion;

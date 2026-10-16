@@ -36,10 +36,11 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
         Task<IBleGattConnection?>? opening = null;
         var adopted = false;
         var waitingForMtu = false;
+        IBleGattConnection? connection = null;
         try
         {
             opening = platform.OpenAsync(options.DeviceId, lifetime.Token);
-            var connection = await opening.WaitAsync(lifetime.Token).ConfigureAwait(false);
+            connection = await opening.WaitAsync(lifetime.Token).ConfigureAwait(false);
             if (connection is null)
                 throw new MeshCoreBleTransportException(MeshCoreBleFailureReason.DeviceUnreachable,
                     "The selected BLE endpoint is unavailable.");
@@ -65,9 +66,11 @@ internal sealed class BleGattSessionOpener(IBleGattOpenPlatform platform, TimePr
                     : deadline.IsCancellationRequested
                         ? new MeshCoreBleTransportException(waitingForMtu
                                 ? MeshCoreBleFailureReason.InsufficientMtu : MeshCoreBleFailureReason.DeviceUnreachable,
-                            waitingForMtu ? "The BLE MTU did not reach the required frame size before the open deadline."
+                            waitingForMtu ? $"BLE MTU {connection?.MaxPduSize} did not reach required {options.MaximumFrameSize + BleGattProfile.AttributeValueOverhead} before the open deadline."
                                 : "Opening the BLE endpoint timed out.", error)
                         : error;
+            failure.Data["BleOpenPhase"] = waitingForMtu ? "Mtu" : "NativeOpen";
+            if (connection is not null) failure.Data["BleMtu"] = connection.MaxPduSize;
             var cleanup = attempt.CloseAsync(failure);
             CleanupCompletion = opening is not null && !adopted
                 ? DisposeLateResultAsync(opening, attempt, cleanup) : cleanup;

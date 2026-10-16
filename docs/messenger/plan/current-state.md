@@ -1,3 +1,15 @@
+16.10.2026: после BLE7 `d96b5ff` выполнена подготовка и аппаратная часть
+[BLE8](ble8-device-probe.md), но этап полностью **не закрыт**. Heltec V3 фактически
+сообщил `v1.18.0-07a833bb`, protocol14, ATT MTU176. Default transport требует179;
+попытка штатного connect завершилась InsufficientMtu до APP_START. При явном
+diagnostic frame limit 173 прошли 2 цикла: по 238 контактов, 40 слотов каналов (4 заполнены),
+read-only device/time info, повторный Connect и physical cleanup. Frame174–176
+совместимость не подтверждена; default policy и production DI не ослаблялись.
+Library **166/166 Windows**, **164/164 portable**, solution builds/locked restore
+и sample probe self-test успешны. Подробности и источники:
+[hardware report](../../testing/ble8-device-probe.md). **Следующее действие — решить
+BLE8 MTU/wire-contract blocker**; BLE9 и последующие этапы не начаты.
+
 16.10.2026: после BLE6 `a84b404` по новому запросу выполнен [BLE7](ble7-lifecycle.md).
 Добавлены isolated generations для повторного Connect, общий retire/cleanup,
 ShutdownTimeout (2 s), best-effort CCCD disable, ожидание actual native I/O до

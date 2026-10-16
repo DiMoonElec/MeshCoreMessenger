@@ -3,7 +3,8 @@
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
 15.10.2026: по запросу пользователя подготовлен план **BLE1–BLE18**.
-**Статус: BLE1–BLE7 реализованы; BLE8–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
+**Статус: BLE1–BLE7 реализованы; BLE8 частично проверен, blocker MTU;
+BLE9–BLE18 не начаты (16.10.2026).** Кодовое имя ветки — **BLE**.
 Проверены Windows/portable build и locked restore, Windows publish, библиотечные
 tests 107/107 и 106/106. При BLE1 полные Core/Desktop suites имели Windows failures/
 незавершённый прогон; детали и команды — в [BLE1](ble1-build.md). В [BLE2](ble2-contracts.md)
@@ -18,7 +19,10 @@ RX queue; tests 143/143 Windows, 141/141 portable. В [BLE6](ble6-send.md) до�
 Windows transport и WriteWithResponse, проверен MeshCoreClient через fake BLE:
 tests 152/152 Windows и 150/150 portable. В [BLE7](ble7-lifecycle.md) завершены
 generation lifecycle, повторный Connect и bounded shutdown/CCCD disable;
-tests 165/165 Windows и 163/163 portable. Следующий подэтап — BLE8 (настоящая нода).
+tests 165/165 Windows и 163/163 portable. В [BLE8](ble8-device-probe.md) diagnostic
+read-only обмен с Heltec V3/1.18 прошёл при frame limit 173, но default minimum MTU 179
+не достигнут (actual 176). [Отчёт/blocker](../../testing/ble8-device-probe.md).
+Library tests после MTU diagnostics fix: 166/166 Windows и 164/164 portable. BLE8 не закрыт.
 После BLE2 восемь Core failures [разобраны и исправлены](../../testing/windows-core-suite.md):
 Core 389/389. Полная Desktop suite остаётся незавершённой; исторические результаты
 BLE1/BLE2 в их отчётах сохранены.
@@ -91,6 +95,14 @@ provider лишь создаёт её public transport. Общий MeshCoreClien
 12. Не объявлять аппаратную/macOS проверку пройденной по fake или кросс-сборке.
 
 ## Wire-контракт, требующий подтверждения на ноде
+
+BLE8, 16.10.2026: на Heltec V3 / firmware 1.18 фактически получен ATT MTU **176**,
+тогда как default policy требует **179**. Тег companion-v1.18.0, commit
+`81dbae592ffad40b4212bc0b37e82b38da08f4bc`, задаёт ESP32 BLE MTU равным
+MAX_FRAME_SIZE=176. Поэтому probe может явно выбрать `--frame-limit 173` для
+исследования read-only обмена. Это diagnostic subset, не изменение default policy
+и не подтверждение целостности кадров 174–176 bytes. Полное закрытие BLE8/production
+gate остаётся заблокированным до решения этого wire-contract расхождения.
 
 - NUS service: `6E400001-B5A3-F393-E0A9-E50E24DCCA9E`.
 - App → node: RX `6E400002-B5A3-F393-E0A9-E50E24DCCA9E`, WriteWithResponse.

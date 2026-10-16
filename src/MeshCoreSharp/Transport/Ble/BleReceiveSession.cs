@@ -41,6 +41,7 @@ internal sealed class BleReceiveSession : IAsyncDisposable
     internal Task CleanupCompletion { get; private set; } = Task.CompletedTask;
     internal Task Termination => _terminated.Task;
     internal Exception? Error { get { lock (_sync) return _error; } }
+    internal ushort? MaxPduSize => IsConnected ? _connection.MaxPduSize : null;
 
     internal async Task StartAsync(CancellationToken cancellationToken)
     {

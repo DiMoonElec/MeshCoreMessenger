@@ -6,6 +6,24 @@ using MeshCoreSharp.Transport.Tcp;
 using MeshCoreSharp.Transport.Ble;
 using MeshCoreSharp.Exceptions;
 
+if (args.Length >= 1 && args[0] == "--ble-probe")
+{
+    if (!BleProbeArguments.TryParse(args, out var probe))
+    {
+        Console.Error.WriteLine("Usage: --ble-probe <opaque-device-id> [cycles=2, range 1..3] [--frame-limit <1..176>]");
+        return 2;
+    }
+#if WINDOWS
+    return await WindowsBleProbe.RunAsync(probe!);
+#else
+    Console.Error.WriteLine("BLE probe requires the Windows target.");
+    return 1;
+#endif
+}
+
+if (args.Length == 1 && args[0] == "--ble-probe-self-test")
+    return await BleProbeSelfTest.RunAsync();
+
 if (args.Length >= 1 && args[0] == "--list-ble")
 {
     var seconds = 5;
@@ -80,6 +98,8 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --serial <portName> [baudRate] [observeSeconds]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --list-ports");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --list-ble [seconds=5]");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-probe <opaque-device-id> [cycles=2] [--frame-limit <1..176>]");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-probe-self-test");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");

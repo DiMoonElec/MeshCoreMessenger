@@ -23,6 +23,7 @@ internal static class BleSendTests
         ("BLE TX GATT failure preserves native diagnostics and faults RX", GattFailure),
         ("BLE TX disconnect during write reports unknown outcome", DisconnectWrite),
         ("BLE transport shares one open deadline through CCCD", OpenDeadline),
+        ("BLE transport preserves insufficient MTU diagnostics at the outer open deadline", MtuDeadline),
         ("BLE MeshCoreClient accepts responses and ACK before GATT write completes", ClientExchange),
     ];
 
@@ -234,5 +235,25 @@ internal static class BleSendTests
         native.EmitNotification(Fixtures.Number(PacketType.CurrentTime, 42));
         Check((await readingTime).ToUnixTimeSeconds() == 42);
         Check(!native.Writes.Reader.TryRead(out _));
+    }
+
+    private static async Task MtuDeadline()
+    {
+        var clock = new BleDiscoveryTestClock();
+        var platform = new FakeBleGattOpenPlatform();
+        var options = Options() with { OpenTimeout = TimeSpan.FromSeconds(3) };
+        await using var transport = new BleFrameTransport(options, platform, clock);
+        var observed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var native = new FakeBleGattSession { OnMtuRead = () => observed.TrySetResult() };
+        native.EmitMaxPduSize(176);
+        var opening = transport.ConnectAsync();
+        (await platform.Opens.Reader.ReadAsync()).Operation.Complete(native);
+        await observed.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        clock.Advance(options.OpenTimeout);
+        var error = await Throws<MeshCoreBleTransportException>(() => opening);
+        Check(error.Reason == MeshCoreBleFailureReason.InsufficientMtu
+            && error.Message.Contains("176") && error.Message.Contains("179"));
+        await transport.CleanupCompletion;
+        Check(native.DisposeCount == 1 && !native.Subscriptions.Reader.TryRead(out _));
     }
 }
