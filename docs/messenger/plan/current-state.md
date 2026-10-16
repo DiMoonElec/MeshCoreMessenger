@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION11](region11-library-acceptance.md), [отчёт](../../testing/region-library.md): Windows library225/225, portable223/223, Core460/460; Windows/portable locked restore и Release solution builds зелёные. Исправлены fake CMD54 и definite-response hook failure; hardware не проверялся. REGION10 отправлен30be202. Следующий REGION12, продолжаем автоматически с commit/push между этапами по явному запросу пользователя.
+
 16.10.2026: выполнен [REGION10](region10-request-regions.md): public directed region request с explicit route/full target, bounded timeout и potentially-incomplete result. Library222/222. REGION9 отправлен ecd80a6; далее library acceptance REGION11.
 
 16.10.2026: выполнен [REGION9](region9-remote-runtime.md): MeshRequestGate, pre-TX deferred matcher, RX bind, bounded deadline и session cleanup. Library219/219. REGION8 отправлен ac0e578; следующий REGION10.

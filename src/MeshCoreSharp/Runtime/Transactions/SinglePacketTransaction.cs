@@ -11,6 +11,8 @@ internal sealed class SinglePacketTransaction<TPacket>(Func<PacketType, bool>? a
         new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public Task<CompanionPacket> Completion => _completion.Task;
+    private int _receivedResponse;
+    internal bool HasReceivedResponse => Volatile.Read(ref _receivedResponse) != 0;
 
     public bool TryAccept(CompanionPacket packet)
     {
@@ -21,6 +23,7 @@ internal sealed class SinglePacketTransaction<TPacket>(Func<PacketType, bool>? a
             return false;
 
         if (_completion.Task.IsCompleted) return false;
+        Volatile.Write(ref _receivedResponse, 1);
         // Internal non-blocking hook: install the ACK waiter on RX before the next frame.
         try
         {

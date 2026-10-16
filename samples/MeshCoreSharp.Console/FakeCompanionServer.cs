@@ -147,6 +147,15 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 continue;
             }
 
+            if (type == CommandType.SetFloodScopeKey)
+            {
+                var valid = command.Length == 2 && command[1] <= 1 || command.Length == 18 && command[1] == 0;
+                await WriteFrameAsync(stream, 0x3E, valid
+                    ? [(byte)PacketType.Ok]
+                    : [(byte)PacketType.Error, (byte)MeshCoreErrorCode.IllegalArgument]);
+                continue;
+            }
+
             if (type == CommandType.SendTextMessage)
             {
                 if (command.Length < 14 || command[1] != 0 || command[2] > ProtocolLimits.MaxBasicTextAttempt)

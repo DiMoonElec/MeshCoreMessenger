@@ -83,7 +83,13 @@ internal sealed class CommandDispatcher : IDisposable
             _router.Register(transaction);
 
             attempted = true;
-            await _transport.SendAsync(command, cancellationToken).ConfigureAwait(false);
+            try { await _transport.SendAsync(command, cancellationToken).ConfigureAwait(false); }
+            catch (ArgumentException)
+            {
+                // Transport argument validation rejects the logical frame before native TX.
+                attempted = false;
+                throw;
+            }
 
             CompanionPacket response;
             try
@@ -108,7 +114,7 @@ internal sealed class CommandDispatcher : IDisposable
 
             return typed;
         }
-        catch (Exception error) when (invalidateOnUncertainResponse && attempted && error is not MeshCoreCommandException)
+        catch (Exception error) when (invalidateOnUncertainResponse && attempted && !transaction.HasReceivedResponse && error is not MeshCoreCommandException)
         {
             // Close admission before releasing CommandGate: a late untagged OK must not
             // satisfy another transaction. A definite ERROR is safe to recover from.

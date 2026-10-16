@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Совместная проверка новых API и старого протокола на fake transports.
 
@@ -41,11 +41,15 @@ region-design.md: «Сквозные критерии приёмки»; резу
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION12](region12-core-models.md).
+Сквозная Serial fake wire приёмка объединила fragmented/coalesced RX, каналы A/B, private/default, ранний ACK, automatic drain и обе discovery операции. Добавлены регрессии definite local TX rejection и duplicate ACK hook failure; исправлено различение подтверждённого ответа от uncertain immediate outcome. Общий sample/Core emulator поддерживает новые scope-команды.
+
+[Полный отчёт и команды](../../testing/region-library.md): Windows library225/225, portable223/223, Core460/460; обе locked restore/Release solution builds без warnings/errors. Avalonia build telemetry отключена только CLI property из-за попытки записи вне workspace; NuGetAudit отключён в offline restore. Package locks не менялись. Hardware/firmware compatibility и autonomous ACK остаются REGION32/33.
+
+Следующий шаг — [REGION12](region12-core-models.md).
