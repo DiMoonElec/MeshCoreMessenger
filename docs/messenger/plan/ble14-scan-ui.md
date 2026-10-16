@@ -2,7 +2,7 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: запланирован 15.10.2026; реализация не начата.**
+**Статус: реализован 16.10.2026; видимое подключение к editor — BLE15.**
 
 **Цель:** Связать discovery с UI lifecycle без добавления сложного редактора.
 
@@ -30,11 +30,37 @@
 
 **Ручная проверка:** Native просмотр выполняется вместе с BLE15.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; фактические результаты записаны ниже.
-- [ ] Статус подэтапа, checklist Stage BLE и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; фактические результаты записаны ниже.
+- [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
 
-Пока отсутствует. При выполнении записать дату, изменения, команды и результаты
-проверок, оставшиеся ограничения. Не заменять реальные результаты планом.
+16.10.2026: добавлены DesktopBleDeviceCatalog, platform-neutral BleDeviceChoice и
+BleDeviceScanViewModel с Idle/Scanning/Completed/Error, явным scan/cancel/settings.
+Все observable updates идут через IUiDispatcher и проверяют текущую generation.
+Повторный scan отменяет предыдущий, CancelAsync предназначен для закрытия editor,
+StopAsync запрещает новые действия. Даже игнорирующий cancellation backend не
+задерживает отмену: его поздняя задача наблюдается, результат не меняет UI.
+Фактическая привязка к editor close/shutdown и XAML относится к BLE15.
+
+Refresh сохраняет выбранный ID, оставляет его в списке как «не найден» при отсутствии
+результата и никогда не выбирает первый endpoint. Имена — display hints; одинаковые
+имена различаются коротким digest ID, identity ноды не вычисляется. IsFound означает
+результат discovery, не гарантию GATT connectivity/совместимости. Сохранённый endpoint
+виден и на unsupported platform, scan/settings там отключены.
+
+Settings launcher открывает только [ms-settings:bluetooth](https://learn.microsoft.com/en-us/windows/apps/develop/launch/launch-settings),
+исключительно по явному действию; не хранит PIN, не выполняет pairing/connect/save
+и не сканирует автоматически после возврата. Ошибки поиска показываются без native
+HRESULT; полное исключение остаётся в logger. Адаптеры и transient scan model
+зарегистрированы в AppBootstrap, production editor пока не подключён.
+
+Desktop `BleDeviceScanViewModelTests`, `AppBootstrapTests`,
+`ConnectionProfilesViewModelTests` — **21/21 Windows**, **21/21 portable**.
+Проверены cancel/refresh/stop, stale native result и уже поставленная старая UI
+публикация, duplicate names, отсутствие auto-selection, offline saved ID, platform,
+ошибки адаптера/доступа, явный settings launch. Audit dispatcher проверяет каждую
+collection/property публикацию, включая вложенные dispatch при отмене.
+Оба locked restore успешны, Windows solution Release build без warnings/errors.
+Native поиск/визуальная приёмка здесь не выполнялись: они относятся к BLE15.

@@ -1,3 +1,9 @@
+16.10.2026: реализован [BLE14](ble14-scan-ui.md): portable discovery DTO, Desktop
+adapter и scan viewmodel с generation/cancel/stop, UI dispatcher, сохранённым offline
+ID и явным открытием Bluetooth settings. Desktop targeted21/21 Windows и21/21
+portable; Windows Release build/locked restore зелёные. XAML/lifecycle привязки
+editor остаются BLE15, native/визуальная приёмка не заявляется.
+
 16.10.2026: реализован [BLE13](ble13-supervisor.md): typed BLE errors проверяются
 до generic transport exception, permanent причины требуют внимания без фонового
 pairing/retry; временные используют прежний backoff. Supervisor59/59, полный Core446/446.

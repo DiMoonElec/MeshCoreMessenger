@@ -113,6 +113,9 @@ public static class AppBootstrap
         services.AddSingleton<IDesktopNotificationService>(provider => provider.GetRequiredService<DesktopNotificationService>());
         services.AddSingleton<MessageNotificationCoordinator>();
         services.AddSingleton<ISerialPortCatalog, SystemSerialPortCatalog>();
+        services.AddSingleton<IBleDeviceCatalog, DesktopBleDeviceCatalog>();
+        services.AddSingleton<IBluetoothSettingsLauncher, BluetoothSettingsLauncher>();
+        services.AddTransient<BleDeviceScanViewModel>();
         services.AddSingleton<ConnectionProfilesViewModel>();
         services.AddSingleton<MainWindowViewModel>();
         services.AddSingleton<IDesktopUiLifetime, NotificationDesktopUiLifetime>();
