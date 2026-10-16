@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION14](region14-catalog-store.md): LocalStorage.Regions, transactional catalogue/preferences CAS/default cache/observations и post-commit events. Targeted Core16/16. REGION13 отправлен13248b2; следующий REGION15, offline catalogue workflows.
+
 16.10.2026: выполнен [REGION13](region13-catalog-schema.md), schema8: catalogue/preferences/default observations/discovery evidence, composite node FK, inherited policies, backup/rollback tests. Targeted Core45/45. REGION12 отправлен1bcce04; следующий REGION14. Реальная пользовательская БД не открывалась.
 
 16.10.2026: выполнен [REGION12](region12-core-models.md): immutable node/channel-scoped DTO и repository contracts, CHECK/delete/CAS invariants. Targeted Core5/5; Core Release0 warnings/errors. REGION11 отправленa76c449; следующий REGION13 (schema7→8 на временных БД).

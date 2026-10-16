@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Реализация repository contracts на SQLite.
 
@@ -41,11 +41,17 @@ region-design.md: «Хранение и локальные операции»; R
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION15](region15-catalog-service.md).
+Реализован SqliteRegionStore, доступный через LocalStorage.Regions: catalogue add/read/label/archive/delete, key dedupe внутри NodeId, assignment projections и CAS revision, offline default cache с защитой от более старого observed time, observation upsert с first/last evidence и bounded retention. Каждая mutation проходит DatabaseWorker и transaction; Changed публикуется после commit, callback exceptions не превращают сохранённую запись в failed result. Query/catalogue/observation bounds4096, новых wire API нет.
+
+Referenced catalogue delete отклоняется; archive сохраняет назначения и не позволяет новые назначения архивному региону. Same-node channel/region/session checks исключают cross-node data. Reader missing preference возвращает InheritDefault/revision0 только для существующего канала этой ноды. Readback cache всегда offline; actual custom pair не пересчитывается. Несколько repeater источников одного имени сохраняются раздельно; retention удаляет только observations, а отсутствие имени в новом ответе не удаляет assignments/catalogue.
+
+Проверка: dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --no-restore -- -noLogo -class MeshCoreMessenger.Core.Tests.RegionStoreTests -class MeshCoreMessenger.Core.Tests.RegionModelTests -class MeshCoreMessenger.Core.Tests.RegionMigrationTests —16/16. Пять новых store cases: CRUD/reopen, duplicate keys/labels, CAS conflict, archive/reference/delete и node isolation, custom default freshness/older-write rejection, multi-source/retention, injected writer failure и batch rollback без публикации. Existing identity fixture покрывает два профиля одной ноды. В test callback tracked reads дожидаются завершения до удаления временной БД.
+
+Следующий шаг — [REGION15](region15-catalog-service.md).
