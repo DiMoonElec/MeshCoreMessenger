@@ -56,7 +56,7 @@ public sealed class RegionStoreTests
         await f.Store.SetRegionArchivedAsync(f.Node, a.Id, true, Now, Token);
         Assert.Equal(a.Id, (await f.Store.GetChannelPreferenceAsync(f.Node, f.Channel, Token)).RegionId);
         Assert.Single(await f.Store.GetRegionAssignmentsAsync(f.Node, a.Id, Token));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => f.Store.DeleteRegionAsync(f.Node, a.Id, Token));
+        await Assert.ThrowsAsync<RegionInUseException>(() => f.Store.DeleteRegionAsync(f.Node, a.Id, Token));
         await Assert.ThrowsAsync<InvalidOperationException>(() => f.Store.SetChannelPreferenceAsync(new(f.Node, f.ExtraChannel, FloodScopeMode.ExplicitRegion, a.Id, 0), Token));
         await f.Store.SetChannelPreferenceAsync(new(f.Node, f.Channel, FloodScopeMode.InheritDefault, null, 1), Token);
         await f.Store.DeleteRegionAsync(f.Node, a.Id, Token);
@@ -116,7 +116,7 @@ public sealed class RegionStoreTests
         Assert.Empty(await f.Store.GetObservationsAsync(f.Node, Token)); Assert.Equal(0, changed);
     }
 
-    private sealed class Context : IAsyncDisposable
+    internal sealed class Context : IAsyncDisposable
     {
         internal required RegionTestStorage Temporary;
         internal LocalStorage Storage => Temporary.Storage;

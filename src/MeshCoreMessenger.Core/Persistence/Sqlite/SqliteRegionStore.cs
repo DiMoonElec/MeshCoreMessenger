@@ -83,8 +83,10 @@ internal sealed class SqliteRegionStore(DatabaseWorker writer, DatabaseReader re
         RegionModelValidation.Identity(nodeId); RegionModelValidation.Identity(regionId);
         await WriteAsync((connection, tx) =>
         {
-            using var used = Command(connection, tx, "SELECT 1 FROM ChannelRegionPreferences WHERE NodeId=$node AND RegionId=$region LIMIT 1", ("$node", nodeId), ("$region", regionId));
-            if (used.ExecuteScalar() is not null) throw new InvalidOperationException("Region is assigned to channels; replace assignments explicitly before deletion.");
+            using var used = Command(connection, tx, "SELECT ChannelId FROM ChannelRegionPreferences WHERE NodeId=$node AND RegionId=$region ORDER BY ChannelId LIMIT 4096", ("$node", nodeId), ("$region", regionId));
+            var assignments = new List<Guid>();
+            using (var rows = used.ExecuteReader()) while (rows.Read()) assignments.Add(Guid.Parse(rows.GetString(0)));
+            if (assignments.Count > 0) throw new RegionInUseException(assignments);
             using var delete = Command(connection, tx, "DELETE FROM Regions WHERE NodeId=$node AND Id=$region", ("$node", nodeId), ("$region", regionId));
             return delete.ExecuteNonQuery();
         }, cancellationToken).ConfigureAwait(false);

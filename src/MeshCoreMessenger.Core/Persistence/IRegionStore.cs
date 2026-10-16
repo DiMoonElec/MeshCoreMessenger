@@ -35,3 +35,8 @@ public interface IRegionStore : IRegionReader
 public sealed record RegionDataCommit(Guid NodeId, Guid? RegionId = null, Guid? ChannelId = null);
 
 public sealed class RegionPreferenceConflictException() : InvalidOperationException("The channel region preference changed; reload before saving.");
+
+public sealed class RegionInUseException(IReadOnlyList<Guid> channelIds) : InvalidOperationException("Region is assigned to channels; replace their preferences explicitly before deletion.")
+{
+    public IReadOnlyList<Guid> ChannelIds { get; } = Array.AsReadOnly(channelIds.ToArray());
+}
