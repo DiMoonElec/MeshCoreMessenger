@@ -69,6 +69,8 @@ public sealed class ConnectionProfileManager(
             TcpPort = draft.Transport == ConnectionTransportKind.Tcp ? draft.TcpPort : null,
             SerialPortName = draft.Transport == ConnectionTransportKind.Serial ? draft.SerialPortName?.Trim() : null,
             BaudRate = draft.Transport == ConnectionTransportKind.Serial ? draft.BaudRate : null,
+            BleDeviceId = draft.Transport == ConnectionTransportKind.Ble ? draft.BleDeviceId?.Trim() : null,
+            BleDeviceName = draft.Transport == ConnectionTransportKind.Ble ? draft.BleDeviceName?.Trim() : null,
             DtrEnable = draft.DtrEnable,
             RtsEnable = draft.RtsEnable,
             OpenDelayMilliseconds = draft.OpenDelayMilliseconds,

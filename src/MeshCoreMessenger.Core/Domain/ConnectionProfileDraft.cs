@@ -10,6 +10,8 @@ public sealed record ConnectionProfileDraft
     public int? TcpPort { get; init; }
     public string? SerialPortName { get; init; }
     public int? BaudRate { get; init; }
+    public string? BleDeviceId { get; init; }
+    public string? BleDeviceName { get; init; }
     public bool DtrEnable { get; init; } = true;
     public bool RtsEnable { get; init; } = true;
     public int OpenDelayMilliseconds { get; init; } = 2_000;

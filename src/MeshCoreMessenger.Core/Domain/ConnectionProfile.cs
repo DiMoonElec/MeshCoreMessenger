@@ -10,6 +10,9 @@ public sealed record ConnectionProfile
     public int? TcpPort { get; init; }
     public string? SerialPortName { get; init; }
     public int? BaudRate { get; init; }
+    public string? BleDeviceId { get; init; }
+    /// <summary>Display hint only; neither endpoint nor node identity.</summary>
+    public string? BleDeviceName { get; init; }
     public bool DtrEnable { get; init; } = true;
     public bool RtsEnable { get; init; } = true;
     public int OpenDelayMilliseconds { get; init; } = 2_000;

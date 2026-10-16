@@ -2,7 +2,7 @@
 
 [Stage BLE](stage-ble.md) · [Оглавление](../../MESSENGER_PLAN.md)
 
-**Статус: запланирован 15.10.2026; реализация не начата.**
+**Статус: реализован 16.10.2026.**
 
 **Цель:** Добавить endpoint BLE в domain без изменения хранилища.
 
@@ -30,11 +30,23 @@
 
 **Ручная проверка:** Не требуется.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; фактические результаты записаны ниже.
-- [ ] Статус подэтапа, checklist Stage BLE и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; фактические результаты записаны ниже.
+- [x] Статус подэтапа, checklist Stage BLE и current-state обновлены.
 
 ## Результат выполнения
 
-Пока отсутствует. При выполнении записать дату, изменения, команды и результаты
-проверок, оставшиеся ограничения. Не заменять реальные результаты планом.
+16.10.2026: добавлен Ble=2 без изменения значений TCP/Serial, nullable BleDeviceId
+и BleDeviceName в profile/draft. Validator требует непустой BLE ID и запрещает
+смешанные поля. Manager нормализует поля выбранного транспорта и очищает остальные;
+таймауты, flags, ID и дата создания сохраняют прежнюю семантику. Имя — display hint,
+не identity. WinRT, БД, transport mapper и production editor не менялись.
+
+Проверки: `dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --
+-class MeshCoreMessenger.Core.Tests.BleProfileModelTests
+-class MeshCoreMessenger.Core.Tests.ConnectionProfileTests` — **18/18**.
+BLE проверяется с in-memory store: разные ID при одинаковом имени, обязательность ID,
+смешанные поля, нормализация draft/update и очистка полей при смене транспорта;
+прежние TCP/Serial tests прошли. SQLite roundtrip относится к BLE11.
+`dotnet build MeshCoreSharp.sln -c Release --no-restore` — успешно, 0 warnings/errors.
+Ручная проверка не требуется. Следующий подэтап — BLE10.

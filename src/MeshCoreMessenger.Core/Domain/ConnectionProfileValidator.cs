@@ -26,10 +26,16 @@ internal static class ConnectionProfileValidator
             case ConnectionTransportKind.Tcp when
                 !string.IsNullOrWhiteSpace(profile.TcpHost) &&
                 profile.TcpPort is >= 1 and <= 65_535 &&
-                profile.SerialPortName is null && profile.BaudRate is null:
+                profile.SerialPortName is null && profile.BaudRate is null &&
+                profile.BleDeviceId is null && profile.BleDeviceName is null:
             case ConnectionTransportKind.Serial when
                 !string.IsNullOrWhiteSpace(profile.SerialPortName) &&
-                profile.BaudRate > 0 && profile.TcpHost is null && profile.TcpPort is null:
+                profile.BaudRate > 0 && profile.TcpHost is null && profile.TcpPort is null &&
+                profile.BleDeviceId is null && profile.BleDeviceName is null:
+            case ConnectionTransportKind.Ble when
+                !string.IsNullOrWhiteSpace(profile.BleDeviceId) &&
+                profile.TcpHost is null && profile.TcpPort is null &&
+                profile.SerialPortName is null && profile.BaudRate is null:
                 return;
             default:
                 throw new ArgumentException("Connection profile contains invalid or mixed transport settings.", nameof(profile));
