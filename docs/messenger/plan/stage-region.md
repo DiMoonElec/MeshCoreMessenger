@@ -2,7 +2,7 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: **REGION0–REGION1 выполнены; REGION2–REGION34 не начаты.**
+16.10.2026: **REGION0–REGION2 выполнены; REGION3–REGION34 не начаты.**
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -46,7 +46,7 @@ REGION0 — завершённое исследование; выполненн�
 | Готово | Этап | Ограниченный результат |
 | --- | --- | --- |
 | ☑ | [REGION1](region1-models.md) | Типы scope и ключи регионов |
-| ☐ | [REGION2](region2-default-api.md) | Чтение и запись default ноды |
+| ☑ | [REGION2](region2-default-api.md) | Чтение и запись default ноды |
 | ☐ | [REGION3](region3-scope-lifecycle.md) | Жизненный цикл составной scope-операции |
 | ☐ | [REGION4](region4-channel-send.md) | Scope-aware отправка в канал |
 | ☐ | [REGION5](region5-private-send.md) | Scope-aware ЛС и ACK admission |

@@ -18,6 +18,7 @@ internal sealed class CompanionPacketDecoder
             new BatteryAndStoragePacketParser(),
             new DeviceInfoPacketParser(),
             new ChannelInfoPacketParser(),
+            new DefaultFloodScopePacketParser(),
             new StatsPacketParser(),
             new MessageSentPacketParser(),
             new AckPacketParser(),

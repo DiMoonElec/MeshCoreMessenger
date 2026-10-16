@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Три публичных метода для постоянного default.
 
@@ -41,11 +41,15 @@ region-design.md: «Библиотека: безопасная отправка�
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION3](region3-scope-lifecycle.md).
+Добавлены GetDefaultFloodScopeAsync, SetDefaultFloodScopeAsync и ClearDefaultFloodScopeAsync, encoder полного SET/явного CLEAR, typed packet и parser. Используются существующие single-flight dispatcher и subscribe-before-send. ERROR сохраняет MeshCoreErrorCode (UnsupportedCommand отличается от timeout); retries/readback/startup probe отсутствуют.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 185/185. Три новых cases покрывают 1/48-byte fixtures, malformed lengths/UTF-8/NUL, авторитетный custom key, независимое владение ключом, push, ошибки, отмену и timeout, валидацию до TX. Формат сверён с firmware 81dbae59; GET сохраняет имя до первого NUL, допускает хвост от старого имени: firmware SET делает strcpy без очистки остатка. Аппаратная проверка целевой сборки остаётся REGION32.
+
+Следующий шаг — [REGION3](region3-scope-lifecycle.md).

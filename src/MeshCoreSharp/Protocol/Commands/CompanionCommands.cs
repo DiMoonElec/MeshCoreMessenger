@@ -93,6 +93,21 @@ internal static class CompanionCommands
 
     public static byte[] GetChannel(byte index) => [(byte)CommandType.GetChannel, index];
 
+    public static byte[] GetDefaultFloodScope() => [(byte)CommandType.GetDefaultFloodScope];
+    public static byte[] ClearDefaultFloodScope() => [(byte)CommandType.SetDefaultFloodScope];
+
+    public static byte[] SetDefaultFloodScope(RegionDefinition region)
+    {
+        ArgumentNullException.ThrowIfNull(region);
+        RegionKeys.ValidateName(region.Name);
+        _ = FloodScopeSelection.ExplicitRegion(region.Key);
+        var command = new byte[1 + ProtocolLimits.RegionNameSize + ProtocolLimits.RegionKeySize];
+        command[0] = (byte)CommandType.SetDefaultFloodScope;
+        StrictUtf8.GetBytes(region.Name).CopyTo(command.AsSpan(1));
+        region.Key.ToArray().CopyTo(command.AsSpan(1 + ProtocolLimits.RegionNameSize));
+        return Validate(command);
+    }
+
     public static byte[] SetChannel(byte index, string name, ReadOnlySpan<byte> secret)
     {
         ArgumentNullException.ThrowIfNull(name);

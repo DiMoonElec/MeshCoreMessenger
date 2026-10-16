@@ -287,6 +287,34 @@ public sealed class MeshCoreClient : IAsyncDisposable
         return _messagePump!.DrainAsync(cancellationToken);
     }
 
+    /// <summary>Reads the actual default name/key pair. An empty response is distinct from an unknown default.</summary>
+    public async Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        var packet = await _dispatcher.SendAsync<DefaultFloodScopePacket>(CommandType.GetDefaultFloodScope,
+            CompanionCommands.GetDefaultFloodScope(), nameof(GetDefaultFloodScopeAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.DefaultFloodScope).ConfigureAwait(false);
+        return packet.Scope;
+    }
+
+    /// <summary>Writes persistent default preferences. Returns local acceptance without retry or readback.</summary>
+    public async Task SetDefaultFloodScopeAsync(RegionDefinition region, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
+            CompanionCommands.SetDefaultFloodScope(region), nameof(SetDefaultFloodScopeAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
+    /// <summary>Explicitly clears persistent default preferences without changing temporary override.</summary>
+    public async Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        await _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
+            CompanionCommands.ClearDefaultFloodScope(), nameof(ClearDefaultFloodScopeAsync), _options.CommandTimeout,
+            cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+    }
+
     /// <summary>Reads one local channel slot, including an empty slot. Invalid indices produce a firmware error.</summary>
     public async Task<ChannelInfo> GetChannelAsync(byte index, CancellationToken cancellationToken = default)
     {
