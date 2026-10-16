@@ -95,6 +95,27 @@ internal static class CompanionCommands
 
     public static byte[] GetDefaultFloodScope() => [(byte)CommandType.GetDefaultFloodScope];
 
+    public static byte[] DiscoverRepeaterNeighbors(uint tag, uint? since = null)
+    {
+        if (tag == 0) throw new ArgumentOutOfRangeException(nameof(tag));
+        var writer = new PacketWriter();
+        writer.WriteByte((byte)CommandType.SendControlData);
+        writer.WriteByte(RegionProtocol.DiscoverRequest); // full keys, prefix_only=false
+        writer.WriteByte(RegionProtocol.RepeaterFilter);
+        writer.WriteUInt32LittleEndian(tag);
+        if (since is { } clock) writer.WriteUInt32LittleEndian(clock);
+        return Validate(writer.ToArray());
+    }
+
+    public static byte[] RequestRegions(ReadOnlySpan<byte> publicKey, ReplyPath replyPath)
+    {
+        if (publicKey.Length != ProtocolLimits.PublicKeySize)
+            throw new ArgumentException("A full public key is required.", nameof(publicKey));
+        ArgumentNullException.ThrowIfNull(replyPath);
+        return Validate([(byte)CommandType.SendAnonymousRequest, .. publicKey,
+            RegionProtocol.RegionsAnonymousSubtype, replyPath.Descriptor, .. replyPath.ToArray()]);
+    }
+
     public static byte[] SetFloodScope(FloodScopeSelection scope)
     {
         ArgumentNullException.ThrowIfNull(scope);
