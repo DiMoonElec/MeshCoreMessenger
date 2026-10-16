@@ -5,6 +5,13 @@ using MeshCoreMessenger.Desktop.Tests;
 
 try
 {
+    var bleStartup = Array.IndexOf(args, "--ble-startup-only");
+    if (bleStartup >= 0)
+    {
+        if (bleStartup + 1 >= args.Length) throw new ArgumentException("Pass the Desktop executable after --ble-startup-only.");
+        await NativeBleStartupAudit.RunAsync(args[bleStartup + 1]);
+        return 0;
+    }
     if (!MacDisplayStartupProbe.Check()) return 1;
     if (args.Contains("--startup-check-only")) return 0;
 

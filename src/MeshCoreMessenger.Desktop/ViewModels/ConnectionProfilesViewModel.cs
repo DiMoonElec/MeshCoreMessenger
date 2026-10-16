@@ -25,6 +25,7 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
     private HashSet<string> _detected = [];
     private int _stopped;
     private int _loadingBle;
+    private bool _restoringProfiles;
     private readonly HashSet<Task> _bleOperations = [];
     private readonly ObservableCollection<ConnectionTransportKind> _transportKinds =
         [ConnectionTransportKind.Serial, ConnectionTransportKind.Tcp];
@@ -60,7 +61,7 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
             if (args.PropertyName == nameof(SavedProfile))
             {
                 Control.RefreshActions();
-                TrackBle(SynchronizeBleEndpointAsync());
+                if (!_restoringProfiles) TrackBle(SynchronizeBleEndpointAsync());
             }
             if (args.PropertyName == nameof(SelectedTransport))
             {
@@ -115,7 +116,17 @@ public sealed class ConnectionProfilesViewModel : ConnectionProfileEditorViewMod
         {
             var profiles = await _manager.GetProfilesAsync(linked.Token);
             var selected = await _manager.GetSelectedProfileAsync(linked.Token);
-            ReplaceProfiles(profiles, selected?.Id);
+            _restoringProfiles = true;
+            try
+            {
+                ReplaceProfiles(profiles, selected?.Id);
+                // Like the root's offline history/composer projection, profile restore
+                // precedes the Avalonia event loop. Later edits still use the dispatcher.
+                Interlocked.Increment(ref _loadingBle);
+                try { BleDevices?.RestoreEndpoint(IsBle ? BleDeviceId : null, IsBle ? BleDeviceName : null); }
+                finally { Interlocked.Decrement(ref _loadingBle); }
+            }
+            finally { _restoringProfiles = false; }
             await RefreshPortsCoreAsync(linked.Token);
             await Control.LoadAsync(linked.Token);
         }

@@ -1,3 +1,12 @@
+16.10.2026: исправлена [регрессия повторного запуска BLE](../../testing/ble-startup-deadlock.md):
+сохранённый профиль создавал Avalonia dispatcher на storage continuation до
+UI startup; исключение неверного потока скрывалось зависанием shutdown finally.
+Offline endpoint восстанавливается без dispatcher; последующие UI-операции
+сохраняют dispatch. Новый bootstrap regression, targeted45/45 Windows/portable,
+два запуска настоящего Desktop с временной BLE/history БД и native transport picker
+прошли. Пользовательский зависший процесс остановлен после снятия диагностики;
+пользовательская БД не редактировалась. BLE17 ещё не начат.
+
 16.10.2026: реализован [BLE16](ble16-integration.md), fake GATT → общий BLE engine
 → MeshCoreClient/session → supervisor/ingest → временная SQLite. Девять новых
 сценариев проверяют sync/drain/commit, full-key identity, drop/open cancel/overflow,

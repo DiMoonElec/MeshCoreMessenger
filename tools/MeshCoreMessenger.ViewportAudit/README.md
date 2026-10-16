@@ -1,5 +1,16 @@
 # Native viewport audit
 
+Saved BLE profile startup regression (Windows, build Desktop first):
+
+```powershell
+dotnet run --project tools/MeshCoreMessenger.ViewportAudit -c Release -- --ble-startup-only src/MeshCoreMessenger.Desktop/bin/Release/net10.0-windows10.0.19041.0/win-x64/MeshCoreMessenger.Desktop.exe
+```
+
+Launches the normal executable twice with a temporary SQLite folder containing
+an offline BLE profile and history. Checks window creation, normal close/exit,
+and preserved history without auto-connect. Unlike in-process audits, this exercises
+bootstrap before Avalonia initialization. See [startup regression report](../../docs/testing/ble-startup-deadlock.md).
+
 S2 settings audit uses production MainWindow/SettingsView with temporary SQLite
 and a fake supervisor:
 

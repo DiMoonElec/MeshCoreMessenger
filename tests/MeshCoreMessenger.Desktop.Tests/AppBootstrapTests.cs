@@ -17,6 +17,51 @@ namespace MeshCoreMessenger.Desktop.Tests;
 public sealed class AppBootstrapTests
 {
     [Fact]
+    public async Task SavedBleProfileRestoresBeforeUiLoopWithoutCreatingDispatcher()
+    {
+        using var temporary = new TemporaryDirectory();
+        var paths = temporary.CreatePaths();
+        await using var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
+        var dispatcher = new BootstrapDispatcher();
+        await using var services = AppBootstrap.CreateServiceProvider(paths, storage, null, uiDispatcher: dispatcher);
+        var manager = services.GetRequiredService<IConnectionProfileManager>();
+        var saved = await manager.SaveAndSelectAsync(new()
+        {
+            Name = "Restart BLE", Transport = ConnectionTransportKind.Ble,
+            BleDeviceId = "saved-offline", BleDeviceName = "Saved node", AutoConnect = false,
+        }, CancellationToken);
+        var root = services.GetRequiredService<MainWindowViewModel>();
+        try
+        {
+            await root.LoadAsync(CancellationToken).WaitAsync(TimeSpan.FromSeconds(5), CancellationToken);
+            Assert.Equal(0, dispatcher.Calls);
+            Assert.Equal(saved.Id, root.Profiles.SavedProfile!.Id);
+            Assert.Equal(saved.BleDeviceId, root.Profiles.BleDevices!.SelectedDevice!.DeviceId);
+            Assert.False(root.Profiles.IsDirty);
+            Assert.False(root.Profiles.BleDevices.IsScanning);
+            Assert.Equal(ConnectionSupervisorState.Offline, services.GetRequiredService<IConnectionSupervisor>().Snapshot.State);
+        }
+        finally
+        {
+            dispatcher.Ready = true;
+            await root.StopAsync();
+        }
+    }
+
+    private sealed class BootstrapDispatcher : IUiDispatcher
+    {
+        public bool Ready { get; set; }
+        public int Calls { get; private set; }
+        public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
+        {
+            Calls++;
+            if (!Ready) throw new InvalidOperationException("UI loop has not started.");
+            cancellationToken.ThrowIfCancellationRequested();
+            action(); return Task.CompletedTask;
+        }
+    }
+
+    [Fact]
     public async Task BootstrapCreatesBleClientsWithoutConnectingOrChangingSavedProfile()
     {
         using var temporary = new TemporaryDirectory();

@@ -55,7 +55,12 @@ public sealed class BleDeviceScanViewModel : ObservableObject
     public IAsyncRelayCommand CancelCommand { get; }
     public IAsyncRelayCommand OpenBluetoothSettingsCommand { get; }
 
-    public Task LoadEndpointAsync(string? deviceId, string? name) => _dispatcher.InvokeAsync(() =>
+    public Task LoadEndpointAsync(string? deviceId, string? name) =>
+        _dispatcher.InvokeAsync(() => RestoreEndpoint(deviceId, name));
+
+    // Initial offline projection runs before Avalonia owns a UI thread. The caller
+    // must not create its dispatcher from a storage continuation during bootstrap.
+    internal void RestoreEndpoint(string? deviceId, string? name)
     {
         if (_stopped) return;
         CancelCurrent();
@@ -63,7 +68,7 @@ public sealed class BleDeviceScanViewModel : ObservableObject
             Devices.FirstOrDefault(item => item.DeviceId == deviceId) ?? new(deviceId, name, false, false, false);
         ReplaceDevices(Devices.Where(item => item.IsFound).ToArray());
         State = BleScanState.Idle; ErrorMessage = null;
-    });
+    }
 
     public async Task RefreshAsync(CancellationToken cancellationToken = default)
     {
