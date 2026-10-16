@@ -2,7 +2,7 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: **REGION0–REGION11 выполнены; REGION12–REGION34 не начаты.**
+16.10.2026: **REGION0–REGION12 выполнены; REGION13–REGION34 не начаты.**
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -56,7 +56,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION9](region9-remote-runtime.md) | Общий gate и matcher удалённых запросов |
 | ☑ | [REGION10](region10-request-regions.md) | Запрос регионов одного репитера |
 | ☑ | [REGION11](region11-library-acceptance.md) | Регрессия библиотеки REGION |
-| ☐ | [REGION12](region12-core-models.md) | Прикладные модели и контракты |
+| ☑ | [REGION12](region12-core-models.md) | Прикладные модели и контракты |
 | ☐ | [REGION13](region13-catalog-schema.md) | Миграция каталога и назначений |
 | ☐ | [REGION14](region14-catalog-store.md) | Хранилище и read projections регионов |
 | ☐ | [REGION15](region15-catalog-service.md) | Локальные операции каталога и канала |
@@ -137,7 +137,7 @@ REGION23 реализует только нужное discovery владение
 
 ## Готовый запрос для следующей сессии
 
-> Выполни REGION12 по docs/messenger/plan/region12-core-models.md.
+> Выполни REGION13 по docs/messenger/plan/region13-catalog-schema.md.
 > Сначала прочитай AGENTS.md и маршрут чтения в docs/README.md.
 > Проверь код и результаты зависимостей, затем реализуй только выбранный подэтап,
 > выполни его проверки и обнови документацию фактическими результатами.

@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Node-scoped DTO и store/service contracts без реализации SQL.
 
@@ -41,11 +41,17 @@ region-design.md: «Владение состоянием и модель», «�
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION13](region13-catalog-schema.md).
+Добавлены RegionCatalogEntry, ChannelRegionPreference, NodeRegionSnapshot, RegionObservation и ResolvedRegionScope, небольшие IRegionReader/IRegionStore contracts. Catalogue использует валидированную immutable library RegionDefinition; label отделён от protocol name/key. NodeId — существующий полный-key NodeRecord ID; ChannelId — существующий secret-fingerprint channel ID, без scope/slot/profile. Observations не являются catalogue entries; private discovery имя не порождает ключ. Default явно различает Unknown/KnownEmpty и current-session/offline freshness. Immutable attempt capture сохраняет key16 или LegacyUnknown/Unknown, без catalogue FK; replay разрешён только для known scope. ToString не выводит key material.
+
+CHECK-контракт для REGION13: mode IN(0,1,2); RegionId IS NOT NULL только при ExplicitRegion(1); revision>=0; region/channel ссылки должны принадлежать тому же NodeId. Catalogue key16 ненулевой, fingerprint32 уникален внутри node. Node snapshot support/state/session/date согласованы; KnownEmpty не подменяет Unknown. Observation repeater key32, exact name<=30UTF8 bytes, first<=last, uniqueness по node/full-key/name. Delete referenced region отклоняется; archive не изменяет preference/default/history. Missing preference проецируется InheritDefault/revision0; CAS записи увеличивает revision. Все mutations идут через DatabaseWorker с post-commit publication, без device queue.
+
+Проверка: dotnet run --project tests/MeshCoreMessenger.Core.Tests -c Release --no-restore -- -noLogo -class MeshCoreMessenger.Core.Tests.RegionModelTests — 5/5. Проверены mode/reference/revision, defensive keys, redacted DTO, known/legacy/offline, prefix rejection и два профиля одной ноды/две ноды с переименованием и переносом канала в существующем directory store. Core Release build:0 warnings/errors. Новые SQL/migrations/services/UI отсутствуют.
+
+Следующий шаг — [REGION13](region13-catalog-schema.md).

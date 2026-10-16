@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION12](region12-core-models.md): immutable node/channel-scoped DTO и repository contracts, CHECK/delete/CAS invariants. Targeted Core5/5; Core Release0 warnings/errors. REGION11 отправленa76c449; следующий REGION13 (schema7→8 на временных БД).
+
 16.10.2026: выполнен [REGION11](region11-library-acceptance.md), [отчёт](../../testing/region-library.md): Windows library225/225, portable223/223, Core460/460; Windows/portable locked restore и Release solution builds зелёные. Исправлены fake CMD54 и definite-response hook failure; hardware не проверялся. REGION10 отправлен30be202. Следующий REGION12, продолжаем автоматически с commit/push между этапами по явному запросу пользователя.
 
 16.10.2026: выполнен [REGION10](region10-request-regions.md): public directed region request с explicit route/full target, bounded timeout и potentially-incomplete result. Library222/222. REGION9 отправлен ecd80a6; далее library acceptance REGION11.
