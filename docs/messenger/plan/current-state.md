@@ -1,3 +1,15 @@
+16.10.2026: реализован [BLE16](ble16-integration.md), fake GATT → общий BLE engine
+→ MeshCoreClient/session → supervisor/ingest → временная SQLite. Девять новых
+сценариев проверяют sync/drain/commit, full-key identity, drop/open cancel/overflow,
+ACK/Unknown и automatic reconnect без replay, channel send и неизменность draft.
+Core460/460, library179/179 Windows и177/177 portable; впервые в этой ветке полный
+Desktop417/417 на Windows и portable (последовательный режим), включая100000
+сообщений. Обе Release builds/locked restore зелёные. Известная гонка основной
+причины overflow в статусе записана в [отчёте](../../testing/ble16-integration.md);
+typed diagnostic и teardown проверены. Следующий BLE17 требует пользователя
+для физических сценариев off/on/sleep и согласования приёмки. BLE8 RX174–176
+и оставшиеся ручные проверки BLE15 не закрывались.
+
 16.10.2026: пользователь подтвердил реальное BLE-подключение из GUI, синхронизацию
 и отправку сообщений в ЛС и каналы. Результаты записаны в
 [отчёте BLE15](../../testing/ble15-profile-ui.md). Остальные ручные проверки
