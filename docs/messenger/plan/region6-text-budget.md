@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Расчёт размера текста для конкретной scope-политики.
 
@@ -41,11 +41,17 @@ region-design.md: «Отправки, история, повторы и лими
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION7](region7-discovery-wire.md).
+Добавлены EffectiveFloodScope, SendScopeSnapshot и MessageTextBudget. Публичный GetTextBudget(kind,scope) не выполняет I/O; результат содержит session ID, время, selection/effective state, имя/ключ и fingerprint либо UnknownReason. Accepted send results сохраняют фактический budget. BLE helper принимает scoped/unscoped/unknown; unknown консервативен, 4-byte region overhead относится только к radio budget. TCP/Serial формулы сохранены.
+
+Default cache наполняется только GET в RX acceptance hook; SET/CLEAR инвалидируют наблюдение до освобождения immediate gate. Reconnect начинает Unknown и новую session ID. Сохранённый прежний snapshot immutable; send не принимает его как свежий: повторно вычисляет admission после ожидания scope gate и перед текстовым TX. Текущая firmware формула даёт одинаковый text maximum при scoped/unscoped, поэтому увеличения лимитов нет.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 208/208. Четыре новых cases проверяют MTU23/160/176/247, UTF-8 prefix, overhead, все scope selections, unknown/known-empty/invalidation/reconnect, limit/limit+1, metadata и изменение MTU во время scope wait без text TX/trim. Real BLE fixtures прежнего stock suite также проходят. Hardware limits проверяются отдельно в REGION32/33.
+
+Следующий шаг — [REGION7](region7-discovery-wire.md).

@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION6](region6-text-budget.md): public scope-aware budget, send metadata, current-session default observations и повторное admission после gate. Library208/208. REGION5: 3883dad; далее REGION7. Push ожидает подтверждения origin/main.
+
 16.10.2026: выполнен [REGION5](region5-private-send.md): explicit scope private overloads, ACK до write completion, capacity/channel independence и confirmed delivery при cleanup error. Library204/204. REGION4: 931806d; далее REGION6. Push ожидает ответа на уточнение origin/main.
 
 16.10.2026: выполнен [REGION4](region4-channel-send.md): scope-aware channel sends; общий gate legacy private/channel и default mutations; отдельный cleanup error. Library200/200; REGION3: 8f44eb7. Далее REGION5; push пока ожидает подтверждения origin/main.

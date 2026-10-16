@@ -28,6 +28,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private Task _scopeTeardown = Task.CompletedTask;
     private byte? _firmwareProtocolVersion;
     private bool _temporaryScopeUnsupported;
+    private NodeFloodScope _defaultFloodScope = NodeFloodScope.Unknown;
+    private Guid _sessionId;
     private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
@@ -117,6 +119,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
                 _scopeOperations = new ScopeOperationCoordinator(_dispatcher, _options.CommandTimeout, _receiveCts.Token);
                 _firmwareProtocolVersion = null;
                 _temporaryScopeUnsupported = false;
+                _defaultFloodScope = NodeFloodScope.Unknown;
+                _sessionId = Guid.NewGuid();
                 _ackTracker = new AckTracker(_options);
                 _started = false;
                 SelfInfo = null;
@@ -304,9 +308,11 @@ public sealed class MeshCoreClient : IAsyncDisposable
     public async Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
     {
         EnsureReady();
+        var session = _scopeOperations;
         var packet = await _dispatcher.SendAsync<DefaultFloodScopePacket>(CommandType.GetDefaultFloodScope,
             CompanionCommands.GetDefaultFloodScope(), nameof(GetDefaultFloodScopeAsync), _options.CommandTimeout,
-            cancellationToken, type => type == PacketType.DefaultFloodScope).ConfigureAwait(false);
+            cancellationToken, type => type == PacketType.DefaultFloodScope,
+            onAccepted: packet => { if (ReferenceEquals(session, _scopeOperations)) _defaultFloodScope = packet.Scope; }).ConfigureAwait(false);
         return packet.Scope;
     }
 
@@ -316,7 +322,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         await _scopeOperations!.WithGateAsync(ct => _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
             CompanionCommands.SetDefaultFloodScope(region), nameof(SetDefaultFloodScopeAsync), _options.CommandTimeout,
-            ct, type => type == PacketType.Ok, invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
+            ct, type => type == PacketType.Ok, onAccepted: _ => _defaultFloodScope = NodeFloodScope.Unknown,
+            invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Explicitly clears persistent default preferences without changing temporary override.</summary>
@@ -325,7 +332,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         await _scopeOperations!.WithGateAsync(ct => _dispatcher.SendAsync<OkPacket>(CommandType.SetDefaultFloodScope,
             CompanionCommands.ClearDefaultFloodScope(), nameof(ClearDefaultFloodScopeAsync), _options.CommandTimeout,
-            ct, type => type == PacketType.Ok, invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
+            ct, type => type == PacketType.Ok, onAccepted: _ => _defaultFloodScope = NodeFloodScope.Unknown,
+            invalidateOnUncertainResponse: true), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>Reads one local channel slot, including an empty slot. Invalid indices produce a firmware error.</summary>
@@ -477,8 +485,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         ArgumentNullException.ThrowIfNull(scope);
         var command = CompanionCommands.SendText(recipientPublicKey.Span, text, timestamp, attempt);
-        if (_transport is IBleClientPolicy ble)
-            _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Private).MaximumTextBytes);
+        _ = TextMessageValidator.EncodeText(text, GetTextBudget(TextMessageKind.Private, scope).MaximumTextBytes);
         cancellationToken.ThrowIfCancellationRequested();
         ObserveMessageTimestamp(timestamp);
         var tracker = _ackTracker!;
@@ -487,13 +494,15 @@ public sealed class MeshCoreClient : IAsyncDisposable
         {
             var operation = await RunScopeSendAsync(scope, async (ct, guarded) =>
             {
+                var budget = GetTextBudget(TextMessageKind.Private, scope);
+                _ = TextMessageValidator.EncodeText(text, budget.MaximumTextBytes);
                 var sent = await _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendTextMessage, command,
                     nameof(SendTextAsync), _options.CommandTimeout, ct,
                     type => type == PacketType.MessageSent, onAccepted: packet => pending.Bind(packet.Info),
                     invalidateOnUncertainResponse: guarded).ConfigureAwait(false);
                 pending.ReleaseSendGate();
                 // Start delivery before RESET: an immediate ACK remains confirmed even if cleanup closes RX.
-                return new TextMessageSendResult(timestamp, sent.Info, pending.WaitForDeliveryAsync());
+                return new TextMessageSendResult(timestamp, sent.Info, pending.WaitForDeliveryAsync()) { TextBudget = budget };
             }, pending.Token).ConfigureAwait(false);
             return operation.AcceptedSend with { ScopeCleanupError = operation.CleanupError };
         }
@@ -525,17 +534,48 @@ public sealed class MeshCoreClient : IAsyncDisposable
         ArgumentNullException.ThrowIfNull(scope);
         ObserveMessageTimestamp(timestamp);
         var command = CompanionCommands.SendChannelText(channelIndex, SelfInfo!.Name, text, timestamp);
-        if (_transport is IBleClientPolicy ble)
-            _ = TextMessageValidator.EncodeText(text, ble.GetTextBudget(BleTextMessageKind.Channel, SelfInfo.Name).MaximumTextBytes);
+        _ = TextMessageValidator.EncodeText(text, GetTextBudget(TextMessageKind.Channel, scope).MaximumTextBytes);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
         var operation = await RunScopeSendAsync(scope, async (ct, guarded) =>
         {
+            var budget = GetTextBudget(TextMessageKind.Channel, scope);
+            _ = TextMessageValidator.EncodeText(text, budget.MaximumTextBytes);
             await _dispatcher.SendAsync<OkPacket>(CommandType.SendChannelTextMessage, command,
                 nameof(SendChannelTextAsync), _options.CommandTimeout, ct,
                 type => type == PacketType.Ok, invalidateOnUncertainResponse: guarded).ConfigureAwait(false);
-            return new ChannelMessageSendResult(channelIndex, timestamp);
+            return new ChannelMessageSendResult(channelIndex, timestamp) { TextBudget = budget };
         }, linked.Token).ConfigureAwait(false);
         return operation.AcceptedSend with { ScopeCleanupError = operation.CleanupError };
+    }
+
+    /// <summary>Evaluates the current text budget without I/O. Unknown default scope stays conservative.</summary>
+    /// <remarks>Observations belong to this session. Sending recomputes the budget after gate waits.</remarks>
+    public MessageTextBudget GetTextBudget(TextMessageKind kind, FloodScopeSelection? scope = null)
+    {
+        EnsureReady();
+        if (!Enum.IsDefined(kind)) throw new ArgumentOutOfRangeException(nameof(kind));
+        scope ??= FloodScopeSelection.InheritDefault;
+        var observed = _defaultFloodScope;
+        var effective = EffectiveFloodScope.Unknown;
+        RegionKey? key = null;
+        string? name = null;
+        if (scope.Mode == FloodScopeMode.ExplicitRegion) { effective = EffectiveFloodScope.Scoped; key = scope.Key; }
+        else if (scope.Mode == FloodScopeMode.ForceUnscoped) effective = EffectiveFloodScope.Unscoped;
+        else if (_firmwareProtocolVersion >= 8 && !_temporaryScopeUnsupported)
+        {
+            if (observed.State == NodeFloodScopeState.KnownEmpty) effective = EffectiveFloodScope.Unscoped;
+            else if (observed.State == NodeFloodScopeState.Configured)
+            {
+                key = observed.Key; name = observed.Name;
+                effective = key!.IsEmpty ? EffectiveFloodScope.Unscoped : EffectiveFloodScope.Scoped;
+            }
+        }
+        var limit = kind == TextMessageKind.Private ? ProtocolLimits.MaxTextBytes : TextMessageValidator.GetChannelTextLimit(SelfInfo!.Name);
+        if (_transport is IBleTextBudgetProvider ble)
+            limit = ble.GetTextBudget(kind == TextMessageKind.Private ? BleTextMessageKind.Private : BleTextMessageKind.Channel,
+                SelfInfo!.Name, effective != EffectiveFloodScope.Unscoped).MaximumTextBytes;
+        return new MessageTextBudget(limit, new SendScopeSnapshot(scope.Mode, effective, key, name, _sessionId,
+            DateTimeOffset.UtcNow, effective == EffectiveFloodScope.Unknown ? "Default or temporary-scope support is unconfirmed in this session." : null));
     }
 
     private Task<ScopeOperationResult<T>> RunScopeSendAsync<T>(FloodScopeSelection scope,

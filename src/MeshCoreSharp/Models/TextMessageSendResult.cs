@@ -6,6 +6,7 @@ public sealed record TextMessageSendResult(uint Timestamp, MessageSentInfo Accep
 {
     /// <summary>The send was accepted even when restoring temporary scope failed.</summary>
     public Exception? ScopeCleanupError { get; init; }
+    public MessageTextBudget? TextBudget { get; init; }
 }
 
 public enum MessageDeliveryStatus

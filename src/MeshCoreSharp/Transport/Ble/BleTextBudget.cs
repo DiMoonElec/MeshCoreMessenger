@@ -10,6 +10,14 @@ public enum BleTextMessageKind { Private, Channel }
 public sealed record BleTextBudget(int MaximumTextBytes, int AttPayloadBytes, int CompanionHeaderBytes,
     int SenderPrefixBytes, int RegionOverheadBytes, int RadioTextBytes)
 {
+    /// <summary>Unknown scope uses the conservative scoped radio overhead.</summary>
+    public static BleTextBudget Calculate(ushort mtu, BleTextMessageKind kind, EffectiveFloodScope scope,
+        string? senderName = null, int maximumFrameSize = ProtocolLimits.CurrentFirmwareMaxFrameSize)
+    {
+        if (!Enum.IsDefined(scope)) throw new ArgumentOutOfRangeException(nameof(scope));
+        return Calculate(mtu, kind, senderName, scope != EffectiveFloodScope.Unscoped, maximumFrameSize);
+    }
+
     public static BleTextBudget Calculate(ushort mtu, BleTextMessageKind kind, string? senderName = null,
         bool regionScoped = true, int maximumFrameSize = ProtocolLimits.CurrentFirmwareMaxFrameSize)
     {
