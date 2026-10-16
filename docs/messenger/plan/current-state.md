@@ -1,3 +1,9 @@
+16.10.2026: реализован [BLE12](ble12-factory.md): injectable transport factory,
+Windows Desktop provider и UI access dispatcher в DI, общий client/session сохранён.
+Core tests26/26, AppBootstrap5/5 Windows и5/5 portable; обе Release builds/locked
+restore зелёные. Устройства не подключались. BLE8 RX174–176 остаётся аппаратным
+ограничением; production BLE editor пока не включён. Следующий этап — BLE13.
+
 16.10.2026: по отдельному разрешению пользователя [проверен BLE queue drain](../../testing/ble-stock-firmware.md#аппаратный-приём-подготовленных-сообщений):
 60 сообщений (3 ЛС/57 channel), NO_MORE_MESSAGES, MTU176, без ошибок; ЛС150bytes
 и тело тестового канала137bytes получены целиком (кадры166/160). Sample получил

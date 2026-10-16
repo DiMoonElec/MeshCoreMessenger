@@ -9,15 +9,17 @@ namespace MeshCoreMessenger.Core.Application;
 
 public sealed class MeshCoreClientFactory : IMeshCoreClientFactory
 {
+    private readonly ICompanionTransportFactory _transports;
+
+    public MeshCoreClientFactory() : this(new CompanionTransportFactory()) { }
+
+    public MeshCoreClientFactory(ICompanionTransportFactory transports) =>
+        _transports = transports ?? throw new ArgumentNullException(nameof(transports));
+
     public ICompanionClient Create(ConnectionProfile profile)
     {
         var mapping = ConnectionProfileMapper.Map(profile);
-        IMeshCoreTransport transport = mapping.Transport switch
-        {
-            ConnectionTransportKind.Tcp => new TcpMeshCoreTransport(mapping.TcpOptions!),
-            ConnectionTransportKind.Serial => new SerialMeshCoreTransport(mapping.SerialOptions!),
-            _ => throw new ArgumentOutOfRangeException(nameof(profile), "Unknown connection transport."),
-        };
+        var transport = _transports.Create(profile);
         return new MeshCoreClientAdapter(new MeshCoreClient(transport, mapping.ClientOptions), mapping.ClientOptions);
     }
 }
@@ -163,6 +165,7 @@ internal static class ConnectionProfileMapper
                     OpenDelay = TimeSpan.FromMilliseconds(profile.OpenDelayMilliseconds),
                 },
                 clientOptions),
+            ConnectionTransportKind.Ble => new ConnectionProfileMapping(profile.Transport, null, null, clientOptions),
             _ => throw new ArgumentOutOfRangeException(nameof(profile), "Unknown connection transport."),
         };
     }

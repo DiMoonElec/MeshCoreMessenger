@@ -8,6 +8,7 @@ using MeshCoreMessenger.Desktop.Notifications;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using MeshCoreMessenger.Desktop.Views;
+using MeshCoreSharp.Transport.Ble;
 
 namespace MeshCoreMessenger.Desktop.Bootstrap;
 
@@ -68,6 +69,8 @@ public static class AppBootstrap
             provider.GetRequiredService<DraftWriteTracker>());
         services.AddSingleton<IDurableDraftWrites>(provider =>
             provider.GetRequiredService<DraftWriteTracker>());
+        services.AddSingleton<IBleDeviceAccessDispatcher, DesktopBleDeviceAccessDispatcher>();
+        services.AddSingleton<ICompanionTransportFactory, DesktopCompanionTransportFactory>();
         services.AddSingleton<IMeshCoreClientFactory, MeshCoreClientFactory>();
         services.AddSingleton<ICompanionSessionFactory, CompanionSessionFactory>();
         services.AddSingleton<DirectoryService>();

@@ -9,11 +9,41 @@ using MeshCoreMessenger.Desktop.Lifecycle;
 using MeshCoreMessenger.Desktop.Preferences;
 using MeshCoreMessenger.Desktop.ViewModels;
 using Xunit;
+using MeshCoreSharp.Exceptions;
+using MeshCoreSharp.Transport.Ble;
 
 namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed class AppBootstrapTests
 {
+    [Fact]
+    public async Task BootstrapCreatesBleClientsWithoutConnectingOrChangingSavedProfile()
+    {
+        using var temporary = new TemporaryDirectory();
+        var paths = temporary.CreatePaths();
+        await using var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
+        await using var services = AppBootstrap.CreateServiceProvider(paths, storage);
+        var profile = await services.GetRequiredService<IConnectionProfileManager>().SaveAndSelectAsync(new()
+        {
+            Name = "Saved offline BLE", Transport = ConnectionTransportKind.Ble,
+            BleDeviceId = "offline-device", BleDeviceName = "Display hint",
+        }, CancellationToken);
+        Assert.NotNull(services.GetRequiredService<IBleDeviceAccessDispatcher>());
+        Assert.NotNull(services.GetRequiredService<ICompanionTransportFactory>());
+        var factory = services.GetRequiredService<IMeshCoreClientFactory>();
+#if WINDOWS
+        await using var first = factory.Create(profile);
+        await using var second = factory.Create(profile);
+        Assert.NotSame(first, second);
+        Assert.False(first.IsConnected); Assert.False(second.IsConnected);
+#else
+        Assert.Equal(MeshCoreBleFailureReason.UnsupportedPlatform,
+            Assert.Throws<MeshCoreBleTransportException>(() => factory.Create(profile)).Reason);
+#endif
+        Assert.Equal(profile, await storage.ConnectionProfiles.GetAsync(profile.Id, CancellationToken));
+        Assert.Equal(ConnectionSupervisorState.Offline, services.GetRequiredService<IConnectionSupervisor>().Snapshot.State);
+    }
+
     [Theory]
     [InlineData(DesktopThemePreference.System)]
     [InlineData(DesktopThemePreference.Dark)]
