@@ -8,6 +8,18 @@ internal sealed class PacketRouter
 {
     private readonly object _sync = new();
     private ICommandTransaction? _currentCommand;
+    private readonly HashSet<IRuntimePacketObserver> _observers = [];
+
+    internal IDisposable Observe(IRuntimePacketObserver observer)
+    {
+        lock (_sync) _observers.Add(observer);
+        return new Registration(this, observer);
+    }
+
+    private sealed class Registration(PacketRouter owner, IRuntimePacketObserver observer) : IDisposable
+    {
+        public void Dispose() { lock (owner._sync) owner._observers.Remove(observer); }
+    }
 
     public void Register(ICommandTransaction transaction)
     {
@@ -33,22 +45,34 @@ internal sealed class PacketRouter
     public bool Route(CompanionPacket packet)
     {
         ICommandTransaction? transaction;
+        IRuntimePacketObserver[] observers;
         lock (_sync)
+        {
             transaction = _currentCommand;
+            observers = _observers.ToArray();
+        }
 
-        return transaction?.TryAccept(packet) ?? false;
+        // MSG_SENT's immediate acceptance hook binds deferred correlation before the
+        // next logical frame can be routed to any observer.
+        var matched = transaction?.TryAccept(packet) ?? false;
+        foreach (var observer in observers) matched |= observer.Observe(packet);
+        return matched;
     }
 
     public void FailCurrent(Exception exception)
     {
         ICommandTransaction? transaction;
+        IRuntimePacketObserver[] observers;
         lock (_sync)
         {
             transaction = _currentCommand;
             _currentCommand = null;
+            observers = _observers.ToArray();
+            _observers.Clear();
         }
 
         transaction?.Fail(exception);
+        foreach (var observer in observers) observer.Fail(exception);
     }
 
     public void RouteMalformed(PacketType type, Exception exception)

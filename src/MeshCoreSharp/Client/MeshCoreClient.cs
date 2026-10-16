@@ -30,6 +30,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
     private bool _temporaryScopeUnsupported;
     private NodeFloodScope _defaultFloodScope = NodeFloodScope.Unknown;
     private Guid _sessionId;
+    private readonly SemaphoreSlim _neighborScanGate = new(1, 1);
+    private int _discoveryTag = System.Security.Cryptography.RandomNumberGenerator.GetInt32(1, int.MaxValue);
     private long _lastMessageTimestamp;
     private MeshCoreConnectionState _state = MeshCoreConnectionState.Disconnected;
     private bool _started;
@@ -302,6 +304,43 @@ public sealed class MeshCoreClient : IAsyncDisposable
     {
         EnsureReady();
         return _messagePump!.DrainAsync(cancellationToken);
+    }
+
+    /// <summary>Collects full identities of nearby repeaters during a bounded zero-hop discovery window.</summary>
+    public async Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        options ??= new NeighborDiscoveryOptions();
+        if (options.CollectionWindow < TimeSpan.FromMilliseconds(1) || options.CollectionWindow > TimeSpan.FromMinutes(1))
+            throw new ArgumentOutOfRangeException(nameof(options), "Collection window must be 1 ms to 1 minute.");
+        if (options.MaximumNeighbors is < 1 or > 4096) throw new ArgumentOutOfRangeException(nameof(options));
+        var coordinator = _scopeOperations!;
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _receiveCts!.Token);
+        if (!await _neighborScanGate.WaitAsync(0, linked.Token).ConfigureAwait(false))
+            throw new InvalidOperationException("A neighbor discovery is already active.");
+        NeighborDiscoveryCollector? collector = null;
+        IDisposable? registration = null;
+        try
+        {
+            await coordinator.WithGateAsync(async ct =>
+            {
+                uint tag;
+                do { tag = unchecked((uint)Interlocked.Increment(ref _discoveryTag)); } while (tag == 0);
+                collector = new NeighborDiscoveryCollector(tag, options.MaximumNeighbors, options.CollectionWindow);
+                registration = _router.Observe(collector);
+                // CMD55 is zero-hop control; no temporary flood override is needed.
+                return await _dispatcher.SendAsync<OkPacket>(CommandType.SendControlData,
+                    CompanionCommands.DiscoverRepeaterNeighbors(tag, options.Since), nameof(DiscoverRepeaterNeighborsAsync),
+                    _options.CommandTimeout, ct, type => type == PacketType.Ok, invalidateOnUncertainResponse: true).ConfigureAwait(false);
+            }, linked.Token).ConfigureAwait(false);
+            return await collector!.Completion.WaitAsync(linked.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new MeshCoreTransportException("Neighbor discovery stopped with its connection session.");
+        }
+        finally { registration?.Dispose(); collector?.Dispose(); _neighborScanGate.Release(); }
     }
 
     /// <summary>Reads the actual default name/key pair. An empty response is distinct from an unknown default.</summary>

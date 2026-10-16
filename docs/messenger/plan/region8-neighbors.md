@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 16.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Один bounded поиск с public DiscoverRepeaterNeighborsAsync.
 
@@ -41,11 +41,17 @@ protocol/regions.md: «1. Найти соседние репитеры»; librar
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION9](region9-remote-runtime.md).
+Добавлены DiscoverRepeaterNeighborsAsync, immutable options/result и bounded internal collector. До CMD55 установлен runtime observer; tag ненулевой и новый на каждой операции, запрос full-key/repeater-filter. Collector принимает только full32 repeater identity с нужным tag, dedupe по полному ключу, максимум1 active scan и1–4096 записей. CapacityReached отмечает отброшенные новые identity. OK не завершает окно; пустой результат — успешное наблюдение, не доказательство отсутствия репитеров.
+
+PacketRouter получил внутренние nonblocking observers; command RX acceptance hook выполняется перед observer routing. Public push сохраняется для каждого ответа. Scope gate удерживается только на immediate CMD55/OK; сбор идёт независимо от CommandGate/ScopeGate. Cancel/fault/disconnect удаляют observer и timer, reconnect не переносит старый tag/session. Не выполняются CMD57 или contact mutations.
+
+Проверка: dotnet run --project tests/MeshCoreSharp.Tests -c Release --no-restore — 215/215. Четыре новых cases: deterministic deadline/capacity/dedupe/wrong-tag/prefix/wrong-type; response до завершения transport write и interleaved pushes; независимая local command после OK; concurrent-scan rejection; cancel/disconnect/reconnect и late response. Аппаратный scan остаётся REGION33.
+
+Следующий шаг — [REGION9](region9-remote-runtime.md).

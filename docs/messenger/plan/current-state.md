@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION8](region8-neighbors.md): bounded full-key neighbor scan, RX observers и session cleanup. Library215/215. REGION7 отправлен0911b45; следующий REGION9. Origin/main подтверждён, push выполняется между подэтапами.
+
 16.10.2026: выполнен [REGION7](region7-discovery-wire.md): discovery codecs, control/binary typed packets, region CSV и immutable packed reply paths. Library211/211. Пользователь явно подтвердил origin/main; REGION1–6 отправлены успешно (remote b4d5a55). Продолжаем REGION8 с commit/push после каждого шага.
 
 16.10.2026: выполнен [REGION6](region6-text-budget.md): public scope-aware budget, send metadata, current-session default observations и повторное admission после gate. Library208/208. REGION5: 3883dad; далее REGION7. Push ожидает подтверждения origin/main.
