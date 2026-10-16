@@ -1,3 +1,5 @@
+16.10.2026: выполнен [REGION10](region10-request-regions.md): public directed region request с explicit route/full target, bounded timeout и potentially-incomplete result. Library222/222. REGION9 отправлен ecd80a6; далее library acceptance REGION11.
+
 16.10.2026: выполнен [REGION9](region9-remote-runtime.md): MeshRequestGate, pre-TX deferred matcher, RX bind, bounded deadline и session cleanup. Library219/219. REGION8 отправлен ac0e578; следующий REGION10.
 
 16.10.2026: выполнен [REGION8](region8-neighbors.md): bounded full-key neighbor scan, RX observers и session cleanup. Library215/215. REGION7 отправлен0911b45; следующий REGION9. Origin/main подтверждён, push выполняется между подэтапами.

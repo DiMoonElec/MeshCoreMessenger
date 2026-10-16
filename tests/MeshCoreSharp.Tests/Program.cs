@@ -105,6 +105,7 @@ var allTests = tests.Concat(MessageTests.Cases).Concat(SerialTests.Cases).Concat
     .Concat(RegionWireTests.Cases)
     .Concat(RegionNeighborTests.Cases)
     .Concat(RegionRemoteTests.Cases)
+    .Concat(RegionRequestTests.Cases)
     .Concat(BuildTargetTests.Cases).Concat(BleContractTests.Cases).Concat(BleDiscoveryTests.Cases)
     .Concat(BleGattOpenTests.Cases).Concat(BleReceiveTests.Cases).Concat(BleSendTests.Cases)
     .Concat(BleLifecycleTests.Cases).Concat(BleStockFirmwareTests.Cases).ToArray();

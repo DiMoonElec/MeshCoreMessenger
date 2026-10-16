@@ -8,6 +8,9 @@ namespace MeshCoreSharp.Models;
 /// <summary>An unpaginated, potentially incomplete list of allowed names. Private names do not imply known keys.</summary>
 public sealed record RegionNamesResponse(uint Tag, uint RemoteClock, IReadOnlyList<string> Names)
 {
+    /// <summary>Firmware provides neither pagination nor a completeness marker.</summary>
+    public bool IsPotentiallyIncomplete => true;
+
     internal static RegionNamesResponse Parse(BinaryResponsePacket packet)
     {
         var payload = packet.GetPayload().AsSpan();

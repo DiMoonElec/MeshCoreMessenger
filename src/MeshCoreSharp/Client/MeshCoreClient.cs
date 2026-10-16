@@ -308,6 +308,43 @@ public sealed class MeshCoreClient : IAsyncDisposable
         return _messagePump!.DrainAsync(cancellationToken);
     }
 
+    /// <summary>Requests allowed region names from one explicitly selected repeater.</summary>
+    /// <remarks>The caller must establish a usable direct outgoing route and supply its reply path.
+    /// This method does not alter contacts or paths. Firmware protocol13+ may itself add an unknown
+    /// target as a zero-hop contact. Replies may be incomplete; a timeout is not an empty list.</remarks>
+    public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> repeaterPublicKey, ReplyPath replyPath,
+        CancellationToken cancellationToken = default) => RequestRegionsCoreAsync(repeaterPublicKey, replyPath, null, cancellationToken);
+
+    /// <summary>Requests region names with an explicit bounded final-response timeout.</summary>
+    /// <remarks>Like the default overload, this can trigger firmware addContact for an unknown full key.</remarks>
+    public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> repeaterPublicKey, ReplyPath replyPath,
+        TimeSpan responseTimeout, CancellationToken cancellationToken = default) =>
+        RequestRegionsCoreAsync(repeaterPublicKey, replyPath, responseTimeout, cancellationToken);
+
+    private async Task<RegionNamesResponse> RequestRegionsCoreAsync(ReadOnlyMemory<byte> repeaterPublicKey, ReplyPath replyPath,
+        TimeSpan? responseTimeout, CancellationToken cancellationToken)
+    {
+        EnsureReady();
+        var command = CompanionCommands.RequestRegions(repeaterPublicKey.Span, replyPath);
+        var coordinator = _scopeOperations!;
+        var requests = _meshRequests!;
+        try
+        {
+            var packet = await requests.ExecuteBinaryAsync(async (bind, ct) =>
+            {
+                await coordinator.WithGateAsync(inner => _dispatcher.SendAsync<MessageSentPacket>(CommandType.SendAnonymousRequest,
+                    command, nameof(RequestRegionsAsync), _options.CommandTimeout, inner,
+                    type => type == PacketType.MessageSent, onAccepted: accepted => bind(accepted.Info),
+                    invalidateOnUncertainResponse: true), ct).ConfigureAwait(false);
+            }, responseTimeout, cancellationToken).ConfigureAwait(false);
+            return RegionNamesResponse.Parse(packet);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new MeshCoreTransportException("Region request stopped with its connection session.");
+        }
+    }
+
     /// <summary>Collects full identities of nearby repeaters during a bounded zero-hop discovery window.</summary>
     public async Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions? options = null,
         CancellationToken cancellationToken = default)

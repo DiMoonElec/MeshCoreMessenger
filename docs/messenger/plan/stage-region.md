@@ -2,7 +2,7 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: **REGION0–REGION9 выполнены; REGION10–REGION34 не начаты.**
+16.10.2026: **REGION0–REGION10 выполнены; REGION11–REGION34 не начаты.**
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -54,7 +54,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION7](region7-discovery-wire.md) | Форматы поиска соседей и регионов |
 | ☑ | [REGION8](region8-neighbors.md) | Сбор ответов соседних репитеров |
 | ☑ | [REGION9](region9-remote-runtime.md) | Общий gate и matcher удалённых запросов |
-| ☐ | [REGION10](region10-request-regions.md) | Запрос регионов одного репитера |
+| ☑ | [REGION10](region10-request-regions.md) | Запрос регионов одного репитера |
 | ☐ | [REGION11](region11-library-acceptance.md) | Регрессия библиотеки REGION |
 | ☐ | [REGION12](region12-core-models.md) | Прикладные модели и контракты |
 | ☐ | [REGION13](region13-catalog-schema.md) | Миграция каталога и назначений |
