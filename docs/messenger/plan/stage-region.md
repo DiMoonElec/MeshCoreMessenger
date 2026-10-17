@@ -5,7 +5,7 @@
 17.10.2026: **REGION0–REGION25 выполнены; последующие этапы не завершены.**
 По прямому запросу пользователя REGION33 частично проверен: CatCore BLE discovery→regions,
 AES padding исправлен, пути восстановлены. [Отчёт](../../testing/region-hardware-mesh.md).
-GUI отложен пользователем до совместного обсуждения; REGION26 pending, REGION27–30 не начинаются.
+GUI согласован17.10.2026; REGION26 выполнен, REGION27–30 реализуются по прямому запросу пользователя.
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -73,7 +73,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION23](region23-discovery-route.md) | Временный direct route и восстановление |
 | ☑ | [REGION24](region24-discovery-service.md) | Полный поиск и локальные наблюдения |
 | ☑ | [REGION25](region25-core-acceptance.md) | Сквозная приёмка Core |
-| ☐ | [REGION26](region26-gui-design.md) | Совместное проектирование GUI |
+| ☑ | [REGION26](region26-gui-design.md) | Совместное проектирование GUI |
 | ☐ | [REGION27](region27-catalog-ui.md) | GUI каталога регионов |
 | ☐ | [REGION28](region28-selection-ui.md) | GUI default ноды и выбора канала |
 | ☐ | [REGION29](region29-discovery-ui.md) | GUI поиска регионов |
