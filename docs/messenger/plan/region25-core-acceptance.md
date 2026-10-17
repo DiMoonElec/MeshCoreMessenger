@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.**
 
 **Цель:** Library→session→services→временная SQLite без GUI.
 
@@ -41,11 +41,15 @@ region-design.md: «Сквозные критерии приёмки»; резу
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION26](region26-gui-design.md).
+Добавлены семь сквозных wire cases: catalogue/default/channel/private/discovery, scope sequence и repeat/as-new, ingest во время запроса, restore conflict, malformed/timeout, TableFull, BLE→TCP reconnect с внешним default и изоляцией другой ноды. Использованы реальные library/session/services и временные SQLite; эмулятор расширен CMD9/55/57 и per-send scope evidence. Исправлена гонка существующего BLE overflow test fixture без production изменений.
+
+Release solution build 0 warnings/errors; полный Core **558/558**, library **228/228**, Desktop bootstrap **6/6**. Матрица обязательных сценариев и точные ограничения: [отчёт](../../testing/region-core.md). Hardware/RF не выполнялся; scope firmware-generated PATH/ACK и reboot persistence остаются REGION32/33.
+
+Следующий шаг — [REGION26](region26-gui-design.md), совместный выбор GUI. Backend готов, production GUI не реализуется до согласования.

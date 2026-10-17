@@ -117,7 +117,11 @@ public sealed partial class BleIntegrationTests
     {
         await using var f = await Fixture.Create();
         var device = await f.Connect();
-        for (var index = 0; index < 10000; index++) device.Emit([(byte)PacketType.MessagesWaiting]);
+        // Inert pushes exercise RX overflow without waking the message pump: a concurrent
+        // SYNC on the stopped transport can otherwise win teardown before RX reports its cause.
+        for (var index = 0; index < 10000; index++) device.Emit([0xFE]);
+        await Wait(() => f.Errors.Any(error => error is MeshCoreBleTransportException
+            { Reason: MeshCoreBleFailureReason.ReceiveQueueOverflow }));
         await Wait(() => f.Supervisor.Snapshot.State is ConnectionSupervisorState.Offline or ConnectionSupervisorState.NeedsAttention);
         await f.Supervisor.DisconnectAsync(Token);
         Assert.Contains(f.Errors, error => error is MeshCoreBleTransportException

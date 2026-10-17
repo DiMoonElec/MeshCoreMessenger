@@ -52,6 +52,71 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public bool UseProtocolPrivateAckTags { get; set; }
     public uint PrivateSuggestedTimeoutMilliseconds { get; set; } = 100;
     public Func<Task>? BeforePrivateResponse { get; set; }
+    public ConcurrentDictionary<byte, byte[]> RepeaterContacts { get; } = new();
+    public ConcurrentDictionary<byte, string> RepeaterRegionCsv { get; } = new();
+    public HashSet<byte> NeighborRepeaters { get; } = [];
+    public HashSet<byte> SilentRegionRepeaters { get; } = [];
+    public ConcurrentQueue<byte[]> RegionRequests { get; } = new();
+    public ConcurrentQueue<byte[]> ContactUpdates { get; } = new();
+    public ConcurrentQueue<byte[]> ChannelScopeKeys { get; } = new();
+    public Func<byte, Task>? BeforeRegionResponse { get; set; }
+    public bool RejectRegionContactCreation { get; set; }
+    public void AddRepeater(byte key, byte route, string csv)
+    {
+        ContactRoutes[key] = route;
+        var frame = BuildContact($"Repeater {key:X2}", key); frame[33] = 2; frame[34] = 5;
+        RepeaterContacts[key] = frame; RepeaterRegionCsv[key] = csv;
+    }
+
+    private byte[] ReadRepeater(byte key)
+    {
+        var frame = RepeaterContacts[key].ToArray(); frame[35] = ContactRoutes[key]; return frame;
+    }
+
+    private async Task<bool> HandleRegionCommandAsync(NetworkStream stream, byte[] command)
+    {
+        var type = (CommandType)command[0];
+        if (type == CommandType.AddOrUpdateContact)
+        {
+            if (command.Length != 144 || !RepeaterContacts.ContainsKey(command[1])) throw new InvalidDataException("Invalid repeater update.");
+            ContactUpdates.Enqueue(command.ToArray());
+            var frame = new byte[148]; command.AsSpan(1).CopyTo(frame.AsSpan(1)); frame[0] = (byte)PacketType.Contact;
+            BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(144), 1_700_000_124u + (uint)ContactUpdates.Count);
+            RepeaterContacts[command[1]] = frame; ContactRoutes[command[1]] = frame[35];
+            await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]); return true;
+        }
+        if (type == CommandType.SendControlData)
+        {
+            if (command.Length is not (7 or 11) || command[1] != 0x80 || command[2] != 4) throw new InvalidDataException("Invalid discovery command.");
+            var tag = BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3));
+            await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]);
+            foreach (var key in NeighborRepeaters)
+            {
+                var frame = new byte[42]; frame[0] = (byte)PacketType.ControlData; frame[1] = 0xE3; frame[2] = 0x9D;
+                frame[4] = 0x92; frame[5] = 0xF3; BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(6), tag); frame.AsSpan(10).Fill(key);
+                await WriteFrameAsync(stream, 0x3E, frame);
+            }
+            return true;
+        }
+        if (type != CommandType.SendAnonymousRequest) return false;
+        if (command.Length < 35 || command[33] != 1 || command.AsSpan(1, 32).ContainsAnyExcept(command[1])) throw new InvalidDataException("Invalid region request.");
+        RegionRequests.Enqueue(command.ToArray()); var peer = command[1];
+        if (!RepeaterContacts.ContainsKey(peer))
+        {
+            if (RejectRegionContactCreation)
+            { await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Error, (byte)MeshCoreErrorCode.TableFull]); return true; }
+            AddRepeater(peer, 0, RepeaterRegionCsv.GetValueOrDefault(peer, ""));
+        }
+        var responseTag = 0x20000000u + (uint)RegionRequests.Count;
+        var sent = new byte[10]; sent[0] = (byte)PacketType.MessageSent; sent[1] = ContactRoutes[peer] == 0xFF ? (byte)1 : (byte)0;
+        BinaryPrimitives.WriteUInt32LittleEndian(sent.AsSpan(2), responseTag); BinaryPrimitives.WriteUInt32LittleEndian(sent.AsSpan(6), 100);
+        await WriteFrameAsync(stream, 0x3E, sent);
+        if (BeforeRegionResponse is not null) await BeforeRegionResponse(peer);
+        if (ContactRoutes[peer] == 0xFF || SilentRegionRepeaters.Contains(peer)) return true;
+        var csv = Encoding.UTF8.GetBytes(RepeaterRegionCsv[peer]); var reply = new byte[10 + csv.Length]; reply[0] = (byte)PacketType.BinaryResponse;
+        BinaryPrimitives.WriteUInt32LittleEndian(reply.AsSpan(2), responseTag); BinaryPrimitives.WriteUInt32LittleEndian(reply.AsSpan(6), 1_700_000_123);
+        csv.CopyTo(reply.AsSpan(10)); await WriteFrameAsync(stream, 0x3E, reply); return true;
+    }
 
     public Task SendAcknowledgementAsync(uint tag, uint roundTripMilliseconds = 25)
     {
@@ -113,15 +178,17 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
 
             // A tickle can arrive while a completely different command owns the dispatcher.
             await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
+            if (await HandleRegionCommandAsync(stream, command)) continue;
             if (type == CommandType.GetContacts)
             {
                 ContactsReadCount++;
                 if (BeforeContactsResponse is not null) await BeforeContactsResponse();
                 if (RejectContactsReadback) { await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Error, (byte)MeshCoreErrorCode.BadState]); continue; }
-                await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactStart, 2));
+                await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactStart, (uint)(2 + RepeaterContacts.Count)));
                 await WriteFrameAsync(stream, 0x3E, BuildContact("Alice", 0xA1));
                 await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
                 await WriteFrameAsync(stream, 0x3E, BuildContact("Bob", 0xB2));
+                foreach (var peer in RepeaterContacts.Keys.Order()) await WriteFrameAsync(stream, 0x3E, ReadRepeater(peer));
                 await WriteFrameAsync(stream, 0x3E, BuildContactBoundary(PacketType.ContactEnd, 1_700_000_123));
                 continue;
             }
@@ -132,7 +199,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 SingleContactReads.Enqueue(key);
                 var peer = key[0];
                 var valid = key.Length == ProtocolLimits.PublicKeySize && key.All(value => value == peer) && ContactRoutes.ContainsKey(peer);
-                var frame = valid ? BuildContact(peer == 0xA1 ? "Alice" : "Bob", peer)
+                var frame = valid ? RepeaterContacts.ContainsKey(peer) ? ReadRepeater(peer) : BuildContact(peer == 0xA1 ? "Alice" : "Bob", peer)
                     : new byte[] { (byte)PacketType.Error, (byte)MeshCoreErrorCode.NotFound };
                 if (BeforeSingleContactResponse is not null) await BeforeSingleContactResponse();
                 await WriteFrameAsync(stream, 0x3E, RejectContactsReadback
@@ -205,6 +272,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
             if (type == CommandType.SendChannelTextMessage)
             {
                 ChannelSendCount++;
+                ChannelScopeKeys.Enqueue(_forceUnscoped ? [] : _temporaryScopeKey?.ToArray() ?? (DefaultFloodScopeResponse.Length == 48 ? DefaultFloodScopeResponse.AsSpan(32, 16).ToArray() : []));
                 LastChannelSlot = command[2];
                 ChannelTimestamps.Enqueue(System.Buffers.Binary.BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3, 4)));
                 LastChannelText = Encoding.UTF8.GetString(command.AsSpan(7));
@@ -255,7 +323,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return frame;
     }
 
-    private static byte[] BuildMessage(PacketType type, string text)
+    internal static byte[] BuildMessage(PacketType type, string text)
     {
         var contact = type == PacketType.ContactMessageReceivedV3;
         var bytes = Encoding.UTF8.GetBytes(text);
