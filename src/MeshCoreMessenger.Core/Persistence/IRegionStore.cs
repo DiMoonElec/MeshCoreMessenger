@@ -5,6 +5,7 @@ namespace MeshCoreMessenger.Core.Persistence;
 /// <summary>Node-scoped projections. Channel IDs use existing full-secret fingerprints, not slot/name/scope.</summary>
 public interface IRegionReader
 {
+    Task<IReadOnlyList<RegionDiscoveryTargetOutcome>> GetDiscoveryOutcomesAsync(Guid nodeId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RegionCatalogEntry>> GetRegionsAsync(Guid nodeId, bool includeArchived = false, CancellationToken cancellationToken = default);
     Task<RegionCatalogEntry?> GetRegionAsync(Guid nodeId, Guid regionId, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ChannelRegionPreference>> GetRegionAssignmentsAsync(Guid nodeId, Guid regionId, CancellationToken cancellationToken = default);
@@ -18,6 +19,8 @@ public interface IRegionReader
 /// <summary>Every mutation uses DatabaseWorker and publishes only after commit. No wire commands or deferred device writes.</summary>
 public interface IRegionStore : IRegionReader
 {
+    Task SaveDiscoveryOutcomeAsync(RegionDiscoveryTargetOutcome outcome, IReadOnlyList<RegionObservation> observations,
+        int maximumObservations, int maximumOutcomes, DateTimeOffset retainSinceUtc, CancellationToken cancellationToken = default);
     event EventHandler<RegionDataCommit>? Changed;
     /// <summary>Deduplicate exact key identity within a node. Changing protocol name/key creates a new definition.</summary>
     Task<RegionCatalogEntry> AddRegionAsync(RegionCatalogEntry entry, CancellationToken cancellationToken = default);

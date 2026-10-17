@@ -6,8 +6,12 @@ using MeshCoreSharp.Models;
 namespace MeshCoreMessenger.Core.Application;
 
 /// <summary>Local region catalogue and channel policy owner. Offline changes never enqueue device commands.</summary>
-public sealed partial class RegionService(IRegionStore store, TimeProvider timeProvider, ISessionCommandGateway? commands = null) : IRegionService
+public sealed partial class RegionService(IRegionStore store, TimeProvider timeProvider, ISessionCommandGateway? commands = null,
+    IRegionDiscoveryService? discovery = null) : IRegionService
 {
+    public Task<RegionDiscoveryRunResult> DiscoverAsync(SessionCommandOwner owner, RegionDiscoveryOptions? options = null,
+        IProgress<RegionDiscoveryProgress>? progress = null, CancellationToken cancellationToken = default) =>
+        (discovery ?? throw new InvalidOperationException("Region discovery is unavailable in this offline service.")).DiscoverAsync(owner, options, progress, cancellationToken);
     public event EventHandler<RegionDataCommit>? Changed { add => store.Changed += value; remove => store.Changed -= value; }
     public Task<IReadOnlyList<RegionCatalogEntry>> GetRegionsAsync(Guid nodeId, bool includeArchived = false, CancellationToken cancellationToken = default) =>
         store.GetRegionsAsync(nodeId, includeArchived, cancellationToken);

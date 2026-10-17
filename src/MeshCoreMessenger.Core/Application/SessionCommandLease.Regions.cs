@@ -27,6 +27,15 @@ public sealed partial class SessionCommandLease
         if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("A full repeater target is required.");
         return OwnAsync(() => _scope.Invoke(this, (client, token) => client.RequestRegionsAsync(contact.PublicKey, path, timeout, token)), requireAdmission: true);
     }
+    internal Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions options) =>
+        OwnAsync(() => _scope.Invoke(this, (client, token) => client.DiscoverRepeaterNeighborsAsync(options, token)), requireAdmission: true);
+    internal Task PersistDiscoveryOutcomeAsync(IRegionStore store, RegionDiscoveryTargetOutcome outcome, IReadOnlyList<RegionObservation> observations,
+        int maximumObservations, int maximumOutcomes, DateTimeOffset retainSince) => OwnAsync(async () =>
+        {
+            if (!_scope.IsOpen) throw new InvalidOperationException("Discovery session closed before persistence.");
+            await store.SaveDiscoveryOutcomeAsync(outcome, observations, maximumObservations, maximumOutcomes, retainSince, CancellationToken.None).ConfigureAwait(false);
+            return true;
+        }, requireAdmission: false);
     internal static FloodScopeSelection WireScope(ResolvedRegionScope scope) => scope.State switch
     {
         StoredRegionScopeState.KnownScoped => FloodScopeSelection.ExplicitRegion(scope.Key!),

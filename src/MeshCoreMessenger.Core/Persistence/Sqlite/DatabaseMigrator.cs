@@ -4,7 +4,7 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
 internal static partial class DatabaseMigrator
 {
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 10;
 
     private static readonly Migration[] Migrations =
     [
@@ -17,6 +17,7 @@ internal static partial class DatabaseMigrator
         new(7, "BLE connection profiles", BleProfilesSql, RebuildProfiles: true),
         new(8, "Node-scoped region catalogue and observations", RegionsSql, VerifyForeignKeys: true),
         new(9, "Immutable send attempt region scopes", SendAttemptScopesSql, VerifyForeignKeys: true),
+        new(10, "Bounded region discovery outcomes", RegionDiscoverySql, VerifyForeignKeys: true),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)

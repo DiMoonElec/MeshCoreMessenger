@@ -527,6 +527,13 @@ public sealed partial class SessionCommandGatewayTests
         public Func<ReadOnlyMemory<byte>, CancellationToken, Task<Contact>>? ContactRead { get; set; }
         public Func<ContactConfiguration, CancellationToken, Task>? ContactWrite { get; set; }
         public Func<ReadOnlyMemory<byte>, ReplyPath, CancellationToken, Task<RegionNamesResponse>>? RegionRequest { get; set; }
+        public Func<NeighborDiscoveryOptions, CancellationToken, Task<NeighborDiscoveryResult>>? NeighborScan { get; set; }
+        public int NeighborScanCount { get; private set; }
+        public Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions options, CancellationToken cancellationToken = default)
+        {
+            NeighborScanCount++;
+            return NeighborScan?.Invoke(options, cancellationToken) ?? Task.FromResult(new NeighborDiscoveryResult(1, [], false));
+        }
         public int RegionRequestCount { get; private set; }
         public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> key, ReplyPath replyPath, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default)
         {

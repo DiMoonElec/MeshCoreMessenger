@@ -5,7 +5,7 @@ using MeshCoreSharp.Models;
 
 namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
-internal sealed class SqliteRegionStore(DatabaseWorker writer, DatabaseReader reader) : IRegionStore
+internal sealed partial class SqliteRegionStore(DatabaseWorker writer, DatabaseReader reader) : IRegionStore
 {
     private const int MaximumEntries = 4096;
     private const string RegionColumns = "Id,NodeId,Label,ProtocolName,Kind,Key,Provenance,CreatedUtc,UpdatedUtc,Archived";
@@ -166,26 +166,8 @@ internal sealed class SqliteRegionStore(DatabaseWorker writer, DatabaseReader re
         var nodes = captured.Select(o => o.NodeId).Distinct().ToArray();
         await WriteAsync((connection, tx) =>
         {
-            foreach (var item in captured)
-            {
-                using var command = Command(connection, tx, """
-                    INSERT INTO RegionObservations VALUES($node,$key,$name,$source,$first,$last)
-                    ON CONFLICT(NodeId,RepeaterPublicKey,ProtocolName) DO UPDATE SET
-                        FirstSeenUtc=min(RegionObservations.FirstSeenUtc,excluded.FirstSeenUtc),
-                        LastSeenUtc=max(RegionObservations.LastSeenUtc,excluded.LastSeenUtc),
-                        Source=CASE WHEN excluded.LastSeenUtc>=RegionObservations.LastSeenUtc THEN excluded.Source ELSE RegionObservations.Source END
-                    """, ("$node", item.NodeId), ("$key", item.GetRepeaterPublicKey()), ("$name", item.ProtocolName), ("$source", (int)item.Source), ("$first", item.FirstSeenUtc), ("$last", item.LastSeenUtc));
-                command.ExecuteNonQuery();
-            }
-            foreach (var node in nodes)
-            {
-                using var prune = Command(connection, tx, """
-                    DELETE FROM RegionObservations WHERE NodeId=$node AND LastSeenUtc<$since;
-                    DELETE FROM RegionObservations WHERE rowid IN(SELECT rowid FROM RegionObservations WHERE NodeId=$node
-                        ORDER BY LastSeenUtc DESC,hex(RepeaterPublicKey),ProtocolName LIMIT -1 OFFSET $maximum);
-                    """, ("$node", node), ("$since", retainSinceUtc), ("$maximum", maximumPerNode));
-                prune.ExecuteNonQuery();
-            }
+            foreach (var item in captured) UpsertObservation(connection, tx, item);
+            foreach (var node in nodes) PruneObservations(connection, tx, node, maximumPerNode, retainSinceUtc);
             return true;
         }, cancellationToken).ConfigureAwait(false);
         foreach (var node in nodes) Notify(new(node));

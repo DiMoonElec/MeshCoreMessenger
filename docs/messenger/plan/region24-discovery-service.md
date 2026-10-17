@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** RegionDiscoveryService поверх neighbours/request/preflight.
 
@@ -41,11 +41,19 @@ region-design.md: «Discovery в приложении»; REGION8/10/22/23 contra
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION25](region25-core-acceptance.md).
+IRegionDiscoveryService и RegionService.DiscoverAsync выполняют явный single-flight bounded scan → preflight → последовательные запросы через REGION23. Options задают total/request deadline, target limit/full-key selection, подтверждённые reply paths и consent на побочные действия. Progress/cancel не блокирует RX; throwing observer не отменяет cleanup. ReadyDirect выполняется сразу, остальные требуют явной политики; неизвестный selected key не становится фиктивной direct-целью. Unsupported neighbor scan допускает работу с известными контактами.
+
+Outcomes различают empty/possibly-partial, no path, unsupported, timeout, cancelled, malformed, table-full, preparation/stale/storage/transport failure и success с route warning. Private names остаются key-required, wildcard — unscoped, неизвестные допустимые строки сохраняются как diagnostic evidence. Имена объединяются со списком full-key источников без auto-select, derivation private keys или auto-save catalogue. Один timeout не уничтожает предыдущие результаты и не вызывает retries; storage failure прекращает новые Mesh запросы.
+
+Schema9→10 добавляет bounded RegionDiscoveryOutcomes с node/session FK, status/route metadata, names и безопасным error code. Outcome и per-source observations коммитятся одной транзакцией, с count/age retention и post-commit event. Повтор локальной записи идемпотентен только для того же terminal outcome. Исторические наблюдения не удаляются из-за отсутствия имени в новом ответе. Cancelled target может сохранить outcome при ещё открытой сессии; stale session не записывает поздние имена.
+
+Проверки: Core550/550; final targeted10/10 (multiple sources, timeout/cancel/deadline, consent, implicit refresh, malformed/unsupported, stale owner, DB failure без replay, retention/FK/atomicity, migration rollback и schema9 backup). Release build0 warnings/errors, bootstrap6/6. Hardware и GUI discovery не запускались; сквозная production-wire приёмка продолжается в REGION25.
+
+Следующий шаг — [REGION25](region25-core-acceptance.md).

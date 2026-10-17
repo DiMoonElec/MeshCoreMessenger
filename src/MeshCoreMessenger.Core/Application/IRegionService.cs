@@ -7,6 +7,8 @@ namespace MeshCoreMessenger.Core.Application;
 public interface IRegionService
 {
     event EventHandler<RegionDataCommit>? Changed;
+    Task<RegionDiscoveryRunResult> DiscoverAsync(SessionCommandOwner owner, RegionDiscoveryOptions? options = null,
+        IProgress<RegionDiscoveryProgress>? progress = null, CancellationToken cancellationToken = default);
     Task<RegionDefaultChangeResult> SetNodeDefaultAsync(SessionCommandOwner owner, RegionDefinition definition, CancellationToken cancellationToken = default);
     Task<RegionDefaultChangeResult> ClearNodeDefaultAsync(SessionCommandOwner owner, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<RegionCatalogEntry>> GetRegionsAsync(Guid nodeId, bool includeArchived = false, CancellationToken cancellationToken = default);

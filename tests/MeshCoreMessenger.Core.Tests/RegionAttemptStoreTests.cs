@@ -96,7 +96,7 @@ public sealed partial class OutgoingMessageStoreTests
         await using var f = await Fixture.CreateAsync();
         var prepared = await f.Storage.OutgoingMessages.PrepareAsync(f.Request(), CancellationToken);
         await f.Storage.DisposeAsync();
-        f.Execute("DROP TABLE SendAttemptScopes; DELETE FROM SchemaMigrations WHERE Version>=9; PRAGMA user_version=8;");
+        f.Execute("DROP TABLE RegionDiscoveryOutcomes; DROP TABLE SendAttemptScopes; DELETE FROM SchemaMigrations WHERE Version>=9; PRAGMA user_version=8;");
         f.Storage = await LocalStorage.OpenAsync(f.Paths, CancellationToken);
         var scope = await f.Storage.OutgoingMessages.GetAttemptScopeAsync(f.NodeId, prepared.Attempt.Id, CancellationToken);
         Assert.Equal(StoredRegionScopeState.LegacyUnknown, scope.State); Assert.Null(scope.Key); Assert.False(scope.CanReplayExactly);
