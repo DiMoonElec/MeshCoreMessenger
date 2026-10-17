@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Read-only классификация репитеров и побочных эффектов запроса.
 
@@ -41,11 +41,17 @@ region-design.md: «Discovery в приложении»; protocol/regions.md: р
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION23](region23-discovery-route.md).
+IRegionDiscoveryPreflight объединяет full32-key соседей и известные repeater contacts, затем читает каждый известный контакт через lease той же session generation. Prefix8 остаётся диагностикой, не целью. Plans ограничены maximumTargets и явно сообщают число пропущенных целей. Preflight выполняет только GET contacts/contact; catalogue/route/device mutations и Mesh region requests отсутствуют.
+
+RegionDiscoveryPlan различает ReadyDirect, RequiresContactCreation (implicit firmware addContact и необходимый refresh), RequiresTemporaryZeroHop (mutation/readback + conditional restore/readback) и NoUsableReplyPath. Multi-hop reverse выполняется по целым hashes и имеет AssumedReverse evidence; явно подтверждённый асимметричный ReplyPath принимается независимо. Snapshot полного контакта скопирован и имеет revision fingerprint для обнаружения нового route/advert state; owner содержит NodeId/SessionId/generation.
+
+Проверки: пять focused cases — known zero/multi-hop, неизвестный сосед, известный flood contact, prefix collisions, explicit asymmetric reply path, свежий readback вместо cached route, ограничение целей, пустой каталог, stale owner, неверный полный ключ и поздний отменённый readback; zero mutation/TX counters. Общие Core/Release/Desktop результаты записаны в current-state. Никаких аппаратных запросов не выполнялось; исполнение маршрутов остаётся REGION23.
+
+Следующий шаг — [REGION23](region23-discovery-route.md).

@@ -1,6 +1,6 @@
 # План MeshCoreMessenger: оглавление
 
-- [REGION](messenger/plan/stage-region.md) — REGION0–REGION21 выполнены; REGION22–REGION34 не начаты. Малые задания библиотеки/Core/GUI, совместный дизайн в REGION26; следующий — REGION22.
+- [REGION](messenger/plan/stage-region.md) — REGION0–REGION22 выполнены; REGION23–REGION34 не начаты. Малые задания библиотеки/Core/GUI, совместный дизайн в REGION26; следующий — REGION23.
 
 - [Как читать документацию](README.md) — выбор минимального набора разделов для задачи.
 - [current-state](messenger/plan/current-state.md) — Текущий статус, checkpoint и исходная актуализация.

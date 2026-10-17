@@ -523,11 +523,14 @@ public sealed partial class SessionCommandGatewayTests
         public string? SentText { get; private set; }
         public uint? SentChannelTimestamp { get; private set; }
         public Func<Task>? ChannelSendAction { get; set; }
+        public IReadOnlyList<Contact>? PreflightContacts { get; set; }
+        public Func<ReadOnlyMemory<byte>, CancellationToken, Task<Contact>>? ContactRead { get; set; }
         public Func<CancellationToken, Task<TextMessageSendResult>>? PrivateSendAction { get; set; }
         public Func<uint, byte, CancellationToken, Task<TextMessageSendResult>>? CapturedPrivateSendAction { get; set; }
         public Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (ContactRead is not null) return ContactRead(publicKey, cancellationToken);
             return Task.FromResult(new Contact(publicKey.ToArray(), AdvertisementType.Chat, 0, 255, new byte[64], "Peer", 0, 0, 0, 0));
         }
         public event EventHandler<MeshCoreConnectionStateChangedEventArgs>? ConnectionStateChanged;
@@ -581,7 +584,7 @@ public sealed partial class SessionCommandGatewayTests
         public async Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
         {
             await Phase("directory", cancellationToken);
-            return [new Contact(contactKey, AdvertisementType.Chat, 0, 255, new byte[64], "Peer", 0, 0, 0, 0)];
+            return PreflightContacts ?? [new Contact(contactKey, AdvertisementType.Chat, 0, 255, new byte[64], "Peer", 0, 0, 0, 0)];
         }
         public Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<ChannelInfo>>([new(7, "channel", secret)]);
         public async Task DrainMessagesAsync(CancellationToken cancellationToken = default) { await Phase("drain", cancellationToken); }
