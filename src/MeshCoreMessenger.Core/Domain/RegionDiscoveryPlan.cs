@@ -26,11 +26,13 @@ public sealed class RegionDiscoveryPlan
     private readonly byte[] _key;
     private readonly Contact? _contact;
     internal RegionDiscoveryPlan(Guid nodeId, Guid sessionId, long generation, ReadOnlySpan<byte> key, Contact? contact,
-        RegionDiscoveryPreparation preparation, ReplyPath? replyPath, RegionReplyPathEvidence evidence, DateTimeOffset capturedUtc, string? reason = null)
+        RegionDiscoveryPreparation preparation, ReplyPath? replyPath, RegionReplyPathEvidence evidence, DateTimeOffset capturedUtc, string? reason = null,
+        long contactObservationVersion = 0)
     {
         NodeId = nodeId; SessionId = sessionId; Generation = generation; _key = key.ToArray();
         _contact = Copy(contact); Preparation = preparation; ReplyPath = replyPath; ReplyPathEvidence = evidence;
         CapturedUtc = capturedUtc; Reason = reason; ContactRevision = contact is null ? null : Revision(contact);
+        ContactObservationVersion = contactObservationVersion;
     }
     public Guid NodeId { get; }
     public Guid SessionId { get; }
@@ -40,6 +42,7 @@ public sealed class RegionDiscoveryPlan
     public ReplyPath? ReplyPath { get; }
     public RegionReplyPathEvidence ReplyPathEvidence { get; }
     public string? ContactRevision { get; }
+    public long ContactObservationVersion { get; }
     public string? Reason { get; }
     public bool MayCreateContact => Preparation == RegionDiscoveryPreparation.RequiresContactCreation;
     public bool RequiresConditionalRestore => Preparation == RegionDiscoveryPreparation.RequiresTemporaryZeroHop;

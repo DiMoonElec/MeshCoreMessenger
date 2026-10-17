@@ -6,6 +6,9 @@ public interface IDirectoryStore
 {
     /// <summary>Published after a contact route has been committed to local storage.</summary>
     event EventHandler<ContactRouteCommit>? ContactRouteCommitted { add { } remove { } }
+    /// <summary>Commits one verified full contact without retiring other contacts or changing channel bindings.</summary>
+    Task ApplyContactReadbackAsync(Guid nodeId, Guid sessionId, DirectoryContactSnapshot contact, DateTimeOffset observedUtc,
+        CancellationToken cancellationToken = default) => Task.FromException(new NotSupportedException());
     Task<DirectorySnapshotResult> ApplySnapshotAsync(
         Guid nodeId,
         Guid sessionId,

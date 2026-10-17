@@ -19,6 +19,7 @@ internal static class ContactMutationTests
         ("Contact add/update handles interleaved push", AddRouting),
         ("Contact removal, errors, cancellation and recovery", RemoveAndRecovery),
         ("NEW_ADVERT can be stored without manual wire fields", AdvertisementOverload),
+        ("REGION23 late contact SET OK cannot satisfy a queued mutation", UncertainAddClosesAdmission),
     ];
 
     private static void Check(bool condition, string message = "Assertion failed")
@@ -122,6 +123,7 @@ internal static class ContactMutationTests
         var timeout = client.ResetPathAsync(captured); await Sent(transport);
         await Throws<MeshCoreTimeoutException>(() => timeout);
         Check(!transport.Sent.Reader.TryRead(out _)); // No retry/replay.
+        Check(!client.IsStarted); await client.DisconnectAsync(); await Start(client);
         var recovered = client.ResetPathAsync(captured); await Sent(transport); transport.Emit([0]); await recovered;
     }
 
@@ -178,8 +180,21 @@ internal static class ContactMutationTests
         Check((await Throws<MeshCoreCommandException>(() => rejected)).Command == CommandType.GetContactByKey);
         var timeout = client.GetContactAsync(new byte[32]); await Sent(transport);
         await Throws<MeshCoreTimeoutException>(() => timeout);
+        Check(!client.IsStarted);
+        await client.DisconnectAsync(); await Start(client);
         var recovered = client.GetContactAsync(Enumerable.Repeat((byte)0xA5, 32).ToArray()); await Sent(transport);
         transport.Emit(Fixtures.Contact()); await recovered;
+    }
+
+    private static async Task UncertainAddClosesAdmission()
+    {
+        var transport = new TestTransport(); await using var client = Client(transport); await Start(client);
+        var add = client.AddOrUpdateContactAsync(Contact()); await Sent(transport);
+        var queued = client.SetDeviceTimeAsync(DateTimeOffset.UtcNow);
+        await Throws<MeshCoreTimeoutException>(() => add);
+        transport.Emit([0]);
+        await Throws<MeshCoreTransportException>(() => queued);
+        Check(!client.IsStarted && !transport.Sent.Reader.TryRead(out _));
     }
 
     private static async Task RemoveAndRecovery()

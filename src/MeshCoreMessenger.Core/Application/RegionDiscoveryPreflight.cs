@@ -40,6 +40,7 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
                 var publicKey = Convert.FromHexString(key);
                 var nearby = fullNeighbors.GetValueOrDefault(key);
                 Contact? current = null;
+                var observationVersion = node.ContactObservationVersion(publicKey);
                 if (contacts.ContainsKey(key))
                 {
                     await using var target = gateway.Acquire(owner.NodeId, new ContactCommandTarget(publicKey), token);
@@ -47,9 +48,11 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
                     try { current = await target.GetContactAsync().ConfigureAwait(false); }
                     catch (MeshCoreCommandException error) when (error.ErrorCode == MeshCoreErrorCode.NotFound) { }
                     token.ThrowIfCancellationRequested();
+                    await target.FlushClientEventsAsync().ConfigureAwait(false);
                     if (current is not null && !current.PublicKey.Span.SequenceEqual(publicKey))
                         throw new MeshCoreProtocolException("Preflight readback returned a different full contact key.");
                 }
+                var readConflict = observationVersion != node.ContactObservationVersion(publicKey);
                 var provided = confirmed.GetValueOrDefault(key);
                 var preparation = RegionDiscoveryPreparation.NoUsableReplyPath;
                 var evidence = provided is null ? RegionReplyPathEvidence.None : RegionReplyPathEvidence.Confirmed;
@@ -90,7 +93,8 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
                     }
                     catch (ArgumentException) { reason = "The current packed outbound path is invalid."; reply = null; evidence = RegionReplyPathEvidence.None; }
                 }
-                plans.Add(new(owner.NodeId, owner.SessionId, owner.Generation, publicKey, current, preparation, reply, evidence, timeProvider.GetUtcNow(), reason));
+                if (readConflict) { preparation = RegionDiscoveryPreparation.NoUsableReplyPath; reason = "The contact changed while preflight was reading it; prepare a new plan."; }
+                plans.Add(new(owner.NodeId, owner.SessionId, owner.Generation, publicKey, current, preparation, reply, evidence, timeProvider.GetUtcNow(), reason, observationVersion));
             }
             token.ThrowIfCancellationRequested();
             return new RegionDiscoveryPreflightResult(plans.AsReadOnly(), repeaters.Count(n => !n.HasFullPublicKey), Math.Max(0, keys.Length - maximumTargets));

@@ -2,7 +2,7 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: **REGION0–REGION22 выполнены; REGION23–REGION34 не начаты.**
+16.10.2026: **REGION0–REGION23 выполнены; REGION24–REGION34 не начаты.**
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -67,7 +67,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION20](region20-private-application.md) | Default scope в цикле ЛС |
 | ☑ | [REGION21](region21-application-budget.md) | Budget и admission для выбранного канала |
 | ☑ | [REGION22](region22-discovery-preflight.md) | Проверка целей discovery |
-| ☐ | [REGION23](region23-discovery-route.md) | Временный direct route и восстановление |
+| ☑ | [REGION23](region23-discovery-route.md) | Временный direct route и восстановление |
 | ☐ | [REGION24](region24-discovery-service.md) | Полный поиск и локальные наблюдения |
 | ☐ | [REGION25](region25-core-acceptance.md) | Сквозная приёмка Core |
 | ☐ | [REGION26](region26-gui-design.md) | Совместное проектирование GUI |
@@ -137,7 +137,7 @@ REGION23 реализует только нужное discovery владение
 
 ## Готовый запрос для следующей сессии
 
-> Выполни REGION23 по docs/messenger/plan/region23-discovery-route.md.
+> Выполни REGION24 по docs/messenger/plan/region24-discovery-service.md.
 > Сначала прочитай AGENTS.md и маршрут чтения в docs/README.md.
 > Проверь код и результаты зависимостей, затем реализуй только выбранный подэтап,
 > выполни его проверки и обнови документацию фактическими результатами.

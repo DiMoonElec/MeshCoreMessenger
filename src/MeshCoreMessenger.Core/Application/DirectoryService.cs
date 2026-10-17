@@ -60,7 +60,7 @@ public sealed class DirectoryService(IDirectoryStore directories, TimeProvider t
             cancellationToken);
     }
 
-    private static DirectoryContactSnapshot ToSnapshot(Contact contact)
+    internal static DirectoryContactSnapshot ToSnapshot(Contact contact)
     {
         ArgumentNullException.ThrowIfNull(contact);
         if (contact.PublicKey.Length != 32 || contact.OutPath.Length != 64)

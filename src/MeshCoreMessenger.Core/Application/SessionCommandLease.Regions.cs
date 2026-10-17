@@ -7,6 +7,26 @@ namespace MeshCoreMessenger.Core.Application;
 
 public sealed partial class SessionCommandLease
 {
+    internal long ContactObservationVersion(ReadOnlyMemory<byte> key) => _scope.ContactObservationVersion(key);
+    internal bool IsSessionOpen => _scope.IsOpen;
+    internal SessionCommandLease CreateCleanupLease(CancellationToken cleanupToken)
+    {
+        lock (_scope.Gate) { EnsureUsable(); _scope.EnsureOpen(); return _scope.Acquire(Target, cleanupToken); }
+    }
+    internal Task FlushClientEventsAsync() => OwnAsync(() => _scope.Invoke(this, async (client, token) =>
+    { await client.FlushEventsAsync(token).ConfigureAwait(false); return true; }), requireAdmission: true);
+    internal Task PersistContactReadbackAsync(IDirectoryStore store, Contact contact, DateTimeOffset observedUtc, CancellationToken token) =>
+        OwnAsync(async () =>
+        {
+            token.ThrowIfCancellationRequested();
+            await store.ApplyContactReadbackAsync(Owner.NodeId, Owner.SessionId, DirectoryService.ToSnapshot(contact), observedUtc, token).ConfigureAwait(false);
+            return true;
+        }, requireAdmission: true);
+    internal Task<RegionNamesResponse> RequestRegionsAsync(ReplyPath path, TimeSpan? timeout = null)
+    {
+        if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("A full repeater target is required.");
+        return OwnAsync(() => _scope.Invoke(this, (client, token) => client.RequestRegionsAsync(contact.PublicKey, path, timeout, token)), requireAdmission: true);
+    }
     internal static FloodScopeSelection WireScope(ResolvedRegionScope scope) => scope.State switch
     {
         StoredRegionScopeState.KnownScoped => FloodScopeSelection.ExplicitRegion(scope.Key!),

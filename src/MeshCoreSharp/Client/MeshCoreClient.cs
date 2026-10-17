@@ -240,7 +240,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         var key = command.AsMemory(1); // The command owns the captured key before the first await.
         var packet = await _dispatcher.SendAsync<ContactPacket>(CommandType.GetContactByKey, command,
             nameof(GetContactAsync), _options.CommandTimeout, cancellationToken,
-            acceptsPacket: packet => packet.Contact.PublicKey.Span.SequenceEqual(key.Span)).ConfigureAwait(false);
+            acceptsPacket: packet => packet.Contact.PublicKey.Span.SequenceEqual(key.Span), invalidateOnUncertainResponse: true).ConfigureAwait(false);
         return packet.Contact;
     }
 
@@ -252,7 +252,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         await _dispatcher.SendAsync<OkPacket>(CommandType.AddOrUpdateContact,
             CompanionCommands.AddOrUpdateContact(contact), nameof(AddOrUpdateContactAsync),
-            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok, invalidateOnUncertainResponse: true).ConfigureAwait(false);
     }
 
     /// <summary>Creates or replaces a Companion contact from a contact received in a list or NEW_ADVERT.</summary>
@@ -276,7 +276,7 @@ public sealed class MeshCoreClient : IAsyncDisposable
         EnsureReady();
         await _dispatcher.SendAsync<OkPacket>(CommandType.ResetPath,
             CompanionCommands.ResetPath(publicKey.Span), nameof(ResetPathAsync),
-            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok).ConfigureAwait(false);
+            _options.CommandTimeout, cancellationToken, type => type == PacketType.Ok, invalidateOnUncertainResponse: true).ConfigureAwait(false);
     }
 
     /// <summary>Removes a Companion contact using its complete 32-byte public key.</summary>

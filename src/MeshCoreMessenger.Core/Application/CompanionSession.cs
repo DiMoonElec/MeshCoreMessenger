@@ -1,5 +1,6 @@
 using System.Runtime.ExceptionServices;
 using System.Threading.Channels;
+using System.Collections.Concurrent;
 using MeshCoreMessenger.Core.Domain;
 using MeshCoreMessenger.Core.Persistence;
 using MeshCoreSharp;
@@ -25,6 +26,13 @@ public sealed class CompanionSession : IAsyncDisposable
     private SessionCommandScope? _commands;
     private int _disposed;
     private readonly IRegionStore? _regions;
+    private readonly ConcurrentDictionary<string, long> _contactObservations = new(StringComparer.Ordinal);
+    private long ContactObservationVersion(ReadOnlyMemory<byte> key) => _contactObservations.GetValueOrDefault(Convert.ToHexString(key.Span));
+    private void ObserveContact(ReadOnlyMemory<byte> key)
+    {
+        if (key.Length == ProtocolLimits.PublicKeySize)
+            _contactObservations.AddOrUpdate(Convert.ToHexString(key.Span), 1, static (_, version) => unchecked(version + 1));
+    }
 
     internal CompanionSession(
         Guid sessionId,
@@ -74,7 +82,7 @@ public sealed class CompanionSession : IAsyncDisposable
     {
         EnsureIdentified();
         if (_commands is not null) throw new InvalidOperationException("Command admission has already been opened for this session.");
-        return _commands = gateway.Open(new(LocalNodeId!.Value, SessionId, Generation, LocalNode!.Name, RegionCapabilities, DefaultRegion), _client);
+        return _commands = gateway.Open(new(LocalNodeId!.Value, SessionId, Generation, LocalNode!.Name, RegionCapabilities, DefaultRegion), _client, ContactObservationVersion);
     }
 
     internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
@@ -401,8 +409,11 @@ public sealed class CompanionSession : IAsyncDisposable
     private void OnPacketReceived(object? sender, CompanionPacketEventArgs args) =>
         CopyPacket(CompanionSessionEventKind.PacketReceived, args);
 
-    private void OnPushPacketReceived(object? sender, CompanionPacketEventArgs args) =>
+    private void OnPushPacketReceived(object? sender, CompanionPacketEventArgs args)
+    {
+        if (args.Packet is MeshCoreSharp.Protocol.Packets.PathUpdatedPacket path) ObserveContact(path.PublicKey);
         CopyPacket(CompanionSessionEventKind.PushPacketReceived, args);
+    }
 
     private void OnUnhandledPacketReceived(object? sender, CompanionPacketEventArgs args) =>
         CopyPacket(CompanionSessionEventKind.UnhandledPacketReceived, args);
@@ -423,11 +434,14 @@ public sealed class CompanionSession : IAsyncDisposable
             Message = CopyMessage(args.Message),
         });
 
-    private void OnAdvertisementReceived(object? sender, AdvertisementReceivedEventArgs args) =>
+    private void OnAdvertisementReceived(object? sender, AdvertisementReceivedEventArgs args)
+    {
+        ObserveContact(args.Advertisement.PublicKey);
         _events.Writer.TryWrite(NewEvent(CompanionSessionEventKind.AdvertisementReceived) with
         {
             Advertisement = CopyAdvertisement(args.Advertisement),
         });
+    }
 
     private CompanionSessionEvent NewEvent(CompanionSessionEventKind kind) => new()
     {

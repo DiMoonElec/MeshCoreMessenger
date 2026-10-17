@@ -53,6 +53,7 @@ public static class AppBootstrap
         services.AddSingleton(storage.Regions);
         services.AddSingleton<IRegionService, RegionService>();
         services.AddSingleton<IRegionDiscoveryPreflight, RegionDiscoveryPreflight>();
+        services.AddSingleton<IRegionDiscoveryRouteWorkflow, RegionDiscoveryRouteWorkflow>();
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<ISearchDelay, SystemSearchDelay>();
         services.AddSingleton<IDraftDelay, SystemDraftDelay>();

@@ -7,6 +7,8 @@
 `GET_CONTACT_BY_KEY (30)`: `1E | full public key (32)`, ответ — один обычный
 `CONTACT` или `ERROR/NOT_FOUND`. Реализован `MeshCoreClient.GetContactAsync`;
 проверяется полный ключ ответа, global command gate освобождается после ответа.
+После возможного TX timeout/cancellation/malformed reply закрывает command admission:
+нужна новая сессия, чтобы поздний CONTACT не подтвердил следующий запрос того же ключа.
 
 `PATH_UPDATED (0x81)`: `81 | full public key (32)` — push-уведомление о маршруте,
 без самого пути. Реализован `PathUpdatedPacket`; приложение может запросить контакт
@@ -33,6 +35,9 @@ always 64 bytes even when only a prefix is meaningful.
 return `OK/ERROR`; add can report `TABLE_FULL`, and removal reports `NOT_FOUND` when
 the key is absent. Neither command performs an RF transmission. Contact persistence
 is scheduled lazily by firmware, while its in-memory list changes before `OK`.
+`AddOrUpdateContactAsync` and `ResetPathAsync` also invalidate the session after an
+uncertain immediate response; a late untagged OK must not confirm another mutation.
+Definite ERROR remains recoverable without reconnect; no command is replayed.
 
 
 `RESET_PATH (13)` принимает `0D | public key (32)` и возвращает OK/ERROR

@@ -525,6 +525,14 @@ public sealed partial class SessionCommandGatewayTests
         public Func<Task>? ChannelSendAction { get; set; }
         public IReadOnlyList<Contact>? PreflightContacts { get; set; }
         public Func<ReadOnlyMemory<byte>, CancellationToken, Task<Contact>>? ContactRead { get; set; }
+        public Func<ContactConfiguration, CancellationToken, Task>? ContactWrite { get; set; }
+        public Func<ReadOnlyMemory<byte>, ReplyPath, CancellationToken, Task<RegionNamesResponse>>? RegionRequest { get; set; }
+        public int RegionRequestCount { get; private set; }
+        public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> key, ReplyPath replyPath, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default)
+        {
+            RegionRequestCount++;
+            return RegionRequest?.Invoke(key, replyPath, cancellationToken) ?? Task.FromResult(new RegionNamesResponse(1, 1, Array.AsReadOnly(new[] { "Area" })));
+        }
         public Func<CancellationToken, Task<TextMessageSendResult>>? PrivateSendAction { get; set; }
         public Func<uint, byte, CancellationToken, Task<TextMessageSendResult>>? CapturedPrivateSendAction { get; set; }
         public Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
@@ -546,7 +554,7 @@ public sealed partial class SessionCommandGatewayTests
         public Task AddOrUpdateContactAsync(ContactConfiguration contact, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested(); Interlocked.Increment(ref Tx);
-            MutatedContactKey = contact.PublicKey.ToArray(); Mutations.Enqueue("add"); return Task.CompletedTask;
+            MutatedContactKey = contact.PublicKey.ToArray(); Mutations.Enqueue("add"); return ContactWrite?.Invoke(contact, cancellationToken) ?? Task.CompletedTask;
         }
         public Task RemoveContactAsync(ReadOnlyMemory<byte> key, CancellationToken cancellationToken = default)
         {
@@ -567,7 +575,8 @@ public sealed partial class SessionCommandGatewayTests
         public event EventHandler<CompanionPacketEventArgs>? PacketReceived { add { } remove { } }
         public event EventHandler<CompanionPacketEventArgs>? PushPacketReceived { add { } remove { } }
         public event EventHandler<CompanionPacketEventArgs>? UnhandledPacketReceived { add { } remove { } }
-        public event EventHandler<AdvertisementReceivedEventArgs>? AdvertisementReceived { add { } remove { } }
+        public event EventHandler<AdvertisementReceivedEventArgs>? AdvertisementReceived;
+        public void EmitAdvertisement(Contact contact) => AdvertisementReceived?.Invoke(this, new(new(contact.PublicKey, contact)));
         public event EventHandler<MessageReceivedEventArgs>? MessageReceived;
         public void EmitMessage(ReceivedMessage message) => MessageReceived?.Invoke(this, new(message));
         private async Task Phase(string name, CancellationToken token)

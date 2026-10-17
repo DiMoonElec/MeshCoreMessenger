@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Ограниченная операция подготовки контакта для запроса регионов.
 
@@ -41,11 +41,19 @@ region-design.md: «Discovery в приложении»; d10-contact-mutations.m
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION24](region24-discovery-service.md).
+IRegionDiscoveryRouteWorkflow требует явный consent для implicit contact creation/temporary zero-hop. Общий ConversationOperationGuard владеет full-key контактом до terminal response и cleanup, конфликтуя с private jobs и ручным reset. Перед mutation проверяются owner, свежий полный контакт и revision плана. После принятого SET выполняется независимый от caller cancellation bounded readback; только доказанный zero-hop допускает request/conditional restore. Неоднозначный SET или недостоверный readback не запускает слепой restore.
+
+CompanionSession ведёт per-key observation version по ADVERT/PATH_UPDATED. Plan и prepared snapshot содержат её; event barrier и свежий GET перед restore обнаруживают новый advert/route даже при неизменившихся wire fields. Restore не выполняется при конфликте или закрытой session. После restore есть полный GET и проверка configuration. Firmware не предоставляет compare-and-set: гарантия относится к владению приложения и наблюдённым изменениям; финальный readback выявляет несовпадение результата.
+
+Response, preparation, restoration, implicit creation и ошибки разделены в RegionRouteRequestResult. Новый контакт после anonymous request только перечитывается и сохраняется, не удаляется автоматически. Single-contact readback обновляет SQLite атомарно без retirement остальных контактов/каналов; проверяет active NodeId/SessionId и observation time, публикуется после commit. Timeout/cancellation/malformed response после TX у GetContact/AddOrUpdate/ResetPath закрывает library admission, исключая поздний CONTACT/OK в следующей операции.
+
+Проверки: Core541/541; финальные workflow cases15/15; library228/228; Release solution build0 warnings/errors, Desktop bootstrap6/6. Покрыты terminal wait ownership, restore точных fields, cancel/timeout, новый advert/route, table-full, stale owner, disconnect/late response, commit failure и node/session/time guards. Аппаратные проверки остаются REGION32–33; универсальный D10 не реализовывался.
+
+Следующий шаг — [REGION24](region24-discovery-service.md).

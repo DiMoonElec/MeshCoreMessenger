@@ -73,13 +73,13 @@ public sealed class SessionCommandGateway(
         _ => throw new ArgumentException("An exact command target is required.", nameof(target)),
     };
 
-    internal SessionCommandScope Open(SessionCommandOwner owner, ICompanionClient client)
+    internal SessionCommandScope Open(SessionCommandOwner owner, ICompanionClient client, Func<ReadOnlyMemory<byte>, long>? contactVersion = null)
     {
         lock (_gate)
         {
             if (_active is not null && !_active.OperationsCompleted) throw new InvalidOperationException("The previous command scope has not drained.");
             if (outgoing.IsPaused) throw new OutgoingPersistenceException(new InvalidOperationException("Outgoing writes are paused."));
-            return _active = new SessionCommandScope(owner, client, directories, directory, messages, outgoing, timeProvider);
+            return _active = new SessionCommandScope(owner, client, directories, directory, messages, outgoing, timeProvider, contactVersion);
         }
     }
 
@@ -96,8 +96,9 @@ public sealed class SessionCommandGateway(
 internal sealed class SessionCommandScope(
     SessionCommandOwner owner, ICompanionClient client, IDirectoryStore directories,
     IConversationDirectoryReader directory, IOutgoingMessageStore messages,
-    IDurableOutgoingWrites outgoing, TimeProvider timeProvider)
+    IDurableOutgoingWrites outgoing, TimeProvider timeProvider, Func<ReadOnlyMemory<byte>, long>? contactVersion = null)
 {
+    internal long ContactObservationVersion(ReadOnlyMemory<byte> publicKey) => contactVersion?.Invoke(publicKey) ?? 0;
     internal readonly object Gate = new();
     private readonly SemaphoreSlim _regionGate = new(1, 1);
     private NodeRegionSnapshot? _regionSnapshot = owner.DefaultRegion;

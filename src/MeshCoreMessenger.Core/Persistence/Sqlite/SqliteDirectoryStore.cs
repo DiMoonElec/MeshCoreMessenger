@@ -7,6 +7,25 @@ namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader reader) : IDirectoryStore
 {
     public event EventHandler<ContactRouteCommit>? ContactRouteCommitted;
+    public async Task ApplyContactReadbackAsync(Guid nodeId, Guid sessionId, DirectoryContactSnapshot contact, DateTimeOffset observedUtc,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateSnapshot(nodeId, sessionId, [contact], []);
+        var captured = Clone(contact);
+        await writer.ExecuteAsync(connection =>
+        {
+            using var transaction = connection.BeginTransaction();
+            using var owner = connection.CreateCommand(); owner.Transaction = transaction;
+            owner.CommandText = "SELECT 1 FROM Sessions WHERE Id=$session AND NodeId=$node AND EndedUtc IS NULL";
+            owner.Parameters.AddWithValue("$session", sessionId.ToString("D")); owner.Parameters.AddWithValue("$node", nodeId.ToString("D"));
+            if (owner.ExecuteScalar() is null) throw new InvalidOperationException("Contact readback belongs to a closed or different node session.");
+            ApplyContacts(connection, transaction, nodeId, [captured], observedUtc.ToUniversalTime(), retireMissing: false);
+            transaction.Commit(); return true;
+        }, cancellationToken).ConfigureAwait(false);
+        var commit = new ContactRouteCommit(nodeId, sessionId, captured.PublicKey);
+        foreach (EventHandler<ContactRouteCommit> handler in ContactRouteCommitted?.GetInvocationList() ?? [])
+            try { handler(this, commit); } catch { /* Post-commit observers cannot undo the readback. */ }
+    }
     public Task<DirectorySnapshotResult> ApplySnapshotAsync(
         Guid nodeId,
         Guid sessionId,
@@ -278,10 +297,12 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
         SqliteTransaction transaction,
         Guid nodeId,
         IReadOnlyList<DirectoryContactSnapshot> contacts,
-        DateTimeOffset observedUtc)
+        DateTimeOffset observedUtc,
+        bool retireMissing = true)
     {
-        using (var missing = connection.CreateCommand())
+        if (retireMissing)
         {
+            using var missing = connection.CreateCommand();
             missing.Transaction = transaction;
             missing.CommandText = "UPDATE Contacts SET PresentOnNode = 0, UpdatedUtc = $observedUtc WHERE NodeId = $nodeId;";
             missing.Parameters.AddWithValue("$nodeId", nodeId.ToString("D"));
@@ -312,7 +333,8 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
                     LastAdvertUtc = excluded.LastAdvertUtc,
                     Latitude = excluded.Latitude,
                     Longitude = excluded.Longitude,
-                    UpdatedUtc = excluded.UpdatedUtc;
+                    UpdatedUtc = excluded.UpdatedUtc
+                WHERE $allowStale = 1 OR Contacts.UpdatedUtc <= excluded.UpdatedUtc;
                 """;
             command.Parameters.AddWithValue("$nodeId", nodeId.ToString("D"));
             command.Parameters.Add("$publicKey", SqliteType.Blob).Value = contact.PublicKey;
@@ -326,7 +348,9 @@ internal sealed class SqliteDirectoryStore(DatabaseWorker writer, DatabaseReader
             command.Parameters.AddWithValue("$latitude", contact.Latitude);
             command.Parameters.AddWithValue("$longitude", contact.Longitude);
             command.Parameters.AddWithValue("$updatedUtc", observedUtc.ToString("O"));
-            command.ExecuteNonQuery();
+            command.Parameters.AddWithValue("$allowStale", retireMissing ? 1 : 0);
+            if (command.ExecuteNonQuery() != 1 && !retireMissing)
+                throw new InvalidOperationException("A newer contact observation has already been committed.");
         }
     }
 
