@@ -2,9 +2,9 @@ using Microsoft.Data.Sqlite;
 
 namespace MeshCoreMessenger.Core.Persistence.Sqlite;
 
-internal static class DatabaseMigrator
+internal static partial class DatabaseMigrator
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     private static readonly Migration[] Migrations =
     [
@@ -16,6 +16,7 @@ internal static class DatabaseMigrator
         new(6, "Private incoming retry event identities", IncomingRetryIdentitiesSql),
         new(7, "BLE connection profiles", BleProfilesSql, RebuildProfiles: true),
         new(8, "Node-scoped region catalogue and observations", RegionsSql, VerifyForeignKeys: true),
+        new(9, "Immutable send attempt region scopes", SendAttemptScopesSql, VerifyForeignKeys: true),
     ];
 
     public static void ApplyPending(SqliteConnection connection, int targetVersion = CurrentVersion)

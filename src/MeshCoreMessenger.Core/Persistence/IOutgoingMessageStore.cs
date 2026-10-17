@@ -5,6 +5,8 @@ namespace MeshCoreMessenger.Core.Persistence;
 public interface IOutgoingMessageStore
 {
     event EventHandler<OutgoingMessageCommit>? MessageCommitted;
+    Task<ResolvedRegionScope> GetAttemptScopeAsync(Guid nodeId, Guid attemptId, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     Task<bool> EnrichDeliveryRouteAsync(LearnedDeliveryRoute observation, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
     Task<PreparedOutgoingMessage> PrepareAsync(PrepareOutgoingMessage message, CancellationToken cancellationToken = default);

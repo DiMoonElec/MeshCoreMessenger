@@ -2,7 +2,7 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-16.10.2026: **REGION0–REGION17 выполнены; REGION18–REGION34 не начаты.**
+16.10.2026: **REGION0–REGION18 выполнены; REGION19–REGION34 не начаты.**
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -62,7 +62,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION15](region15-catalog-service.md) | Локальные операции каталога и канала |
 | ☑ | [REGION16](region16-session-read.md) | Capabilities и чтение default в сессии |
 | ☑ | [REGION17](region17-default-service.md) | Изменение default ноды с readback |
-| ☐ | [REGION18](region18-attempt-storage.md) | Хранение scope исходящих попыток |
+| ☑ | [REGION18](region18-attempt-storage.md) | Хранение scope исходящих попыток |
 | ☐ | [REGION19](region19-channel-application.md) | Region scope в отправке и повторе канала |
 | ☐ | [REGION20](region20-private-application.md) | Default scope в цикле ЛС |
 | ☐ | [REGION21](region21-application-budget.md) | Budget и admission для выбранного канала |
@@ -137,7 +137,7 @@ REGION23 реализует только нужное discovery владение
 
 ## Готовый запрос для следующей сессии
 
-> Выполни REGION18 по docs/messenger/plan/region18-attempt-storage.md.
+> Выполни REGION19 по docs/messenger/plan/region19-channel-application.md.
 > Сначала прочитай AGENTS.md и маршрут чтения в docs/README.md.
 > Проверь код и результаты зависимостей, затем реализуй только выбранный подэтап,
 > выполни его проверки и обнови документацию фактическими результатами.

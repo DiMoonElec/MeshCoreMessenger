@@ -351,6 +351,7 @@ public sealed partial class OutgoingMessageStoreTests
     {
         using var command = connection.CreateCommand();
         command.CommandText = """
+            DROP TABLE SendAttemptScopes;
             DROP TABLE ChannelRegionPreferences; DROP TABLE Regions;
             DROP TABLE NodeRegionSnapshots; DROP TABLE RegionObservations;
             DROP INDEX UX_Sessions_Id_Node;

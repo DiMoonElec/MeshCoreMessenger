@@ -90,6 +90,8 @@ internal sealed partial class SqliteOutgoingMessageStore
                     capture.Route.Descriptor != request.Route.Descriptor || capture.Route.ObservedUtc != request.Route.ObservedUtc ||
                     !capture.Route.Path.Span.SequenceEqual(request.Route.Path.Span))
                     throw new InvalidOperationException("Preparation ID already has a different immutable capture.");
+                if (request.Scope is { } capturedScope)
+                    CheckScopeEqual(ScopeOrLegacy(capturedScope, request.NodeId, request.SessionId), ReadAttemptScope(connection, transaction, request.NodeId, attempt.Id));
                 return (new(new(request.MessageId, ReadSequence(connection, transaction, request.MessageId), attempt), capture), message.ConversationId, false);
             }
         }
@@ -101,6 +103,9 @@ internal sealed partial class SqliteOutgoingMessageStore
             throw new InvalidOperationException("Private cycle is finished or its attempt changed.");
         var first = request.ExpectedAttemptNumber == 0;
         var latest = attempts[^1];
+        var originalScope = ReadAttemptScope(connection, transaction, request.NodeId, attempts[0].Id);
+        if (request.Scope is { } requestedScope)
+            CheckScopeEqual(ScopeOrLegacy(requestedScope, request.NodeId, request.SessionId), originalScope);
         if (latest.SessionId != request.SessionId || (first
                 ? attempts.Count != 1 || latest.State != SendAttemptState.Prepared || latest.WireTimestamp is not null
                 : latest.AttemptNumber != request.ExpectedAttemptNumber || latest.State != SendAttemptState.Unconfirmed || latest.AckExpectation != AckExpectation.Expected))
@@ -132,6 +137,7 @@ internal sealed partial class SqliteOutgoingMessageStore
                 """, ("$id", attemptId), ("$message", request.MessageId), ("$session", request.SessionId),
                 ("$number", step.AttemptNumber), ("$utc", request.PreparedPcTime));
             insert.ExecuteNonQuery();
+            InsertAttemptScope(connection, transaction, attemptId, originalScope);
         }
         using (var capture = Command(connection, transaction, """
             UPDATE SendAttempts SET PrivatePreparationId=$preparation,WireMessageId=$wire,WireAttempt=$attempt,WireTimestamp=$timestamp,

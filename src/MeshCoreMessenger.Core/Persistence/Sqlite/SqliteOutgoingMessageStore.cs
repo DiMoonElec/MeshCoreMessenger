@@ -36,6 +36,7 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
             recipient.Kind == ConversationKind.Channel && (recipient.ChannelBindingId is null || recipient.Slot is null || recipient.BindingGeneration is not > 0))
             throw new ArgumentException("Recipient binding is incomplete or inappropriate.", nameof(message));
         message = message with { Recipient = recipient, PreparedUtc = message.PreparedUtc.ToUniversalTime() };
+        _ = ScopeOrLegacy(message.Scope, message.NodeId, message.SessionId, message.MaxUtf8Bytes);
         var outcome = await writer.ExecuteAsync(connection => Prepare(connection, message), cancellationToken).ConfigureAwait(false);
         if (outcome.Inserted) Notify(new(message.NodeId, message.ConversationId, outcome.Message.MessageId, true));
         return outcome.Message;
@@ -70,6 +71,8 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
                 var sequence = row.GetInt64(0);
                 row.Close();
                 var attempts = ReadAttempts(connection, transaction, message.NodeId, message.OperationId);
+                CheckScopeEqual(ScopeOrLegacy(message.Scope, message.NodeId, message.SessionId),
+                    ReadAttemptScope(connection, transaction, message.NodeId, attempts[0].Id));
                 transaction.Commit();
                 return (new(message.OperationId, sequence, attempts[0]), false);
             }
@@ -93,6 +96,7 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
             """, ("$id", attemptId), ("$message", message.OperationId), ("$session", message.SessionId),
             ("$utc", message.PreparedUtc), ("$conversation", message.ConversationId))) insert.ExecuteNonQuery();
         var attempt = ReadAttempts(connection, transaction, message.NodeId, message.OperationId)[0];
+        InsertAttemptScope(connection, transaction, attemptId, ScopeOrLegacy(message.Scope, message.NodeId, message.SessionId));
         transaction.Commit();
         return (new(message.OperationId, sequenceId, attempt), true);
     }
@@ -174,6 +178,10 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
             var original = row.GetString(2); var text = row.GetString(3); row.Close();
             var attempts = ReadAttempts(connection, transaction, repeat.NodeId, repeat.MessageId);
             var latest = attempts[^1];
+            var originalScope = ReadAttemptScope(connection, transaction, repeat.NodeId, attempts[0].Id);
+            var repeatScope = ScopeOrLegacy(repeat.Scope ?? (originalScope.CanReplayExactly ? originalScope : null), repeat.NodeId, repeat.SessionId);
+            if (originalScope.CanReplayExactly && (repeatScope.State != originalScope.State || !Equals(repeatScope.Key, originalScope.Key) || repeatScope.Name != originalScope.Name))
+                throw new InvalidOperationException("Exact channel repeat cannot replace its original scope.");
             if (latest.AttemptNumber != repeat.ExpectedAttemptNumber || latest.State == SendAttemptState.Sending ||
                 latest.State == SendAttemptState.Accepted && latest.AckExpectation != AckExpectation.NotExpected)
                 throw new InvalidOperationException("The message attempt has changed or is still sending.");
@@ -186,6 +194,7 @@ internal sealed partial class SqliteOutgoingMessageStore(DatabaseWorker writer, 
                 """, ("$id", id), ("$message", repeat.MessageId), ("$session", repeat.SessionId),
                 ("$number", checked(latest.AttemptNumber + 1)), ("$utc", repeat.PreparedUtc.ToUniversalTime()));
             insert.ExecuteNonQuery();
+            InsertAttemptScope(connection, transaction, id, repeatScope);
             var attempt = ReadAttempts(connection, transaction, repeat.NodeId, repeat.MessageId)[^1];
             transaction.Commit();
             return (Prepared: new PreparedOutgoingMessage(repeat.MessageId, sequence, attempt), Conversation: conversation);

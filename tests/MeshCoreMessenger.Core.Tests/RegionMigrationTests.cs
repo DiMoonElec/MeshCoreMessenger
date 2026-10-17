@@ -40,7 +40,7 @@ public sealed class RegionMigrationTests
     public void UpgradeCreatesInheritedPreferencesWithoutTouchingExistingDirectoriesOrProfiles()
     {
         using var connection = Open(); Execute(connection, Seed); DatabaseMigrator.ApplyPending(connection);
-        Assert.Equal(8, Number(connection, "PRAGMA user_version"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "PRAGMA user_version"));
         Assert.Equal(2, Number(connection, "SELECT COUNT(*) FROM ChannelRegionPreferences WHERE Mode=0 AND RegionId IS NULL AND Revision=0"));
         Assert.Equal(2, Number(connection, "SELECT COUNT(*) FROM ConnectionProfiles"));
         Assert.Equal(3, Number(connection, "SELECT COUNT(*) FROM Sessions"));
@@ -48,7 +48,7 @@ public sealed class RegionMigrationTests
         Assert.Equal(0, Number(connection, "SELECT COUNT(*) FROM Regions"));
         Assert.Equal(0, Number(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check"));
         Assert.Equal(4, Number(connection, "SELECT COUNT(*) FROM sqlite_schema WHERE type='index' AND name IN('UX_Sessions_Id_Node','IX_Regions_Node_Archived','IX_ChannelRegionPreferences_Region','IX_RegionObservations_Node_LastSeen')"));
-        DatabaseMigrator.ApplyPending(connection); Assert.Equal(8, Number(connection, "SELECT COUNT(*) FROM SchemaMigrations"));
+        DatabaseMigrator.ApplyPending(connection); Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "SELECT COUNT(*) FROM SchemaMigrations"));
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class RegionMigrationTests
         Assert.Equal(0, Number(connection, "SELECT COUNT(*) FROM sqlite_schema WHERE name IN('Regions','ChannelRegionPreferences','NodeRegionSnapshots','RegionObservations','UX_Sessions_Id_Node')"));
         Assert.Equal(2, Number(connection, "SELECT COUNT(*) FROM Channels"));
         Execute(connection, "DROP TRIGGER FailRegionMigration"); DatabaseMigrator.ApplyPending(connection);
-        Assert.Equal(8, Number(connection, "PRAGMA user_version"));
+        Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "PRAGMA user_version"));
     }
 
     [Fact]
@@ -91,7 +91,7 @@ public sealed class RegionMigrationTests
         foreach (var version in new[] { 0, 1 })
         {
             using var connection = Open(version); DatabaseMigrator.ApplyPending(connection);
-            Assert.Equal(8, Number(connection, "PRAGMA user_version"));
+            Assert.Equal(DatabaseMigrator.CurrentVersion, Number(connection, "PRAGMA user_version"));
             Assert.Equal(0, Number(connection, "SELECT COUNT(*) FROM pragma_foreign_key_check"));
         }
     }
@@ -111,7 +111,7 @@ public sealed class RegionMigrationTests
             Assert.Equal("keep", await reopened.Settings.GetAsync("region-marker", TestContext.Current.CancellationToken));
         Assert.Single(Directory.GetFiles(fixture.Paths.BackupsDirectory, "*.db"));
         using var current = SqliteDatabase.CreateConnection(fixture.Paths.DatabasePath, SqliteOpenMode.ReadOnly);
-        current.Open(); Assert.Equal(8, Number(current, "PRAGMA user_version"));
+        current.Open(); Assert.Equal(DatabaseMigrator.CurrentVersion, Number(current, "PRAGMA user_version"));
         Assert.Equal(2, Number(current, "SELECT COUNT(*) FROM ChannelRegionPreferences WHERE Mode=0 AND RegionId IS NULL"));
     }
 

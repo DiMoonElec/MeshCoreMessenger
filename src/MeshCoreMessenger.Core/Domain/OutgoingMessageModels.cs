@@ -19,7 +19,10 @@ public sealed record OutgoingRecipient(
 public sealed record PrepareOutgoingMessage(
     Guid OperationId, Guid NodeId, Guid SessionId, Guid ConversationId,
     OutgoingRecipient Recipient, string OriginalText, string TransmissionText,
-    int MaxUtf8Bytes, DateTimeOffset PreparedUtc, Guid? PrivateResendSourceId = null);
+    int MaxUtf8Bytes, DateTimeOffset PreparedUtc, Guid? PrivateResendSourceId = null)
+{
+    public ResolvedRegionScope? Scope { get; init; }
+}
 
 public sealed record OutgoingAttemptSnapshot(
     Guid Id, Guid MessageId, Guid? SessionId, int AttemptNumber, SendAttemptState State,
@@ -51,4 +54,7 @@ public sealed record StoredOutgoingMessage(Guid MessageId, Guid NodeId, Guid Con
 
 /// <summary>CAS append of a channel attempt; message body and channel identity remain immutable.</summary>
 public sealed record PrepareChannelRepeat(Guid NodeId, Guid MessageId, Guid SessionId,
-    OutgoingRecipient Recipient, int ExpectedAttemptNumber, DateTimeOffset PreparedUtc);
+    OutgoingRecipient Recipient, int ExpectedAttemptNumber, DateTimeOffset PreparedUtc)
+{
+    public ResolvedRegionScope? Scope { get; init; }
+}

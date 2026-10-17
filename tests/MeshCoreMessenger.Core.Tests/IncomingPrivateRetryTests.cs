@@ -23,6 +23,7 @@ public sealed partial class IncomingMessageStoreTests
         {
             connection.Open(); using var command = connection.CreateCommand();
             command.CommandText = """
+                DROP TABLE SendAttemptScopes;
                 DROP TABLE ChannelRegionPreferences;
                 DROP TABLE Regions;
                 DROP TABLE NodeRegionSnapshots;

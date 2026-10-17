@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Добавочная миграция и immutable scope snapshots.
 
@@ -41,11 +41,17 @@ region-design.md: «Хранение и локальные операции», �
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION19](region19-channel-application.md).
+Миграция schema8→9 добавляет SendAttemptScopes: requested mode/revision, effective state, immutable key16/name/fingerprint, session/generation и budget. Исторические попытки получают LegacyUnknown без вычисления ключей. FK/owner trigger защищают принадлежность попытке, ноде и сессии; UPDATE запрещён. Архив/удаление каталога не затрагивают снимки. Ключи удаляются каскадом только вместе с соответствующими SendAttempts при штатной очистке истории.
+
+PrepareOutgoingMessage/PrepareChannelRepeat/PreparePrivateAttempt имеют typed Scope capture. Initial preparation и scope записываются одной транзакцией; idempotency проверяет весь снимок. Приватные retries сохраняют оригинальный scope; channel repeat не может подменить известный effective scope. GetAttemptScopeAsync возвращает immutable snapshot только для указанной ноды. Снимки не выводят ключи в ToString/диагностику.
+
+Проверки: targeted Core109/109 (outgoing/private/region migrations/incoming/history-clear), Release solution build0 warnings/errors. Новые 9 regression cases: rollback миграции и preparation, idempotency, legacy upgrade+backup, удаление каталога, startup recovery, clear-history, private/channel repeats и две реальные node/session identity. Полный Core результат записан в current-state. Новые API ещё не подключены к channel/private orchestration — это REGION19–20. Реальная пользовательская БД не открывалась, hardware TX не выполнялся.
+
+Следующий шаг — [REGION19](region19-channel-application.md).

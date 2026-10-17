@@ -47,7 +47,10 @@ public sealed record PrivateDeliveryCycleSnapshot(Guid NodeId, Guid MessageId, G
 
 /// <summary>Idempotent CAS preparation. ExpectedAttemptNumber is zero for the existing first Prepared attempt.</summary>
 public sealed record PreparePrivateAttempt(Guid PreparationId, Guid NodeId, Guid MessageId, Guid SessionId,
-    int ExpectedAttemptNumber, PrivateRouteSnapshot Route, DateTimeOffset PreparedPcTime, string PcTimeZoneId);
+    int ExpectedAttemptNumber, PrivateRouteSnapshot Route, DateTimeOffset PreparedPcTime, string PcTimeZoneId)
+{
+    public ResolvedRegionScope? Scope { get; init; }
+}
 
 public sealed record PrivateWireMessageSnapshot(Guid Id, Guid MessageId, int Ordinal, PrivateDeliveryPhase Phase, uint Timestamp);
 
