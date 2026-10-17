@@ -18,6 +18,22 @@
         <TextBlock Classes="settings-heading" Text="Регионы" />
         <TextBlock Text="{Binding NodeLabel}" TextWrapping="Wrap" />
         <TextBlock Classes="settings-hint" Text="Локальный каталог текущей ноды. Добавление региона не меняет настройки устройства." TextWrapping="Wrap" />
+        <Expander Header="Найти регионы у репитеров" HorizontalContentAlignment="Stretch">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Поиск отправляет запросы в эфир. Разрешения ниже действуют только на этот запуск. Новые контакты останутся на ноде; временный маршрут восстанавливается при отсутствии новых изменений." TextWrapping="Wrap" />
+            <CheckBox IsChecked="{Binding AllowContactCreation, Mode=TwoWay}"><TextBlock Text="Разрешить добавление отсутствующих контактов" TextWrapping="Wrap" /></CheckBox>
+            <CheckBox IsChecked="{Binding AllowTemporaryZeroHop, Mode=TwoWay}"><TextBlock Text="Разрешить временный zero-hop маршрут" TextWrapping="Wrap" /></CheckBox>
+            <WrapPanel><Button Content="Найти / повторить поиск" Command="{Binding SearchCommand}" Margin="0,0,8,8" /><Button Content="Отменить" Command="{Binding CancelSearchCommand}" Margin="0,0,8,8" /></WrapPanel>
+            <TextBlock Text="{Binding DiscoveryStatus}" TextWrapping="Wrap" />
+            <ComboBox ItemsSource="{Binding FoundRegions}" SelectedItem="{Binding SelectedFound, Mode=TwoWay}" PlaceholderText="Результаты поиска" AutomationProperties.Name="Найденные регионы">
+              <ComboBox.ItemTemplate><DataTemplate x:DataType="vm:RegionDiscoveryListItem"><StackPanel><TextBlock Text="{Binding Name}" /><TextBlock Text="{Binding Note}" TextWrapping="Wrap" /><TextBlock Text="{Binding Sources}" TextTrimming="CharacterEllipsis" MaxWidth="320" ToolTip.Tip="{Binding Sources}" /></StackPanel></DataTemplate></ComboBox.ItemTemplate>
+            </ComboBox>
+            <Button Content="Добавить выбранный регион в каталог" Command="{Binding AddFoundCommand}" />
+            <ItemsControl ItemsSource="{Binding DiscoveryOutcomes}">
+              <ItemsControl.ItemTemplate><DataTemplate x:DataType="vm:RegionDiscoveryOutcomeItem"><StackPanel Margin="0,4"><TextBlock Text="{Binding Target}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Target}" /><TextBlock Text="{Binding Status}" TextWrapping="Wrap" /><TextBlock Text="{Binding Restoration}" TextWrapping="Wrap" Opacity="0.7" /></StackPanel></DataTemplate></ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </StackPanel>
+        </Expander>
         <ComboBox ItemsSource="{Binding Catalog}" SelectedItem="{Binding Selected, Mode=TwoWay}" PlaceholderText="Выберите запись каталога" AutomationProperties.Name="Каталог регионов">
           <ComboBox.ItemTemplate><DataTemplate x:DataType="domain:RegionCatalogEntry">
             <StackPanel><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding ProtocolName}" Opacity="0.65" /><TextBlock Text="В архиве" IsVisible="{Binding Archived}" /></StackPanel>

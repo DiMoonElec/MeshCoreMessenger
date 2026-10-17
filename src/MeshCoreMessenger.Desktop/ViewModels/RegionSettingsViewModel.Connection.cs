@@ -34,6 +34,7 @@ public sealed partial class RegionSettingsViewModel
     public void ConfigureConnection(IConnectionSupervisor supervisor, ISessionCommandGateway? commands, IRegionStore? store)
     {
         _supervisor = supervisor; _commands = commands; _store = store;
+        ConfigureDiscovery();
         SetDefaultCommand = new AsyncRelayCommand(() => _track(ExecuteAsync((node, context, token) => ChangeDefaultAsync(node, context, false, token))),
             () => CanChangeDefault && SelectedDefaultRegion is { Archived: false });
         ClearDefaultCommand = new AsyncRelayCommand(() => _track(ExecuteAsync((node, context, token) => ChangeDefaultAsync(node, context, true, token))), () => CanChangeDefault);
@@ -53,8 +54,8 @@ public sealed partial class RegionSettingsViewModel
     {
         if (!IsOnline || _commands is null) return;
         var definition = SelectedDefaultRegion?.Definition;
-        await using var lease = _commands.Acquire(node, new NodeCommandTarget(), token);
-        var result = clear ? await _service!.ClearNodeDefaultAsync(lease.Owner, token) : await _service!.SetNodeDefaultAsync(lease.Owner,
+        var owner = CaptureOwner(node);
+        var result = clear ? await _service!.ClearNodeDefaultAsync(owner, token) : await _service!.SetNodeDefaultAsync(owner,
             definition ?? throw new InvalidOperationException("Select a region."), token);
         if (result.Outcome != RegionDefaultChangeOutcome.Applied)
             await ShowErrorAsync(context, result.Outcome switch
@@ -65,9 +66,17 @@ public sealed partial class RegionSettingsViewModel
                 _ => "Результат изменения региона не подтверждён. Автоматического повтора нет; переподключитесь для чтения состояния.",
             });
     }
+    private SessionCommandOwner CaptureOwner(Guid node)
+    {
+        var snapshot = _supervisor!.Snapshot;
+        if (snapshot.State != ConnectionSupervisorState.Online || snapshot.NodeId != node || snapshot.SessionId is not { } session)
+            throw new InvalidOperationException("The command session changed.");
+        return new(node, session, snapshot.Generation, snapshot.SenderName ?? "", _commands?.GetRegionCapabilities(node), _commands?.GetDefaultRegion(node));
+    }
     private void NotifyConnection()
     {
         OnPropertyChanged(nameof(IsOnline)); OnPropertyChanged(nameof(CanChangeDefault)); OnPropertyChanged(nameof(DefaultStatus));
         SetDefaultCommand?.NotifyCanExecuteChanged(); ClearDefaultCommand?.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanSearch)); SearchCommand?.NotifyCanExecuteChanged(); AddFoundCommand?.NotifyCanExecuteChanged();
     }
 }

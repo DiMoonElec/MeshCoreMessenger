@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: реализован17.10.2026; native приёмка REGION31 pending.**
 
 **Цель:** Поиск, прогресс, источники и явные побочные действия.
 
@@ -48,4 +48,4 @@ region-gui-decisions.md; REGION22–24 contracts.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION30](region30-send-ui.md).
+В карточке Regions Settings добавлены explicit discovery/cancel, progress, consent на контакт/zero-hop только для текущего запуска, источники и per-target outcomes/restore. Сохранение public имени отдельно по кнопке; private переносится в форму импорта без derivation ключа. В UI автоматических радио retries нет; повторный поиск только по кнопке. Core REGION24 сохраняет свои bounds/deadline. UI stale node completion игнорируется, root lifetime ждёт принятые операции. RegionUiTests+bootstrap11/11; Release build0 warnings/errors. Нативная приёмка REGION31 pending; далее REGION30.

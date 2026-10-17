@@ -63,6 +63,7 @@ public sealed partial class RegionSettingsViewModel : ObservableObject, IDisposa
         _contextStop.Cancel(); _contextStop.Dispose(); _contextStop = new(); _context++; _read++;
         _node = node; Catalog.Clear(); Selected = null; Error = null; IsBusy = false;
         AvailableRegions.Clear(); SelectedDefaultRegion = null; _snapshot = null; OnPropertyChanged(nameof(DefaultSnapshot)); NotifyConnection();
+        ResetDiscovery();
         Label = ""; ProtocolName = ""; KeyHex = ""; NotifyCommands();
         if (_initialized) _ = _track(RefreshAsync());
     }
