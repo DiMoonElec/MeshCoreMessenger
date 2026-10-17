@@ -8,6 +8,8 @@ checkpoints описывают результаты на свою дату, а �
 ## Точки входа
 
 - [REGION — внедрение регионов](messenger/plan/stage-region.md) — порядок REGION1–REGION34 и отдельные задания;
+- [Регионы: инструкция пользователя](messenger/regions-user-guide.md) — поиск, каталог, default, регион канала и повторы;
+- [Ручная приёмка REGION32–34](testing/region-user-acceptance.md) — подтверждения пользователя, согласованный объём и отложенные аппаратные проверки;
 - [Простой поиск и каталог регионов](messenger/plan/region-simple-discovery.md) — актуальная архитектура карточки с поиском, отменой, бегунком и +/−; реализовано, пользователь подтвердил работу UI;
 - [Специализированный region catalog test](testing/region-catalog-specialized-test.md) — запуск только по явному запросу пользователя; поиск/retries всех репитеров и JSON для агента, не часть общего test runner;
 - [Пример отправки в канал с регионом](testing/channel-region-send-example.md) — одна opt-in передача, cleanup/readback, JSON receipt и физический результат CatCore;
