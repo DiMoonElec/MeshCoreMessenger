@@ -39,6 +39,7 @@ public sealed class ChatWorkspaceViewModel : ObservableObject
     public ComposerViewModel Composer { get; }
     public ContactRouteResetViewModel RouteReset { get; } = new();
     public ConversationMenuViewModel Menu { get; }
+    public ChannelRegionViewModel? Regions { get; internal set; }
     public RelayCommand DetailsCommand { get; }
     public event EventHandler? DetailsRequested;
     public HistoryClearViewModel HistoryClear

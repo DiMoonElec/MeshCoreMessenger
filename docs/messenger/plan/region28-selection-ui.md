@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: реализован17.10.2026; native приёмка REGION31 pending.**
 
 **Цель:** Подключить три режима канала и online настройку default.
 
@@ -48,4 +48,4 @@ region-gui-decisions.md; REGION17 и REGION19 results.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION29](region29-discovery-ui.md).
+Settings содержит отдельную карточку default: local catalogue selection, explicit SET/CLEAR/readback, freshness/unsupported/unknown. Заголовок канала показывает эффективное значение; ⋯ → «Регион отправки» содержит inherit/unscoped/catalogue, CAS сохранение по stable ChannelId без изменения history/draft/slots. Startup не выполняет мутации. Регрессия offline channel menu/history/draft прошла1/1; catalogue/default/bootstrap9/9; изолированная Release build0 warnings/errors. Manual/theme/keyboard приёмка REGION31 pending. Далее REGION29 и budget wiring REGION30.

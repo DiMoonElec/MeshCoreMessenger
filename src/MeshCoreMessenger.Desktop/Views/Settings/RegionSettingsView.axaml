@@ -4,6 +4,17 @@
   <StackPanel Spacing="16">
     <Border Classes="settings-card">
       <StackPanel Classes="settings-fields">
+        <TextBlock Classes="settings-heading" Text="Регион по умолчанию на ноде" />
+        <TextBlock Text="{Binding DefaultStatus}" TextWrapping="Wrap" />
+        <TextBlock Classes="settings-hint" Text="Используется для ЛС и каналов в режиме «Как у ноды». Изменяется на подключённой ноде только по кнопке." TextWrapping="Wrap" />
+        <ComboBox ItemsSource="{Binding AvailableRegions}" SelectedItem="{Binding SelectedDefaultRegion, Mode=TwoWay}" PlaceholderText="Выберите регион" AutomationProperties.Name="Регион по умолчанию">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="domain:RegionCatalogEntry"><TextBlock Text="{Binding Label}" /></DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <WrapPanel><Button Content="Применить к ноде" Command="{Binding SetDefaultCommand}" Margin="0,0,8,8" /><Button Content="Без региона" Command="{Binding ClearDefaultCommand}" Margin="0,0,8,8" /></WrapPanel>
+      </StackPanel>
+    </Border>
+    <Border Classes="settings-card">
+      <StackPanel Classes="settings-fields">
         <TextBlock Classes="settings-heading" Text="Регионы" />
         <TextBlock Text="{Binding NodeLabel}" TextWrapping="Wrap" />
         <TextBlock Classes="settings-hint" Text="Локальный каталог текущей ноды. Добавление региона не меняет настройки устройства." TextWrapping="Wrap" />

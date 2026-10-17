@@ -36,6 +36,7 @@ public sealed partial class RegionSettingsViewModel : ObservableObject, IDisposa
     private AsyncRelayCommand Command(Func<Guid, long, CancellationToken, Task> action, Func<bool>? enabled = null) =>
         new(() => _track(ExecuteAsync(action)), () => CanEdit && (enabled?.Invoke() ?? true));
     public ObservableCollection<RegionCatalogEntry> Catalog { get; } = [];
+    public ObservableCollection<RegionCatalogEntry> AvailableRegions { get; } = [];
     public AsyncRelayCommand AddPublicCommand { get; }
     public AsyncRelayCommand ImportCommand { get; }
     public AsyncRelayCommand RenameCommand { get; }
@@ -61,6 +62,7 @@ public sealed partial class RegionSettingsViewModel : ObservableObject, IDisposa
         if (_node == node || _stopped) return;
         _contextStop.Cancel(); _contextStop.Dispose(); _contextStop = new(); _context++; _read++;
         _node = node; Catalog.Clear(); Selected = null; Error = null; IsBusy = false;
+        AvailableRegions.Clear(); SelectedDefaultRegion = null; _snapshot = null; OnPropertyChanged(nameof(DefaultSnapshot)); NotifyConnection();
         Label = ""; ProtocolName = ""; KeyHex = ""; NotifyCommands();
         if (_initialized) _ = _track(RefreshAsync());
     }
@@ -72,11 +74,17 @@ public sealed partial class RegionSettingsViewModel : ObservableObject, IDisposa
         try
         {
             var items = await _service.GetRegionsAsync(node, true, token).ConfigureAwait(false);
+            var snapshot = IsOnline ? _commands?.GetDefaultRegion(node) : null;
+            snapshot ??= _store is not null ? await _store.GetNodeSnapshotAsync(node, token).ConfigureAwait(false) : null;
             void Apply()
             {
                 if (!Current(context) || read != _read) return;
                 var selected = Selected?.Id; Catalog.Clear(); foreach (var item in items) Catalog.Add(item);
                 Selected = Catalog.FirstOrDefault(r => r.Id == selected);
+                var defaultId = SelectedDefaultRegion?.Id;
+                AvailableRegions.Clear(); foreach (var item in items.Where(r => !r.Archived)) AvailableRegions.Add(item);
+                SelectedDefaultRegion = AvailableRegions.FirstOrDefault(r => r.Id == defaultId);
+                _snapshot = snapshot; OnPropertyChanged(nameof(DefaultSnapshot)); NotifyConnection();
             }
             if (dispatch) await _dispatcher.InvokeAsync(Apply, token); else Apply();
         }
@@ -117,12 +125,14 @@ public sealed partial class RegionSettingsViewModel : ObservableObject, IDisposa
     private void NotifyCommands()
     {
         OnPropertyChanged(nameof(CanEdit));
+        NotifyConnection();
         foreach (var command in new[] { AddPublicCommand, ImportCommand, RenameCommand, ArchiveCommand, DeleteCommand }) command?.NotifyCanExecuteChanged();
     }
     public void Dispose()
     {
         if (_stopped) return; _stopped = true; _context++;
         if (_service is not null) _service.Changed -= OnChanged;
+        if (_supervisor is not null) _supervisor.StateChanged -= OnConnectionChanged;
         _contextStop.Cancel(); NotifyCommands();
     }
 }

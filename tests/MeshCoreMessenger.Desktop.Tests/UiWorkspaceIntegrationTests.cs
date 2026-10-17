@@ -302,7 +302,7 @@ public sealed partial class UiWorkspaceIntegrationTests
         public MainWindowViewModel CreateRoot(IConversationReadStateStore? readStore = null, IUiDispatcher? dispatcher = null,
             ISendReadinessReader? sendReadiness = null, IMessageService? messageService = null,
             Microsoft.Extensions.Logging.ILogger<MainWindowViewModel>? logger = null, IContactRouteService? contactRoutes = null,
-            ISettingsStore? preferencesStore = null)
+            ISettingsStore? preferencesStore = null, bool includeRegions = false)
         {
             FailingDraftStore = new FaultingDraftStore(Storage.Drafts);
             Drafts = new DraftWriteTracker(FailingDraftStore, TimeProvider.System);
@@ -317,7 +317,8 @@ public sealed partial class UiWorkspaceIntegrationTests
                 sendReadiness: sendReadiness ?? new SendReadinessReader(Storage.Directories, Storage.ConversationDirectory),
                 messageService: messageService, outgoingMessages: Storage.OutgoingMessages,
                 historyClear: new HistoryClearService(Storage.HistoryClear, new(), Reads, new OutgoingAttemptWriteTracker(Storage.OutgoingMessages)), contactRoutes: contactRoutes, directoryUpdates: Storage.Directories,
-                contactDeliveries: Storage.ContactDeliveries);
+                contactDeliveries: Storage.ContactDeliveries, regions: includeRegions ? new RegionService(Storage.Regions, TimeProvider.System) : null,
+                regionStore: includeRegions ? Storage.Regions : null);
         }
         public void Publish(NodeData node, long generation) => Supervisor.Publish(new ConnectionSupervisorSnapshot(
             ConnectionSupervisorState.Online, generation, ProfileId, node.SessionId, node.NodeId, null, null));

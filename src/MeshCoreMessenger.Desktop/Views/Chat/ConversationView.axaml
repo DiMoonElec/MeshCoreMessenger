@@ -2,6 +2,16 @@
              xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:chat="using:MeshCoreMessenger.Desktop.Views.Chat"
              xmlns:controls="using:MeshCoreMessenger.Desktop.Controls"
              x:Class="MeshCoreMessenger.Desktop.Views.Chat.ConversationView" x:DataType="vm:ChatWorkspaceViewModel">
+  <UserControl.Resources>
+    <ControlTheme x:Key="ConversationMenuItemTheme" TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:ConversationMenuItemViewModel">
+      <Setter Property="Header" Value="{Binding Header}" />
+      <Setter Property="Command" Value="{Binding Command}" />
+      <Setter Property="ItemsSource" Value="{Binding Children}" />
+      <Setter Property="ItemContainerTheme" Value="{DynamicResource ConversationMenuItemTheme}" />
+      <Setter Property="ToolTip.Tip" Value="{Binding AvailabilityMessage}" />
+      <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
+    </ControlTheme>
+  </UserControl.Resources>
   <UserControl.Styles>
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/ConversationStyles.axaml" />
     <StyleInclude Source="avares://MeshCoreMessenger.Desktop/Styles/MentionStyles.axaml" />
@@ -12,6 +22,8 @@
         <Button Content="‹" Command="{Binding Navigation.BackCommand}" IsVisible="{Binding Navigation.CanNavigateBack}" ToolTip.Tip="Назад к чатам" />
         <StackPanel Grid.Column="1" Classes="header-text">
           <TextBlock Classes="chat-title" Text="{Binding Navigation.SelectedTitle}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Navigation.SelectedTitle}" />
+          <TextBlock Classes="chat-meta" Text="{Binding Regions.Text}" IsVisible="{Binding Regions.Visible}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Regions.Text}" />
+          <TextBlock Text="{Binding Regions.Error}" IsVisible="{Binding Regions.HasError}" TextWrapping="Wrap" />
           <TextBlock Classes="chat-meta" Text="{Binding Navigation.SelectedMetadata}" IsVisible="{Binding Navigation.HasSelectedMetadata}" TextTrimming="CharacterEllipsis" />
         </StackPanel>
         <Button x:Name="ConversationMenuButton" Grid.Column="2" Classes="conversation-menu"
@@ -26,12 +38,7 @@
           <Button.Flyout>
             <MenuFlyout Placement="BottomEdgeAlignedRight" Opening="OnConversationMenuOpening" ItemsSource="{Binding Menu.Items}">
               <MenuFlyout.ItemContainerTheme>
-                <ControlTheme TargetType="MenuItem" BasedOn="{StaticResource {x:Type MenuItem}}" x:DataType="vm:ConversationMenuItemViewModel">
-                  <Setter Property="Header" Value="{Binding Header}" />
-                  <Setter Property="Command" Value="{Binding Command}" />
-                  <Setter Property="ToolTip.Tip" Value="{Binding AvailabilityMessage}" />
-                  <Setter Property="ToolTip.ShowOnDisabled" Value="True" />
-                </ControlTheme>
+                <StaticResource ResourceKey="ConversationMenuItemTheme" />
               </MenuFlyout.ItemContainerTheme>
             </MenuFlyout>
           </Button.Flyout>

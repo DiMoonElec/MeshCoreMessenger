@@ -5,7 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace MeshCoreMessenger.Desktop.ViewModels;
 
-public enum ConversationMenuAction { Details, Search, Share, SetRoute, ResetRoute, ClearHistory }
+public enum ConversationMenuAction { Details, Search, Share, SetRoute, ResetRoute, ClearHistory, Region }
 
 public sealed class ConversationMenuItemViewModel(
     ConversationMenuAction action, string header, ICommand command) : ObservableObject
@@ -14,6 +14,7 @@ public sealed class ConversationMenuItemViewModel(
     public ConversationMenuAction Action { get; } = action;
     public string Header { get; } = header;
     public ICommand Command { get; } = command;
+    public IReadOnlyList<ConversationMenuItemViewModel> Children { get; init; } = [];
     public string? AvailabilityMessage
     {
         get => _availabilityMessage;
@@ -59,12 +60,14 @@ public sealed class ConversationMenuViewModel
             _routeItem.AvailabilityMessage = _routeReset.AvailabilityMessage;
         }
         items.Add(_clearItem);
-        Items = items.AsReadOnly();
+        Items = new(items);
         _historyClear.PropertyChanged += OnHistoryClearChanged;
         UpdateAvailability();
     }
 
-    public IReadOnlyList<ConversationMenuItemViewModel> Items { get; }
+    public System.Collections.ObjectModel.ObservableCollection<ConversationMenuItemViewModel> Items { get; }
+    internal void AddRegionMenu(System.Collections.ObjectModel.ObservableCollection<ConversationMenuItemViewModel> choices) =>
+        Items.Insert(1, new(ConversationMenuAction.Region, "Регион отправки", new RelayCommand(() => { })) { Children = choices });
     public event EventHandler<HistoryClearRequestedEventArgs>? HistoryClearRequested;
     public Task RefreshAsync() => Task.WhenAll(_historyClear.RefreshAsync(), _routeItem is null ? Task.CompletedTask : _routeReset.RefreshAsync());
 
