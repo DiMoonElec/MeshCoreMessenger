@@ -28,7 +28,9 @@ public sealed class RegionUiTests
             var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             var discovery = new DiscoveryStub(async (owner, options) =>
             {
-                Assert.True(options!.Consent.AllowTemporaryZeroHop); Assert.False(options.Consent.AllowContactCreation);
+                Assert.True(options!.Consent.AllowTemporaryZeroHop); Assert.True(options.Consent.AllowContactCreation);
+                Assert.Equal(TimeSpan.FromSeconds(30), options.Neighbors.CollectionWindow);
+                Assert.Equal(4, options.MaximumTargets); Assert.Equal(3, options.MaximumAttempts); Assert.Null(options.TotalTimeout);
                 entered.TrySetResult(); if (switchNode) await release.Task;
                 var sources = new[] { new string('A', 64) };
                 return new(Guid.NewGuid(), new(owner.NodeId, owner.SessionId, owner.Generation), [], [],
@@ -39,20 +41,22 @@ public sealed class RegionUiTests
             using var vm = new RegionSettingsViewModel(new RegionService(storage.Regions, TimeProvider.System, discovery: discovery),
                 new ImmediateUiDispatcher(), task => { pending.Add(task); return task; });
             vm.ConfigureConnection(supervisor, new RegionGateway(), storage.Regions); vm.SetNode(node.Id, "A"); await vm.InitializeAsync();
-            vm.AllowTemporaryZeroHop = true;
-            var search = vm.SearchCommand.ExecuteAsync(null); await entered.Task.WaitAsync(TimeSpan.FromSeconds(3), Token);
+            vm.CatalogSearch.SetActive(true); await vm.CatalogSearch.RefreshAsync();
+            var search = vm.CatalogSearch.SearchCommand.ExecuteAsync(null); await entered.Task.WaitAsync(TimeSpan.FromSeconds(3), Token);
             if (switchNode) { vm.SetNode(null, null); release.TrySetResult(); }
             await search;
             Assert.Empty(await storage.Regions.GetRegionsAsync(node.Id, true, Token));
-            if (switchNode) Assert.Empty(vm.FoundRegions);
+            if (switchNode) Assert.Empty(vm.CatalogSearch.Rows);
             else
             {
-                Assert.Equal(2, vm.FoundRegions.Count); Assert.False(vm.AllowTemporaryZeroHop);
-                vm.SelectedFound = vm.FoundRegions[0]; await vm.AddFoundCommand.ExecuteAsync(null);
+                var row = Assert.Single(vm.CatalogSearch.Rows); Assert.Equal("ru-ros", row.Name); Assert.Equal("+", row.Symbol);
+                await row.ToggleCommand.ExecuteAsync(null);
                 Assert.Single(await storage.Regions.GetRegionsAsync(node.Id, true, Token));
-                vm.SelectedFound = vm.FoundRegions[1]; await vm.AddFoundCommand.ExecuteAsync(null);
-                Assert.Equal("$team", vm.ProtocolName); Assert.True(vm.HasError);
-                Assert.Single(await storage.Regions.GetRegionsAsync(node.Id, true, Token));
+                Assert.Equal("−", row.Symbol);
+                await row.ToggleCommand.ExecuteAsync(null); Assert.Equal("+", row.Symbol);
+                Assert.Single(vm.CatalogSearch.Rows); Assert.Empty(await storage.Regions.GetRegionsAsync(node.Id, true, Token));
+                vm.CatalogSearch.SetActive(false); vm.CatalogSearch.SetActive(true); await vm.CatalogSearch.RefreshAsync();
+                Assert.Empty(vm.CatalogSearch.Rows);
             }
             vm.Dispose(); await Task.WhenAll(pending);
         }
@@ -98,7 +102,7 @@ public sealed class RegionUiTests
         { AcquireCalls++; throw new InvalidOperationException("No command permitted in read-only UI test."); }
     }
     [Fact]
-    public async Task OfflineCatalogCrudPersistsAndInvalidPrivateKeyKeepsForm()
+    public async Task OfflineCatalogRemainsEditableWithoutAnySearchOrNodeCommands()
     {
         var path = Path.Combine(Path.GetTempPath(), "region-ui-" + Guid.NewGuid().ToString("N"));
         try
@@ -106,23 +110,21 @@ public sealed class RegionUiTests
             await using var storage = await LocalStorage.OpenAsync(DesktopAppPaths.CreateForDirectory(path), Token);
             var node = await storage.Nodes.FindOrCreateAsync(new byte[32], "A", DateTimeOffset.UtcNow, Token);
             var pending = new ConcurrentBag<Task>();
-            using var vm = new RegionSettingsViewModel(new RegionService(storage.Regions, TimeProvider.System), new ImmediateUiDispatcher(), task => { pending.Add(task); return task; });
+            var service = new RegionService(storage.Regions, TimeProvider.System);
+            await service.CreatePublicAsync(node.Id, "Ростов", "ru-ros", Token);
+            using var vm = new RegionSettingsViewModel(service, new ImmediateUiDispatcher(), task => { pending.Add(task); return task; });
             vm.SetNode(node.Id, "A"); await vm.InitializeAsync();
-            vm.Label = "Ростов"; vm.ProtocolName = "ru-ros"; await vm.AddPublicCommand.ExecuteAsync(null);
-            var added = Assert.Single(vm.Catalog); Assert.Equal("ru-ros", added.ProtocolName);
-            vm.Selected = added; vm.Label = "Новое имя"; await vm.RenameCommand.ExecuteAsync(null);
-            Assert.Equal("Новое имя", Assert.Single(vm.Catalog).Label);
-            await vm.ArchiveCommand.ExecuteAsync(null); Assert.True(Assert.Single(vm.Catalog).Archived);
-            vm.Label = "Команда"; vm.ProtocolName = "$team"; vm.KeyHex = "bad";
-            await vm.ImportCommand.ExecuteAsync(null); Assert.True(vm.HasError); Assert.Equal("bad", vm.KeyHex);
-            Assert.Single(await storage.Regions.GetRegionsAsync(node.Id, true, Token));
-            await vm.DeleteCommand.ExecuteAsync(null); Assert.Empty(vm.Catalog);
+            vm.CatalogSearch.SetActive(true); await vm.CatalogSearch.RefreshAsync();
+            Assert.False(vm.CatalogSearch.SearchCommand.CanExecute(null));
+            var row = Assert.Single(vm.CatalogSearch.Rows); await row.ToggleCommand.ExecuteAsync(null);
+            Assert.Equal("+", row.Symbol); Assert.Empty(await service.GetRegionsAsync(node.Id, true, Token));
+            await row.ToggleCommand.ExecuteAsync(null); Assert.Equal("−", row.Symbol);
             vm.Dispose(); await Task.WhenAll(pending);
         }
         finally { Directory.Delete(path, true); }
     }
     [Fact]
-    public async Task SwitchingNodeClearsPrivateInputAndDoesNotMixCatalogs()
+    public async Task SwitchingNodeClearsCandidatesAndDoesNotMixCatalogs()
     {
         var path = Path.Combine(Path.GetTempPath(), "region-ui-" + Guid.NewGuid().ToString("N"));
         try
@@ -132,11 +134,13 @@ public sealed class RegionUiTests
             var key = new byte[32]; key[31] = 1;
             var b = await storage.Nodes.FindOrCreateAsync(key, "B", DateTimeOffset.UtcNow, Token);
             var pending = new ConcurrentBag<Task>();
-            using var vm = new RegionSettingsViewModel(new RegionService(storage.Regions, TimeProvider.System), new ImmediateUiDispatcher(), task => { pending.Add(task); return task; });
-            vm.SetNode(a.Id, "A"); await vm.InitializeAsync(); vm.Label = "A"; vm.ProtocolName = "Area";
-            await vm.AddPublicCommand.ExecuteAsync(null); vm.KeyHex = "sensitive";
-            vm.SetNode(b.Id, "B"); await vm.RefreshAsync(); Assert.Empty(vm.Catalog); Assert.Equal("", vm.KeyHex);
-            vm.SetNode(a.Id, "A"); await vm.RefreshAsync(); Assert.Single(vm.Catalog);
+            var service = new RegionService(storage.Regions, TimeProvider.System);
+            await service.CreatePublicAsync(a.Id, "A", "Area", Token);
+            using var vm = new RegionSettingsViewModel(service, new ImmediateUiDispatcher(), task => { pending.Add(task); return task; });
+            vm.SetNode(a.Id, "A"); await vm.InitializeAsync(); vm.CatalogSearch.SetActive(true); await vm.CatalogSearch.RefreshAsync();
+            var row = Assert.Single(vm.CatalogSearch.Rows); await row.ToggleCommand.ExecuteAsync(null); Assert.Equal("+", row.Symbol);
+            vm.SetNode(b.Id, "B"); await vm.CatalogSearch.RefreshAsync(); Assert.Empty(vm.CatalogSearch.Rows);
+            vm.SetNode(a.Id, "A"); await vm.CatalogSearch.RefreshAsync(); Assert.Empty(vm.CatalogSearch.Rows);
             vm.Dispose(); await Task.WhenAll(pending);
         }
         finally { Directory.Delete(path, true); }

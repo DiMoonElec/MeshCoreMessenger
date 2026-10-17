@@ -21,7 +21,9 @@ public sealed record RegionDiscoveryTargetOutcome(Guid RunId, Guid NodeId, Guid 
     public bool HasRouteWarning => Restoration is not (RegionRouteRestorationOutcome.NotRequired or RegionRouteRestorationOutcome.Restored);
 }
 public sealed record DiscoveredRegionName(string ExactName, DiscoveredRegionNameKind Kind, IReadOnlyList<string> SourcePublicKeys);
-public sealed record RegionDiscoveryProgress(Guid RunId, RegionDiscoveryPhase Phase, int Completed, int Total, string? TargetPublicKeyHex = null);
+public sealed record RegionDiscoveryProgress(Guid RunId, RegionDiscoveryPhase Phase, int Completed, int Total, string? TargetPublicKeyHex = null,
+    IReadOnlyList<DiscoveredNeighbor>? Neighbors = null, IReadOnlyList<DiscoveredRegionName>? Names = null,
+    RegionDiscoveryOwner? Owner = null);
 public sealed record RegionDiscoveryOwner(Guid NodeId, Guid SessionId, long Generation);
 public sealed record RegionDiscoveryRunResult(Guid RunId, RegionDiscoveryOwner Owner, IReadOnlyList<RegionDiscoveryPlan> Plans,
     IReadOnlyList<RegionDiscoveryTargetOutcome> Outcomes, IReadOnlyList<DiscoveredRegionName> Names,
@@ -36,11 +38,21 @@ public sealed record RegionDiscoveryOptions
     public NeighborDiscoveryOptions Neighbors { get; init; } = new();
     public int MaximumTargets { get; init; } = 16;
     public TimeSpan RequestTimeout { get; init; } = TimeSpan.FromSeconds(5);
-    public TimeSpan TotalTimeout { get; init; } = TimeSpan.FromMinutes(1);
+    public TimeSpan? TotalTimeout { get; init; } = TimeSpan.FromMinutes(1);
     public RegionDiscoveryPreparationConsent Consent { get; init; } = new();
     public IReadOnlyList<string>? SelectedTargetPublicKeys { get; init; }
     public IReadOnlyList<ConfirmedRegionReplyPath> ConfirmedReplyPaths { get; init; } = [];
     public int MaximumStoredObservations { get; init; } = 1024;
     public int MaximumStoredOutcomes { get; init; } = 512;
     public TimeSpan Retention { get; init; } = TimeSpan.FromDays(30);
+    public bool OnlyDiscoveredNeighbors { get; init; }
+    public int MaximumAttempts { get; init; } = 1;
+    public TimeSpan RetryDelay { get; init; } = TimeSpan.FromSeconds(5);
+    public static RegionDiscoveryOptions DirectNeighbors() => new()
+    {
+        OnlyDiscoveredNeighbors = true, MaximumTargets = 4, MaximumAttempts = 3,
+        Neighbors = new() { CollectionWindow = TimeSpan.FromSeconds(30) },
+        RequestTimeout = TimeSpan.FromSeconds(15), TotalTimeout = null,
+        Consent = new(true, true)
+    };
 }

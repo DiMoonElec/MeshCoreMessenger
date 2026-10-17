@@ -93,6 +93,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _logger = logger;
         Regions = new(regions, dispatcher, Track);
         Regions.ConfigureConnection(supervisor, regionCommands, regionStore);
+        Regions.CatalogSearch.ErrorOccurred += message => ErrorMessage = message;
         _connectionState = supervisor.Snapshot.State;
         Devices = new DevicesWorkspaceViewModel(directory, dispatcher, searchDelay, logger);
         Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
@@ -945,6 +946,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
 
     private void OnShellPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs args)
     {
+        if (args.PropertyName == nameof(NavigationShellViewModel.SelectedItem))
+            Regions.CatalogSearch.SetActive(Shell.SelectedItem.Section == ShellSection.Settings);
         if (args.PropertyName != nameof(NavigationShellViewModel.SelectedItem) || _syncingShell || Volatile.Read(ref _stopped) != 0)
         {
             if (args.PropertyName == nameof(NavigationShellViewModel.IsChatSelected))

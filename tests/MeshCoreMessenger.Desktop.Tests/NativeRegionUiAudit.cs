@@ -36,10 +36,13 @@ public sealed partial class UiWorkspaceIntegrationTests
                     window.RequestedThemeVariant = theme; window.Width = width;
                     root.Shell.SelectSection(ShellSection.Settings); await SettleAsync(window);
                     var view = window.GetVisualDescendants().OfType<RegionSettingsView>().Single();
-                    var search = view.GetVisualDescendants().OfType<Expander>().Single(e => Equals(e.Header, "Найти регионы у репитеров"));
-                    search.IsExpanded = true; await SettleAsync(window);
-                    var input = view.GetVisualDescendants().OfType<TextBox>().Single(t => t.PlaceholderText == "Название в каталоге");
-                    input.Focus(); input.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Tab });
+                    var input = view.GetVisualDescendants().OfType<Button>().Single(t => Equals(t.Content, "Поиск регионов"));
+                    // Offline search is disabled; the catalogue toggle remains keyboard accessible.
+                    var toggle = view.GetVisualDescendants().OfType<Button>().Single(t => Equals(t.Content, "−"));
+                    toggle.Focus(); toggle.RaiseEvent(new KeyEventArgs { RoutedEvent = InputElement.KeyDownEvent, Key = Key.Tab });
+                    var card = view.GetVisualDescendants().OfType<StackPanel>().First(p => p.DataContext is RegionCatalogSearchViewModel);
+                    if (card.GetVisualDescendants().OfType<TextBox>().Any() || card.GetVisualDescendants().OfType<CheckBox>().Any())
+                        throw new InvalidOperationException("The simple region card must not contain technical inputs.");
                     if (window.FocusManager?.GetFocusedElement() is not Control) throw new InvalidOperationException("Region settings keyboard focus was lost.");
                     foreach (var control in view.GetVisualDescendants().OfType<Control>().Where(c => c.IsEffectivelyVisible && c is TextBox or ComboBox or Button))
                     {

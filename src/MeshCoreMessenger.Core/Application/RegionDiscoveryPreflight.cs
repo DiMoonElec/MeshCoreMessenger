@@ -8,14 +8,16 @@ namespace MeshCoreMessenger.Core.Application;
 public interface IRegionDiscoveryPreflight
 {
     Task<RegionDiscoveryPreflightResult> PrepareAsync(SessionCommandOwner owner, IReadOnlyList<DiscoveredNeighbor> neighbors,
-        IReadOnlyList<ConfirmedRegionReplyPath>? confirmedReplyPaths = null, int maximumTargets = 128, CancellationToken cancellationToken = default);
+        IReadOnlyList<ConfirmedRegionReplyPath>? confirmedReplyPaths = null, int maximumTargets = 128, CancellationToken cancellationToken = default,
+        bool onlyDiscoveredNeighbors = false);
 }
 
 /// <summary>Refreshes full-key contacts via leases; does not mutate contacts/routes or send a Mesh request.</summary>
 public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, TimeProvider timeProvider) : IRegionDiscoveryPreflight
 {
     public async Task<RegionDiscoveryPreflightResult> PrepareAsync(SessionCommandOwner owner, IReadOnlyList<DiscoveredNeighbor> neighbors,
-        IReadOnlyList<ConfirmedRegionReplyPath>? confirmedReplyPaths = null, int maximumTargets = 128, CancellationToken cancellationToken = default)
+        IReadOnlyList<ConfirmedRegionReplyPath>? confirmedReplyPaths = null, int maximumTargets = 128, CancellationToken cancellationToken = default,
+        bool onlyDiscoveredNeighbors = false)
     {
         ArgumentNullException.ThrowIfNull(owner); ArgumentNullException.ThrowIfNull(neighbors);
         if (maximumTargets is < 1 or > 1024) throw new ArgumentOutOfRangeException(nameof(maximumTargets));
@@ -31,8 +33,13 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
             var repeaters = observed.Where(n => n.NodeType == AdvertisementType.Repeater).ToArray();
             var fullNeighbors = repeaters.Where(n => n.HasFullPublicKey).GroupBy(n => Convert.ToHexString(n.GetKeyBytes()), StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.Any(n => (n.PathDescriptor & 63) == 0 && (n.PathDescriptor >> 6) < 3), StringComparer.Ordinal);
-            var keys = contacts.Values.Where(c => c.AdvertisementType == AdvertisementType.Repeater).Select(c => c.PublicKeyHex)
-                .Concat(fullNeighbors.Keys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToArray();
+            var observedKeys = observed.Where(n => n.NodeType == AdvertisementType.Repeater && n.HasFullPublicKey &&
+                    (!onlyDiscoveredNeighbors || (n.PathDescriptor & 63) == 0 && (n.PathDescriptor >> 6) < 3))
+                .OrderByDescending(n => n.ReceivedRssi).ThenByDescending(n => n.ReceivedSnr)
+                .ThenBy(n => Convert.ToHexString(n.GetKeyBytes()), StringComparer.Ordinal)
+                .Select(n => Convert.ToHexString(n.GetKeyBytes())).Distinct(StringComparer.Ordinal);
+            var keys = (onlyDiscoveredNeighbors ? observedKeys : contacts.Values.Where(c => c.AdvertisementType == AdvertisementType.Repeater).Select(c => c.PublicKeyHex)
+                .Concat(observedKeys).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)).ToArray();
             var plans = new List<RegionDiscoveryPlan>();
             foreach (var key in keys.Take(maximumTargets))
             {
@@ -69,8 +76,10 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
                     }
                     else reason = "No current direct outbound path is known.";
                 }
-                else if (current.AdvertisementType != AdvertisementType.Repeater) reason = "The current contact is not a repeater.";
-                else if (current.OutPathLength == byte.MaxValue)
+                // Firmware creates unknown-key anonymous contacts with type None. In the direct-neighbor
+                // mode, this run's full-key Repeater response supplies the current type evidence.
+                else if (current.AdvertisementType != AdvertisementType.Repeater && !onlyDiscoveredNeighbors) reason = "The current contact is not a repeater.";
+                else if (current.OutPathLength == byte.MaxValue || onlyDiscoveredNeighbors && current.OutPathLength != 0)
                 {
                     if (nearby)
                     {
@@ -88,7 +97,7 @@ public sealed class RegionDiscoveryPreflight(ISessionCommandGateway gateway, Tim
                         var count = (current.OutPathLength & 63) * ((current.OutPathLength >> 6) + 1);
                         var outbound = new ReplyPath(current.OutPathLength, current.OutPath.Span[..count]);
                         preparation = RegionDiscoveryPreparation.ReadyDirect;
-                        reply ??= outbound.ReverseHops();
+                        reply ??= onlyDiscoveredNeighbors ? ReplyPath.ZeroHop : outbound.ReverseHops();
                         if (provided is null) evidence = outbound.HopCount == 0 ? RegionReplyPathEvidence.CurrentZeroHopPath : RegionReplyPathEvidence.AssumedReverse;
                     }
                     catch (ArgumentException) { reason = "The current packed outbound path is invalid."; reply = null; evidence = RegionReplyPathEvidence.None; }

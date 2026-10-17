@@ -14,7 +14,7 @@ public interface IRegionDiscoveryService
         IProgress<RegionDiscoveryProgress>? progress = null, CancellationToken cancellationToken = default);
 }
 
-/// <summary>One explicit bounded scan/query operation. No background discovery, retries, catalogue saves or auto-selection.</summary>
+/// <summary>One explicit bounded scan/query operation; catalogue saves and scope selection remain explicit.</summary>
 public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegionDiscoveryPreflight preflight,
     IRegionDiscoveryRouteWorkflow routes, IRegionStore store, TimeProvider timeProvider) : IRegionDiscoveryService
 {
@@ -34,7 +34,7 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
         var selected = options.SelectedTargetPublicKeys?.Select(FullKey).ToHashSet(StringComparer.Ordinal);
         options = options with { Neighbors = options.Neighbors with { }, ConfirmedReplyPaths = options.ConfirmedReplyPaths.ToArray(),
             SelectedTargetPublicKeys = selected?.ToArray() };
-        using var deadline = new CancellationTokenSource(options.TotalTimeout, timeProvider);
+        using var deadline = new CancellationTokenSource(options.TotalTimeout ?? Timeout.InfiniteTimeSpan, timeProvider);
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, deadline.Token);
         await using var lease = gateway.Acquire(owner.NodeId, new NodeCommandTarget(), stop.Token);
         if (lease.Owner.SessionId != owner.SessionId || lease.Owner.Generation != owner.Generation)
@@ -50,14 +50,24 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
                 try { neighbors = await owned.DiscoverRepeaterNeighborsAsync(options.Neighbors).ConfigureAwait(false); }
                 catch (Exception error) when (error is NotSupportedException or MeshCoreCommandException { ErrorCode: MeshCoreErrorCode.UnsupportedCommand })
                 { runError = error; neighbors = new(0, [], false); }
+                var discoveredRepeaters = neighbors.Neighbors.Where(n => n.NodeType == AdvertisementType.Repeater && n.HasFullPublicKey &&
+                        (!options.OnlyDiscoveredNeighbors || (n.PathDescriptor & 63) == 0 && (n.PathDescriptor >> 6) < 3))
+                    .OrderByDescending(n => n.ReceivedRssi).ThenByDescending(n => n.ReceivedSnr)
+                    .ThenBy(n => Convert.ToHexString(n.GetKeyBytes()), StringComparer.Ordinal)
+                    .DistinctBy(n => Convert.ToHexString(n.GetKeyBytes())).ToArray();
+                Report(RegionDiscoveryPhase.Scanning, 0, discoveredRepeaters.Length, neighbors: discoveredRepeaters);
                 capacity = neighbors.CapacityReached;
                 Report(RegionDiscoveryPhase.Preparing, 0, 0);
                 // Mesh target count is separate from read-only preflight capacity, so explicit selections
                 // are not incorrectly lost behind earlier known contacts in a sorted bounded list.
-                var prepared = await preflight.PrepareAsync(owner, neighbors.Neighbors, options.ConfirmedReplyPaths, 1024, token).ConfigureAwait(false);
+                var prepared = options.OnlyDiscoveredNeighbors && discoveredRepeaters.Length == 0
+                    ? new RegionDiscoveryPreflightResult(Array.Empty<RegionDiscoveryPlan>(), 0, 0)
+                    : await preflight.PrepareAsync(owner,
+                        options.OnlyDiscoveredNeighbors ? discoveredRepeaters.Take(options.MaximumTargets).ToArray() : neighbors.Neighbors,
+                        options.OnlyDiscoveredNeighbors ? [] : options.ConfirmedReplyPaths, 1024, token, options.OnlyDiscoveredNeighbors).ConfigureAwait(false);
                 unresolvedPrefixes = prepared.UnresolvedPrefixCount;
                 IEnumerable<RegionDiscoveryPlan> eligible = prepared.Plans;
-                if (selected is not null)
+                if (selected is not null && !options.OnlyDiscoveredNeighbors)
                 {
                     eligible = eligible.Where(p => selected.Contains(Convert.ToHexString(p.GetPublicKey())));
                     var known = prepared.Plans.Select(p => Convert.ToHexString(p.GetPublicKey())).ToHashSet(StringComparer.Ordinal);
@@ -66,6 +76,7 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
                         timeProvider.GetUtcNow(), "The selected full key has no current route or neighbor observation.")));
                 }
                 var all = eligible.ToArray(); omitted = prepared.OmittedTargetCount + Math.Max(0, all.Length - options.MaximumTargets);
+                if (options.OnlyDiscoveredNeighbors) omitted += Math.Max(0, discoveredRepeaters.Length - options.MaximumTargets);
                 plans.AddRange(all.Take(options.MaximumTargets));
                 var neighborKeys = neighbors.Neighbors.Where(n => n.HasFullPublicKey).Select(n => Convert.ToHexString(n.GetKeyBytes())).ToHashSet(StringComparer.Ordinal);
                 foreach (var plan in plans)
@@ -74,7 +85,8 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
                     if (token.IsCancellationRequested || !owned.IsSessionOpen) break;
                     Report(RegionDiscoveryPhase.Requesting, outcomes.Count, plans.Count, key);
                     RegionRouteRequestResult? route = null; Exception? error = null;
-                    try { route = await routes.RequestAsync(plan, options.Consent, options.RequestTimeout, token).ConfigureAwait(false); }
+                    try { route = await routes.RequestWithRetryAsync(plan, options.Consent, options.RequestTimeout,
+                        options.MaximumAttempts, options.RetryDelay, token).ConfigureAwait(false); }
                     catch (Exception failure) { error = failure; }
                     error ??= route?.Error;
                     IReadOnlyList<string> names = Array.AsReadOnly(route?.Response?.Names.ToArray() ?? []);
@@ -104,20 +116,25 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
                         }
                     }
                     outcomes.Add(outcome);
+                    Report(RegionDiscoveryPhase.Requesting, outcomes.Count, plans.Count, key, names: AggregateNames());
+                    if (!owned.IsSessionOpen || status == RegionDiscoveryTargetStatus.TransportFailed) break;
                 }
             }
             catch (Exception error) { runError = error; }
             Report(RegionDiscoveryPhase.Completed, outcomes.Count, plans.Count);
-            var namesBySource = outcomes.Where(o => o.Persisted && IsSuccess(o.Status)).SelectMany(o => o.Names.Select(name => (Name: name, Key: o.RepeaterPublicKeyHex)))
-                .GroupBy(o => o.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
-                .Select(g => new DiscoveredRegionName(g.Key, Classify(g.Key), Array.AsReadOnly(g.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToArray()))).ToArray();
+            var namesBySource = AggregateNames();
             return new RegionDiscoveryRunResult(run, new(owner.NodeId, owner.SessionId, owner.Generation), plans.AsReadOnly(), outcomes.AsReadOnly(),
                 Array.AsReadOnly(namesBySource), cancellationToken.IsCancellationRequested, deadline.IsCancellationRequested && !cancellationToken.IsCancellationRequested,
                 !owned.IsSessionOpen, capacity, omitted, runError) { UnresolvedPrefixCount = unresolvedPrefixes };
         }).ConfigureAwait(false);
 
-        void Report(RegionDiscoveryPhase phase, int completed, int total, string? key = null)
-        { try { progress?.Report(new(run, phase, completed, total, key)); } catch { /* Progress observers do not control cleanup or persistence. */ } }
+        DiscoveredRegionName[] AggregateNames() => outcomes.Where(o => o.Persisted && IsSuccess(o.Status))
+            .SelectMany(o => o.Names.Select(name => (Name: name, Key: o.RepeaterPublicKeyHex)))
+            .GroupBy(o => o.Name, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new DiscoveredRegionName(g.Key, Classify(g.Key), Array.AsReadOnly(g.Select(x => x.Key).Distinct(StringComparer.Ordinal).ToArray()))).ToArray();
+        void Report(RegionDiscoveryPhase phase, int completed, int total, string? key = null, IReadOnlyList<DiscoveredNeighbor>? neighbors = null,
+            IReadOnlyList<DiscoveredRegionName>? names = null)
+        { try { progress?.Report(new(run, phase, completed, total, key, neighbors, names, new(owner.NodeId, owner.SessionId, owner.Generation))); } catch { /* Observers do not control cleanup. */ } }
     }
 
     private static bool IsSuccess(RegionDiscoveryTargetStatus status) => status is RegionDiscoveryTargetStatus.SuccessEmpty or RegionDiscoveryTargetStatus.SuccessPossiblyPartial or RegionDiscoveryTargetStatus.SuccessWithRouteWarning;
@@ -160,9 +177,11 @@ public sealed class RegionDiscoveryService(ISessionCommandGateway gateway, IRegi
     private static void Validate(RegionDiscoveryOptions options)
     {
         ArgumentNullException.ThrowIfNull(options.Neighbors); ArgumentNullException.ThrowIfNull(options.Consent); ArgumentNullException.ThrowIfNull(options.ConfirmedReplyPaths);
-        if (options.MaximumTargets is < 1 or > 128 || options.MaximumStoredObservations is < 1 or > 4096 || options.MaximumStoredOutcomes is < 1 or > 4096 ||
+        if (options.MaximumAttempts is < 1 or > 3 || options.RetryDelay < TimeSpan.Zero || options.RetryDelay > TimeSpan.FromSeconds(30) ||
+            options.MaximumTargets is < 1 or > 128 || options.MaximumStoredObservations is < 1 or > 4096 || options.MaximumStoredOutcomes is < 1 or > 4096 ||
             options.RequestTimeout < TimeSpan.FromMilliseconds(1) || options.RequestTimeout > TimeSpan.FromMinutes(1) ||
-            options.TotalTimeout <= TimeSpan.Zero || options.TotalTimeout > TimeSpan.FromMinutes(5) || options.Retention <= TimeSpan.Zero || options.Retention > TimeSpan.FromDays(365) ||
+            options.TotalTimeout is { } total && (total <= TimeSpan.Zero || total > TimeSpan.FromMinutes(5)) ||
+            options.Retention <= TimeSpan.Zero || options.Retention > TimeSpan.FromDays(365) ||
             options.SelectedTargetPublicKeys?.Count > 1024 || options.ConfirmedReplyPaths.Count > 1024 || options.ConfirmedReplyPaths.Any(p => p is null))
             throw new ArgumentException("Discovery options exceed bounded operation limits.", nameof(options));
     }

@@ -10,12 +10,22 @@ internal static class RegionNeighborTests
     public static (string Name, Func<Task> Run)[] Cases =>
     [
         ("REGION8 collector deduplication, identity filter, memory bound and deadline", Collector),
+        ("REGION simple discovery accepts a neighbor arriving at second 27", LateNeighbor),
         ("REGION8 early responses survive slow transport write; pushes remain visible", Early),
         ("REGION8 collection window allows local commands and rejects concurrent scan", Window),
         ("REGION8 cancel, disconnect and reconnect remove the old collector", Lifecycle),
     ];
     private static void Check(bool value) => RegionChannelTests.Check(value);
     private static Task<T> Throws<T>(Func<Task> action) where T : Exception => RegionChannelTests.Throws<T>(action);
+    private static async Task LateNeighbor()
+    {
+        var clock = new ManualTimeProvider(); var decoder = new CompanionPacketDecoder();
+        using var collector = new NeighborDiscoveryCollector(123, 256, TimeSpan.FromSeconds(30), clock);
+        clock.Advance(TimeSpan.FromSeconds(27)); Check(!collector.Completion.IsCompleted);
+        Check(collector.Observe(decoder.Decode(RegionWireTests.Neighbor(123))));
+        clock.Advance(TimeSpan.FromSeconds(3));
+        Check((await collector.Completion).Neighbors.Count == 1);
+    }
     private static async Task Collector()
     {
         var clock = new ManualTimeProvider(); var decoder = new CompanionPacketDecoder();

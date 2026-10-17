@@ -10,6 +10,8 @@ public interface IRegionDiscoveryRouteWorkflow
 {
     Task<RegionRouteRequestResult> RequestAsync(RegionDiscoveryPlan plan, RegionDiscoveryPreparationConsent consent,
         TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default);
+    Task<RegionRouteRequestResult> RequestWithRetryAsync(RegionDiscoveryPlan plan, RegionDiscoveryPreparationConsent consent,
+        TimeSpan? responseTimeout, int maximumAttempts, TimeSpan retryDelay, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Owns one full-key contact throughout direct preparation, remote completion and bounded conditional restore.</summary>
@@ -18,11 +20,17 @@ public sealed class RegionDiscoveryRouteWorkflow(ISessionCommandGateway gateway,
 {
     public TimeSpan CleanupTimeout { get; init; } = TimeSpan.FromSeconds(5);
 
-    public async Task<RegionRouteRequestResult> RequestAsync(RegionDiscoveryPlan plan, RegionDiscoveryPreparationConsent consent,
-        TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default)
+    public Task<RegionRouteRequestResult> RequestAsync(RegionDiscoveryPlan plan, RegionDiscoveryPreparationConsent consent,
+        TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default) =>
+        RequestWithRetryAsync(plan, consent, responseTimeout, 1, TimeSpan.Zero, cancellationToken);
+
+    public async Task<RegionRouteRequestResult> RequestWithRetryAsync(RegionDiscoveryPlan plan, RegionDiscoveryPreparationConsent consent,
+        TimeSpan? responseTimeout, int maximumAttempts, TimeSpan retryDelay, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(plan); ArgumentNullException.ThrowIfNull(consent);
         cancellationToken.ThrowIfCancellationRequested();
+        if (maximumAttempts is < 1 or > 3 || retryDelay < TimeSpan.Zero || retryDelay > TimeSpan.FromSeconds(30))
+            throw new ArgumentOutOfRangeException(nameof(maximumAttempts));
         if (CleanupTimeout <= TimeSpan.Zero || CleanupTimeout > TimeSpan.FromSeconds(30)) throw new ArgumentOutOfRangeException(nameof(CleanupTimeout));
         // Match the public library's bounded request timeout before making any route mutation.
         if (responseTimeout is { } wait && (wait < TimeSpan.FromMilliseconds(1) || wait > TimeSpan.FromMinutes(1)))
@@ -83,11 +91,41 @@ public sealed class RegionDiscoveryRouteWorkflow(ISessionCommandGateway gateway,
             }
 
             RegionNamesResponse? response = null; Exception? requestError = null; var requestInvoked = false;
+            var retryState = preparedState ?? (original is not null ? plan : null);
             try
             {
-                token.ThrowIfCancellationRequested(); requestInvoked = true;
-                var received = await owned.RequestRegionsAsync(plan.ReplyPath, responseTimeout).ConfigureAwait(false);
-                token.ThrowIfCancellationRequested(); response = received;
+                for (var attempt = 0; attempt < maximumAttempts; attempt++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    if (attempt > 0)
+                    {
+                        await Task.Delay(retryDelay, timeProvider, token).ConfigureAwait(false);
+                        var observed = await ReadContactAsync(owned).ConfigureAwait(false);
+                        await owned.FlushClientEventsAsync().ConfigureAwait(false);
+                        if (retryState is not null && (observed is null || !retryState.MatchesContact(observed) ||
+                            owned.ContactObservationVersion(key) != retryState.ContactObservationVersion))
+                            throw new InvalidOperationException("Contact changed before the next region request.");
+                        // Firmware may have created an initially absent zero-hop contact on the first send.
+                        if (retryState is null && observed is not null)
+                        {
+                            if (observed.OutPathLength != 0) throw new InvalidOperationException("The new contact no longer has a zero-hop path.");
+                            retryState = new(plan.NodeId, plan.SessionId, plan.Generation, key, observed,
+                                RegionDiscoveryPreparation.ReadyDirect, plan.ReplyPath, plan.ReplyPathEvidence, timeProvider.GetUtcNow(),
+                                contactObservationVersion: owned.ContactObservationVersion(key));
+                        }
+                    }
+                    try
+                    {
+                        requestInvoked = true;
+                        var received = await owned.RequestRegionsAsync(plan.ReplyPath, responseTimeout).ConfigureAwait(false);
+                        token.ThrowIfCancellationRequested(); response = received; requestError = null; break;
+                    }
+                    catch (MeshCoreTimeoutException timeout) when (timeout.Operation == "RemoteBinaryResponse" && attempt + 1 < maximumAttempts)
+                    {
+                        requestError = timeout;
+                        System.Diagnostics.Trace.TraceInformation("Region response timed out after attempt {0}; a bounded retry will follow", attempt + 1);
+                    }
+                }
             }
             catch (Exception error) { requestError = error; }
             var restoration = RegionRouteRestorationOutcome.NotRequired;

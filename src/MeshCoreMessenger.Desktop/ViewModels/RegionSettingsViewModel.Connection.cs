@@ -35,7 +35,6 @@ public sealed partial class RegionSettingsViewModel
     public void ConfigureConnection(IConnectionSupervisor supervisor, ISessionCommandGateway? commands, IRegionStore? store)
     {
         _supervisor = supervisor; _commands = commands; _store = store;
-        ConfigureDiscovery();
         SetDefaultCommand = new AsyncRelayCommand(() => _track(ExecuteAsync((node, context, token) => ChangeDefaultAsync(node, context, false, token))),
             () => CanChangeDefault && SelectedDefaultRegion is { Archived: false });
         ClearDefaultCommand = new AsyncRelayCommand(() => _track(ExecuteAsync((node, context, token) => ChangeDefaultAsync(node, context, true, token))), () => CanChangeDefault);
@@ -74,10 +73,17 @@ public sealed partial class RegionSettingsViewModel
             throw new InvalidOperationException("The command session changed.");
         return new(node, session, snapshot.Generation, snapshot.SenderName ?? "", _commands?.GetRegionCapabilities(node), _commands?.GetDefaultRegion(node));
     }
+    private SessionCommandOwner? TryCaptureSearchOwner()
+    {
+        var active = _supervisor?.Snapshot;
+        if (_stopped || _commands is null || _node is not { } node || active is not { State: ConnectionSupervisorState.Online, SessionId: { } session } ||
+            active.NodeId != node || _commands.GetRegionCapabilities(node)?.NeighborDiscovery == RegionSupport.Unsupported) return null;
+        return new(node, session, active.Generation, active.SenderName ?? "", _commands.GetRegionCapabilities(node), _commands.GetDefaultRegion(node));
+    }
     private void NotifyConnection()
     {
         OnPropertyChanged(nameof(IsOnline)); OnPropertyChanged(nameof(CanChangeDefault)); OnPropertyChanged(nameof(DefaultStatus));
         SetDefaultCommand?.NotifyCanExecuteChanged(); ClearDefaultCommand?.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(CanSearch)); SearchCommand?.NotifyCanExecuteChanged(); AddFoundCommand?.NotifyCanExecuteChanged();
+        CatalogSearch.NotifyAvailability();
     }
 }

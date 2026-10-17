@@ -29,6 +29,10 @@ internal static class RegionRemoteTests
         timed.Bind(new(true, 9, 500)); clock.Advance(TimeSpan.FromSeconds(1));
         await Throws<MeshCoreTimeoutException>(async () => await timed.Completion);
         Check(!timed.Observe(Packet(9)));
+        using var nextAttempt = new BinaryResponseWaiter(TimeSpan.FromSeconds(15), clock);
+        nextAttempt.Bind(new(false, 10, 500));
+        Check(!nextAttempt.Observe(Packet(9)) && !nextAttempt.Completion.IsCompleted);
+        Check(nextAttempt.Observe(Packet(10)) && (await nextAttempt.Completion).Tag == 10);
     }
     private static async Task Gate()
     {

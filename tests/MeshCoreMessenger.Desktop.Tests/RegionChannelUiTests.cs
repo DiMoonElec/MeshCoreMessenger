@@ -1,12 +1,41 @@
 using CommunityToolkit.Mvvm.Input;
 using MeshCoreMessenger.Core.Application;
 using MeshCoreMessenger.Core.Domain;
+using MeshCoreMessenger.Desktop.ViewModels;
+using MeshCoreSharp.Models;
 using Xunit;
 
 namespace MeshCoreMessenger.Desktop.Tests;
 
 public sealed partial class UiWorkspaceIntegrationTests
 {
+    [Fact]
+    public async Task RegionCardFollowsSettingsVisitAndInUseDeleteKeepsAssignmentAndReportsError()
+    {
+        await using var f = await Workspace.CreateAsync(); await f.Root.StopAsync();
+        var root = f.CreateRoot(includeRegions: true);
+        try
+        {
+            await root.LoadAsync(Token);
+            var service = new RegionService(f.Storage.Regions, TimeProvider.System);
+            var region = await service.CreatePublicAsync(f.A.NodeId, "Area", "Area", Token);
+            var selected = root.Chats.Public.SelectedConversation!;
+            var channel = (await f.Storage.ConversationDirectory.GetChannelDetailsAsync(f.A.NodeId, selected.Entry.Identity, Token))!;
+            await service.AssignChannelAsync(f.A.NodeId, channel.Id, FloodScopeMode.ExplicitRegion, region.Id, 0, Token);
+            Assert.Empty(root.Regions.CatalogSearch.Rows);
+            root.Shell.SelectSection(ShellSection.Settings); await root.Regions.CatalogSearch.RefreshAsync();
+            var row = Assert.Single(root.Regions.CatalogSearch.Rows); Assert.Equal("−", row.Symbol);
+            await row.ToggleCommand.ExecuteAsync(null); Assert.Equal("−", row.Symbol); Assert.NotNull(root.ErrorMessage);
+            Assert.Equal(region.Id, (await service.GetChannelPreferenceAsync(f.A.NodeId, channel.Id, Token)).RegionId);
+            await service.AssignChannelAsync(f.A.NodeId, channel.Id, FloodScopeMode.InheritDefault, null, 1, Token);
+            await row.ToggleCommand.ExecuteAsync(null); Assert.Equal("+", row.Symbol);
+            root.Shell.SelectSection(ShellSection.PublicChats); Assert.Empty(root.Regions.CatalogSearch.Rows);
+            root.Shell.SelectSection(ShellSection.Settings); await root.Regions.CatalogSearch.RefreshAsync();
+            Assert.Empty(root.Regions.CatalogSearch.Rows); Assert.Equal(0, f.Supervisor.ConnectCalls);
+        }
+        finally { await root.StopAsync(); }
+    }
+
     [Fact]
     public async Task RegionPolicyChangesRefreshComposerBudgetWithoutTrimmingOrSendingDraft()
     {
