@@ -36,7 +36,7 @@ channel menu/budget/stale readiness4/4; MainWindow+region/bootstrap60/60 пос�
 Первый полный Desktop425-case прогон дал424/425: новый region listener добавлял
 лишнюю dispatcher работу до LoadAsync. Listener теперь пропускает pre-initialization
 и отсутствующий region service; исходный тест supervisor publication снова проходит.
-Результат повторного полного прогона записывается после завершения.
+Повторный полный Desktop прогон: **425/425**, включая оба100000-message сценария. Финальный native audit4/4 также повторён после startup fix.
 
 Новые интеграционные проверки: offline CRUD, invalid private key/form retention,
 node isolation/key clearing, unknown/unsupported default без wire, consent и explicit

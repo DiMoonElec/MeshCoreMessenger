@@ -2,10 +2,10 @@
 
 [Оглавление](../../MESSENGER_PLAN.md) · [Маршрутизация чтения](../../README.md)
 
-17.10.2026: **REGION0–REGION25 выполнены; последующие этапы не завершены.**
+17.10.2026: **REGION0–REGION31 выполнены (UI автоматически проверен); REGION32–34 не завершены.**
 По прямому запросу пользователя REGION33 частично проверен: CatCore BLE discovery→regions,
 AES padding исправлен, пути восстановлены. [Отчёт](../../testing/region-hardware-mesh.md).
-GUI согласован17.10.2026; REGION26 выполнен, REGION27–30 реализуются по прямому запросу пользователя.
+GUI согласован и реализован17.10.2026; Desktop425/425, native4/4. Пользовательская приёмка нового UI остаётся отдельной проверкой.
 Анализ и исходный проект сохранены в commit `2d4e5fe`.
 По запросу пользователя первоначальные десять крупных блоков заменены небольшими
 последовательными подэтапами. Номера REGION1–REGION10 теперь означают новые задания;
@@ -78,7 +78,7 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION28](region28-selection-ui.md) | GUI default ноды и выбора канала |
 | ☑ | [REGION29](region29-discovery-ui.md) | GUI поиска регионов |
 | ☑ | [REGION30](region30-send-ui.md) | Composer и сведения о scope отправки |
-| ☐ | [REGION31](region31-desktop-acceptance.md) | Сквозная автоматическая приёмка Desktop |
+| ☑ | [REGION31](region31-desktop-acceptance.md) | Сквозная автоматическая приёмка Desktop |
 | ☐ | [REGION32](region32-hardware-local.md) | Аппаратная проверка default и транспортов |
 | ☐ | [REGION33](region33-hardware-mesh.md) | Аппаратная проверка discovery, ЛС и каналов |
 | ☐ | [REGION34](region34-completion.md) | Завершение REGION и инструкция |
