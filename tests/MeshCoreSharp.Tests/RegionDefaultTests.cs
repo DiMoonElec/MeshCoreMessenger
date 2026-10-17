@@ -13,6 +13,7 @@ internal static class RegionDefaultTests
         ("REGION2 default wire lengths, padding and authoritative custom key", Wire),
         ("REGION2 default API matches response with interleaved push", Routing),
         ("REGION2 default errors, malformed, cancellation and timeout", Failures),
+        ("REGION17 late default readback cannot enter a later command", LateReadback),
     ];
     private static void Check(bool value) { if (!value) throw new Exception("Default scope regression"); }
     private static async Task<T> Throws<T>(Func<Task> action) where T : Exception
@@ -86,6 +87,7 @@ internal static class RegionDefaultTests
         }
         var malformed = client.GetDefaultFloodScopeAsync(); await Sent(transport); transport.Emit([0x1C, 0]);
         await Throws<MeshCoreProtocolException>(async () => await malformed);
+        await client.DisconnectAsync(); await client.ConnectAsync(); await client.StartAsync();
         using var cts = new CancellationTokenSource(); cts.Cancel();
         await Throws<OperationCanceledException>(() => client.ClearDefaultFloodScopeAsync(cts.Token));
         Check(!transport.Sent.Reader.TryRead(out _));
@@ -93,7 +95,20 @@ internal static class RegionDefaultTests
         var pending = client.GetDefaultFloodScopeAsync(cancel.Token); await Sent(transport); cancel.Cancel();
         var canceled = await Throws<OperationCanceledException>(async () => await pending);
         Check(canceled.CancellationToken == cancel.Token); cancel.Dispose();
+        Check(!client.IsStarted);
+        await client.DisconnectAsync(); await client.ConnectAsync(); await client.StartAsync();
         var timeout = client.GetDefaultFloodScopeAsync(); await Sent(transport);
         await Throws<MeshCoreTimeoutException>(async () => await timeout);
+    }
+    private static async Task LateReadback()
+    {
+        var transport = new TestTransport(); await using var client = Client(transport);
+        await client.ConnectAsync(); await client.StartAsync();
+        var read = client.GetDefaultFloodScopeAsync(); await Sent(transport);
+        var queued = client.SetDeviceTimeAsync(DateTimeOffset.UtcNow);
+        await Throws<MeshCoreTimeoutException>(async () => await read);
+        transport.Emit([0x1C]);
+        await Throws<MeshCoreTransportException>(async () => await queued);
+        Check(!client.IsStarted && !transport.Sent.Reader.TryRead(out _));
     }
 }

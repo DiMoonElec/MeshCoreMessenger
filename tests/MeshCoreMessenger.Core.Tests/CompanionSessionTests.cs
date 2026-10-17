@@ -297,8 +297,20 @@ public sealed class CompanionSessionTests
         public Func<CancellationToken, Task>? ConnectAction { get; set; }
         public Func<CancellationToken, Task<SelfInfo>>? StartAction { get; set; }
         public Func<CancellationToken, Task>? DisconnectAction { get; set; }
+        public Func<CancellationToken, Task>? DrainAction { get; set; }
         public Func<CancellationToken, Task<DeviceInfo>>? DeviceInfoAction { get; set; }
         public Func<CancellationToken, Task<NodeFloodScope>>? RegionReadAction { get; set; }
+        public Func<RegionDefinition?, CancellationToken, Task>? RegionWriteAction { get; set; }
+        public Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default)
+        {
+            Calls.Add("SetDefaultFloodScope");
+            return RegionWriteAction?.Invoke(definition, cancellationToken) ?? Task.FromException(new NotSupportedException());
+        }
+        public Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
+        {
+            Calls.Add("ClearDefaultFloodScope");
+            return RegionWriteAction?.Invoke(null, cancellationToken) ?? Task.FromException(new NotSupportedException());
+        }
         public Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
         {
             if (DeviceInfoAction is null) return Task.FromException<DeviceInfo>(new NotSupportedException());
@@ -402,7 +414,7 @@ public sealed class CompanionSessionTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             Calls.Add("Drain");
-            return Task.CompletedTask;
+            return DrainAction?.Invoke(cancellationToken) ?? Task.CompletedTask;
         }
 
         public async Task DisconnectAsync(CancellationToken cancellationToken = default)

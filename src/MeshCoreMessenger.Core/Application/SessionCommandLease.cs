@@ -10,9 +10,10 @@ namespace MeshCoreMessenger.Core.Application;
 /// Core workflow ownership for one immutable session/target. Use RunAsync for the whole workflow,
 /// including its status writes. Observers are owned here, independently of UI selection.
 /// </summary>
-public sealed class SessionCommandLease : IAsyncDisposable
+public sealed partial class SessionCommandLease : IAsyncDisposable
 {
     private readonly SessionCommandScope _scope;
+    private readonly SessionCommandOwner _owner;
     private readonly CancellationTokenSource _lifetime;
     private readonly CancellationToken _token;
     private readonly HashSet<Task> _work = [];
@@ -32,12 +33,13 @@ public sealed class SessionCommandLease : IAsyncDisposable
         CancellationToken sessionStop, CancellationToken callerStop)
     {
         _scope = scope;
+        _owner = scope.Owner with { RegionCapabilities = scope.Capabilities, DefaultRegion = scope.RegionSnapshot };
         Target = target;
         _lifetime = CancellationTokenSource.CreateLinkedTokenSource(sessionStop, callerStop);
         _token = _lifetime.Token;
     }
 
-    public SessionCommandOwner Owner => _scope.Owner;
+    public SessionCommandOwner Owner => _owner;
     public SessionCommandTarget Target { get; }
     public CancellationToken Token => _token;
     public int MaximumTextBytes => _scope.GetTextByteLimit(Target is ChannelCommandTarget);

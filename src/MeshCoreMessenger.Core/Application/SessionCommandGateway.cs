@@ -32,11 +32,11 @@ public sealed class SessionCommandGateway(
 
     public NodeRegionSnapshot? GetDefaultRegion(Guid nodeId)
     {
-        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.Owner.DefaultRegion : null;
+        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.RegionSnapshot : null;
     }
     public RegionCapabilities? GetRegionCapabilities(Guid nodeId)
     {
-        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.Owner.RegionCapabilities : null;
+        lock (_gate) return _active is { IsOpen: true } active && active.Owner.NodeId == nodeId ? active.Capabilities : null;
     }
 
     public int? GetTextByteLimit(Guid nodeId, bool isChannel)
@@ -99,6 +99,47 @@ internal sealed class SessionCommandScope(
     IDurableOutgoingWrites outgoing, TimeProvider timeProvider)
 {
     internal readonly object Gate = new();
+    private readonly SemaphoreSlim _regionGate = new(1, 1);
+    private NodeRegionSnapshot? _regionSnapshot = owner.DefaultRegion;
+    internal NodeRegionSnapshot? RegionSnapshot
+    {
+        get
+        {
+            lock (Gate)
+            {
+                var snapshot = _regionSnapshot;
+                return _closed && snapshot is { Freshness: RegionSnapshotFreshness.CurrentSession }
+                    ? new(snapshot.NodeId, snapshot.SessionId, snapshot.Generation, snapshot.ObservedUtc,
+                        snapshot.Support, snapshot.Value, RegionSnapshotFreshness.Offline, snapshot.Revision) : snapshot;
+            }
+        }
+    }
+    internal RegionCapabilities? Capabilities
+    {
+        get { lock (Gate) return Owner.RegionCapabilities is { } value && _regionSnapshot is { } snapshot
+            ? value with { DefaultReadWrite = snapshot.Support } : Owner.RegionCapabilities; }
+    }
+    internal bool PublishRegion(NodeRegionSnapshot snapshot)
+    {
+        lock (Gate)
+        {
+            if (_closed || !client.IsConnected || !client.IsStarted) return false;
+            if (snapshot.SessionId != Owner.SessionId || snapshot.Generation != Owner.Generation || snapshot.NodeId != Owner.NodeId)
+                throw new InvalidOperationException("Region observation belongs to an inactive owner.");
+            _regionSnapshot = snapshot;
+            return true;
+        }
+    }
+    internal async Task<T> WithRegionStateAsync<T>(SessionCommandLease lease, Func<Task<T>> action)
+    {
+        await _regionGate.WaitAsync(lease.Token).ConfigureAwait(false);
+        try
+        {
+            lock (Gate) { EnsureOpen(); lease.EnsureUsable(); lease.Token.ThrowIfCancellationRequested(); }
+            return await action().ConfigureAwait(false);
+        }
+        finally { _regionGate.Release(); }
+    }
     private readonly CancellationTokenSource _stop = new();
     private readonly HashSet<SessionCommandLease> _leases = [];
     private bool _closed;
@@ -143,6 +184,9 @@ internal sealed class SessionCommandScope(
     }
 
     internal Task<T> Invoke<T>(SessionCommandLease lease, Func<ICompanionClient, CancellationToken, Task<T>> call, bool sending = false)
+        => sending ? WithRegionStateAsync(lease, () => InvokeCore(lease, call, true)) : InvokeCore(lease, call, false);
+
+    private Task<T> InvokeCore<T>(SessionCommandLease lease, Func<ICompanionClient, CancellationToken, Task<T>> call, bool sending)
     {
         lock (Gate)
         {

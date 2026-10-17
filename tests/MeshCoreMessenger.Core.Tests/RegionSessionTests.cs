@@ -104,6 +104,18 @@ public sealed class RegionSessionTests
         Assert.NotNull((await f.Storage.Sessions.GetAsync(session.SessionId, Token))!.EndedUtc);
     }
 
+    [Fact]
+    public async Task LostReadinessBeforeLifecycleCallbackIsTransientButHealthyInvalidOperationIsNot()
+    {
+        await using var f = await Fixture.Create(); var client = Client();
+        await using var session = await f.Session(client, 1); await session.StartAsync(Token);
+        client.DrainAction = _ => throw new InvalidOperationException("fixture invariant");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => session.DrainMessagesAsync(Token));
+        await client.DisconnectAsync(Token); // No lifecycle callback: reproduce the publication window deterministically.
+        var failure = await Assert.ThrowsAsync<MeshCoreTransportException>(() => session.DrainMessagesAsync(Token));
+        Assert.Equal(ConnectionFailureDisposition.Transient, new ConnectionFailureClassifier().Classify(failure));
+    }
+
     private sealed class Clients : IMeshCoreClientFactory
     {
         internal readonly Queue<ICompanionClient> Pending = [];

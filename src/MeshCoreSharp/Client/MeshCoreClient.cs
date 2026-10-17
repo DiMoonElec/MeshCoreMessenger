@@ -390,7 +390,8 @@ public sealed class MeshCoreClient : IAsyncDisposable
         var packet = await _dispatcher.SendAsync<DefaultFloodScopePacket>(CommandType.GetDefaultFloodScope,
             CompanionCommands.GetDefaultFloodScope(), nameof(GetDefaultFloodScopeAsync), _options.CommandTimeout,
             cancellationToken, type => type == PacketType.DefaultFloodScope,
-            onAccepted: packet => { if (ReferenceEquals(session, _scopeOperations)) _defaultFloodScope = packet.Scope; }).ConfigureAwait(false);
+            onAccepted: packet => { if (ReferenceEquals(session, _scopeOperations)) _defaultFloodScope = packet.Scope; },
+            invalidateOnUncertainResponse: true).ConfigureAwait(false);
         return packet.Scope;
     }
 

@@ -63,9 +63,10 @@ public sealed class ChannelRegionPreference
 public sealed class NodeRegionSnapshot
 {
     public NodeRegionSnapshot(Guid nodeId, Guid? sessionId, long? generation, DateTimeOffset? observedUtc,
-        RegionSupport support, NodeFloodScope value, RegionSnapshotFreshness freshness)
+        RegionSupport support, NodeFloodScope value, RegionSnapshotFreshness freshness, long revision = 0)
     {
         RegionModelValidation.Identity(nodeId); ArgumentNullException.ThrowIfNull(value);
+        if (revision < 0) throw new ArgumentOutOfRangeException(nameof(revision));
         if (!Enum.IsDefined(support) || !Enum.IsDefined(freshness)) throw new ArgumentOutOfRangeException(nameof(support));
         if (sessionId == Guid.Empty || generation < 0) throw new ArgumentException("Invalid session identity.");
         if (freshness == RegionSnapshotFreshness.CurrentSession && (sessionId is null || generation is null))
@@ -75,6 +76,7 @@ public sealed class NodeRegionSnapshot
             throw new ArgumentException("Known preferences require supported, identified and dated observation.");
         NodeId = nodeId; SessionId = sessionId; Generation = generation; ObservedUtc = observedUtc?.ToUniversalTime();
         Support = support; Value = value; Freshness = freshness;
+        Revision = revision;
     }
     public Guid NodeId { get; }
     public Guid? SessionId { get; }
@@ -83,6 +85,8 @@ public sealed class NodeRegionSnapshot
     public RegionSupport Support { get; }
     public NodeFloodScope Value { get; }
     public RegionSnapshotFreshness Freshness { get; }
+    /// <summary>Publication revision within this session; offline cache does not carry session revisions.</summary>
+    public long Revision { get; }
     public bool IsCurrent(Guid sessionId, long generation) => Freshness == RegionSnapshotFreshness.CurrentSession && SessionId == sessionId && Generation == generation;
     public override string ToString() => $"Node region observation: {NodeId}, {Support}, {Value.State}, {Freshness}";
 }

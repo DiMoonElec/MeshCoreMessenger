@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Online RegionService workflow через session lease.
 
@@ -41,11 +41,19 @@ region-design.md: «Хранение и локальные операции», �
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION18](region18-attempt-storage.md).
+SetNodeDefaultAsync/ClearNodeDefaultAsync требуют точный активный SessionId/generation через lease. Общий session gate сериализует SET → GET → durable snapshot → публикацию и text SEND. Во время возможного изменения текущее состояние Unknown; только после commit появляется новый session-local Revision. Новые leases захватывают обновлённые данные, ранее выданные owner snapshots неизменяемы. Постоянный кеш остаётся offline observation.
+
+Результаты различают Applied, Rejected, CommandUncertain, ReadbackFailed, ReadbackMismatch, PersistenceFailed и SessionClosed. Mismatch сохраняет фактический readback; неопределённость после возможной передачи сохраняется без повторного SET/rollback. Ошибка БД приостанавливает admission существующим durable tracker. GET timeout/cancellation после TX закрывает library command admission до reconnect.
+
+Повторная проверка REGION16 обнаружила race: фоновый drain может увидеть loss of readiness до lifecycle callback. Identified session теперь переводит такой InvalidOperationException в transport failure, сохраняя NeedsAttention для ошибок здоровой сессии. Есть детерминированный regression test.
+
+Проверки: RegionDefaultServiceTests (8 случаев) — SET/CLEAR, mismatch, отказ, отмена/timeout, неизвестный исход SET, сериализация, stale owner/shutdown, SQLite write failure; RegionSessionTests (6). Library 226/226, Desktop bootstrap 6/6; Release solution build без предупреждений/ошибок. Полный Core результат указан в current-state. Аппаратные настройки и flash persistence не проверялись (REGION32–33).
+
+Следующий шаг — [REGION18](region18-attempt-storage.md).

@@ -62,8 +62,10 @@ public sealed class CompanionSession : IAsyncDisposable
     public Guid? LocalNodeId { get; private set; }
     public LocalNodeIdentity? LocalNode { get; private set; }
     public CompanionSessionState State => _state;
-    public RegionCapabilities RegionCapabilities { get; private set; } = RegionCapabilities.Unknown;
-    public NodeRegionSnapshot? DefaultRegion { get; private set; }
+    private RegionCapabilities _regionCapabilities = RegionCapabilities.Unknown;
+    public RegionCapabilities RegionCapabilities { get => _commands?.Capabilities ?? _regionCapabilities; private set => _regionCapabilities = value; }
+    private NodeRegionSnapshot? _defaultRegion;
+    public NodeRegionSnapshot? DefaultRegion { get => _commands?.RegionSnapshot ?? _defaultRegion; private set => _defaultRegion = value; }
     public ChannelReader<CompanionSessionEvent> Events => _events.Reader;
 
     internal event EventHandler<CompanionSessionLifecycleEventArgs>? LifecycleChanged;
@@ -78,25 +80,36 @@ public sealed class CompanionSession : IAsyncDisposable
     internal Task<IReadOnlyList<Contact>> GetContactsAsync(CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
-        return _client.GetContactsAsync(cancellationToken);
+        return InvokeIdentifiedAsync(() => _client.GetContactsAsync(cancellationToken));
     }
 
     internal Task<Contact> GetContactAsync(ReadOnlyMemory<byte> publicKey, CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
-        return _client.GetContactAsync(publicKey, cancellationToken);
+        return InvokeIdentifiedAsync(() => _client.GetContactAsync(publicKey, cancellationToken));
     }
 
     internal Task<IReadOnlyList<ChannelInfo>> GetChannelsAsync(CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
-        return _client.GetChannelsAsync(cancellationToken);
+        return InvokeIdentifiedAsync(() => _client.GetChannelsAsync(cancellationToken));
     }
 
     internal Task DrainMessagesAsync(CancellationToken cancellationToken = default)
     {
         EnsureIdentified();
-        return _client.DrainMessagesAsync(cancellationToken);
+        return InvokeIdentifiedAsync(async () => { await _client.DrainMessagesAsync(cancellationToken).ConfigureAwait(false); return true; });
+    }
+
+    private async Task<T> InvokeIdentifiedAsync<T>(Func<Task<T>> action)
+    {
+        try { return await action().ConfigureAwait(false); }
+        catch (InvalidOperationException error) when (!_client.IsConnected || !_client.IsStarted)
+        {
+            // A transport can lose readiness before its lifecycle callback reaches the supervisor.
+            // This identified session needs reconnect, not a permanent configuration error.
+            throw new MeshCoreTransportException("The identified Companion session lost its connection.", error);
+        }
     }
 
     /// <summary>Places a marker after all library callbacks, for the one application event consumer.</summary>
