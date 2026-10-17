@@ -7,6 +7,24 @@ using MeshCoreSharp.Transport.Ble;
 
 internal static class WindowsBleProbe
 {
+    internal static async Task<int> SendChannelRegionAsync(string deviceId, ChannelRegionSendExample.Request request, string outputPath)
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        Console.CancelKeyPress += cancel;
+        try
+        {
+            await using var dispatcher = new BleProbeDispatcher(); await dispatcher.Ready;
+            await using var native = new BleMeshCoreTransport(new()
+            { DeviceId = deviceId, DeviceAccessDispatcher = dispatcher, OpenTimeout = TimeSpan.FromSeconds(30) });
+            var exit = await ChannelRegionSendExample.RunAsync(native, request, outputPath, cancellation.Token);
+            await native.CleanupCompletion.WaitAsync(TimeSpan.FromSeconds(30));
+            return exit;
+        }
+        catch (Exception error) { Console.Error.WriteLine($"Channel region example: {error.GetType().Name}: {error.Message}; no automatic retry."); return 1; }
+        finally { Console.CancelKeyPress -= cancel; }
+    }
+
     internal static async Task<int> RunCatalogTestAsync(string deviceId, string outputPath)
     {
         using var cancellation = new CancellationTokenSource();

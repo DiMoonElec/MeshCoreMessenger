@@ -6,6 +6,20 @@ using MeshCoreSharp.Transport.Tcp;
 using MeshCoreSharp.Transport.Ble;
 using MeshCoreSharp.Exceptions;
 
+if (args.Length == 1 && args[0] == "--channel-region-self-test")
+    return await ChannelRegionSendExample.SelfTestAsync();
+
+if (args.Length >= 1 && args[0] == "--ble-channel-region-send")
+{
+    if (args.Length is not (6 or 7) || args.Skip(1).Any(string.IsNullOrWhiteSpace))
+    { Console.Error.WriteLine("Usage: --ble-channel-region-send <device-id> <channel-name> <public-region> <text> <new-receipt.json> [expected-full-node-key-hex]"); return 2; }
+#if WINDOWS
+    return await WindowsBleProbe.SendChannelRegionAsync(args[1], new(args[2], args[3], args[4], args.Length == 7 ? args[6] : null), args[5]);
+#else
+    Console.Error.WriteLine("BLE channel region example requires the Windows target."); return 1;
+#endif
+}
+
 if (args.Length == 1 && args[0] == "--region-catalog-self-test")
     return await RegionCatalogTest.SelfTestAsync();
 
@@ -160,6 +174,7 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-region-probe <opaque-device-id> [previously-observed-zero-hop-full-key-hex]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --region-probe-self-test");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-region-catalog-test <opaque-device-id> <new-result.json> (explicit opt-in only)");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-channel-region-send <device-id> <channel-name> <public-region> <text> <new-receipt.json> [expected-full-node-key-hex] (one SEND, explicit opt-in only)");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");

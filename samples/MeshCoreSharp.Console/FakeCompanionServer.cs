@@ -15,6 +15,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public byte[] DefaultFloodScopeResponse { get; set; } = [(byte)PacketType.DefaultFloodScope];
     public byte FirmwareProtocolVersion { get; set; } = 10;
     public string SelfName { get; set; } = "fake-companion";
+    public string PrimaryChannelName { get; set; } = "Emulated public";
     public Func<Task>? BeforeDefaultScopeResponse { get; set; }
     public bool RejectTemporaryScopeSet { get; set; }
     public ConcurrentQueue<byte[]> TemporaryScopeCommands { get; } = new();
@@ -313,14 +314,14 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return BinaryPrimitives.ReadUInt32LittleEndian(SHA256.HashData(input));
     }
 
-    private static byte[] BuildChannel(byte slot)
+    private byte[] BuildChannel(byte slot)
     {
         var frame = new byte[2 + ProtocolLimits.ChannelNameSize + ProtocolLimits.ChannelSecretSize];
         frame[0] = (byte)PacketType.ChannelInfo;
         frame[1] = slot;
         if (slot == 0)
         {
-            WriteFixed(frame.AsSpan(2, ProtocolLimits.ChannelNameSize), "Emulated public");
+            WriteFixed(frame.AsSpan(2, ProtocolLimits.ChannelNameSize), PrimaryChannelName);
             frame.AsSpan(2 + ProtocolLimits.ChannelNameSize).Fill(3);
         }
         return frame;

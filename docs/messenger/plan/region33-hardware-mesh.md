@@ -4,6 +4,9 @@
 
 **Статус: частично проверен 17.10.2026 по прямому запросу пользователя.**
 Discovery→regions через CatCore BLE подтверждён; [результат](../../testing/region-hardware-mesh.md).
+Отдельно подтверждён локальный SEND в `#test` со scope `ru-ros` и проверенным
+temporary cleanup/default readback: [пример и отчёт](../../testing/channel-region-send-example.md).
+Принимающая сторона и channel delivery не проверены.
 GUI отложен, остальные зависимости и RF-сценарии этого этапа не завершены.
 
 **Цель:** Проверить радиосценарии и ограничения автономных ответов.
