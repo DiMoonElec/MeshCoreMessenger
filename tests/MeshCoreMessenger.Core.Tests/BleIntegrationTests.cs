@@ -11,7 +11,7 @@ using Xunit;
 
 namespace MeshCoreMessenger.Core.Tests;
 
-public sealed class BleIntegrationTests
+public sealed partial class BleIntegrationTests
 {
     private static CancellationToken Token => TestContext.Current.CancellationToken;
 
@@ -223,6 +223,7 @@ public sealed class BleIntegrationTests
         public ConnectionSupervisor Supervisor { get; private set; } = null!;
         public DraftWriteTracker Drafts { get; private set; } = null!;
         public MessageService Sender { get; private set; } = null!;
+        public SessionCommandGateway Gateway { get; private set; } = null!;
         public List<BleCompanionEmulator> Devices { get; } = [];
         public ConcurrentQueue<Exception> Errors { get; } = new();
         private ConnectionProfileManager _profiles = null!;
@@ -235,13 +236,14 @@ public sealed class BleIntegrationTests
             f.Ingest = new(f.Storage.IncomingMessages, time);
             var outgoing = new OutgoingAttemptWriteTracker(f.Storage.OutgoingMessages);
             var gateway = new SessionCommandGateway(f.Storage.Directories, f.Storage.ConversationDirectory, f.Storage.OutgoingMessages, outgoing, time);
+            f.Gateway = gateway;
             var sessions = new CompanionSessionFactory(f, f.Storage.Nodes, f.Storage.Sessions,
-                new SessionCompletionTracker(f.Storage.Sessions), time);
+                new SessionCompletionTracker(f.Storage.Sessions), time, f.Storage.Regions);
             var attempts = new ConnectionAttemptFactory(sessions, new DirectoryService(f.Storage.Directories, time), f.Storage.Directories, f.Ingest, gateway, outgoing);
             f.Supervisor = new(f._profiles, attempts, new ConnectionFailureClassifier(), new SystemReconnectDelay(), new RandomReconnectJitter(), time, outgoing: outgoing);
             f.Drafts = new(f.Storage.Drafts, time);
             f.Sender = new(gateway, f.Storage.OutgoingMessages, f.Storage.Directories, f.Storage.ConversationDirectory,
-                f.Drafts, new PassthroughOutgoingTextProcessor(), time, f.Storage.Drafts, new ConversationOperationGuard());
+                f.Drafts, new PassthroughOutgoingTextProcessor(), time, f.Storage.Drafts, new ConversationOperationGuard(), regions: f.Storage.Regions);
             return f;
         }
         public IMeshCoreTransport Create(ConnectionProfile profile) => profile.Transport == ConnectionTransportKind.Ble
@@ -271,9 +273,11 @@ public sealed class BleIntegrationTests
             }, Token);
         }
         public async Task<BleCompanionEmulator> Connect(ConnectionTransportKind kind = ConnectionTransportKind.Ble,
-            byte suffix = 31, CommandType? drop = null, bool expectOnline = true, int capacity = 256, bool reconnect = false)
+            byte suffix = 31, CommandType? drop = null, bool expectOnline = true, int capacity = 256, bool reconnect = false,
+            Action<BleCompanionEmulator>? configure = null)
         {
             var device = AddDevice(capacity); device.IdentitySuffix = suffix; device.DropOnCommand = drop;
+            configure?.Invoke(device);
             await Select(kind, reconnect);
             var prior = Supervisor.Snapshot.Generation;
             await Supervisor.ConnectNowAsync(Token);

@@ -260,9 +260,16 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
     private async Task ValidateTextSendAsync()
     {
         if (_message is null) throw new InvalidOperationException("Sending requires a persisted attempt.");
-        var limit = MaximumTextBytes;
-        if (!TextMessageValidator.Validate(_message.TransmissionText, limit).IsValid) throw new InvalidOperationException("Stored text exceeds the current session's UTF-8 budget.");
+        ValidateCapturedTextBudget();
         await _scope.ValidateSendTargetAsync(this).ConfigureAwait(false);
+    }
+
+    internal void ValidateCapturedTextBudget()
+    {
+        var limit = _resolvedScope is { State: not StoredRegionScopeState.LegacyUnknown } captured
+            ? _scope.GetTextByteLimit(Target is ChannelCommandTarget, WireScope(captured)) : MaximumTextBytes;
+        if (_message is null || !TextMessageValidator.Validate(_message.TransmissionText, limit).IsValid)
+            throw new ArgumentException("Stored text exceeds the refreshed session UTF-8 budget.");
     }
 
     private bool Matches(OutgoingRecipient recipient) => Target switch

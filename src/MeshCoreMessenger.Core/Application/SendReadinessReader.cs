@@ -8,21 +8,44 @@ namespace MeshCoreMessenger.Core.Application;
 public enum SendReadiness
 {
     Ready, Offline, Synchronizing, NotOnline, WrongNode, NoRecipient, UnsupportedRecipient,
-    ContactMissing, AmbiguousPrefix, ChannelMissing, ChooseSlot, StaleBinding, Checking, ReadFailed,
+    ContactMissing, AmbiguousPrefix, ChannelMissing, ChooseSlot, StaleBinding, Checking, ReadFailed, UnsupportedScope,
 }
 
 /// <summary>Immutable recipient capture for read-only presentation checks, not a wire admission lease.</summary>
 public sealed record SendRecipient(ConversationKind Kind, ReadOnlyMemory<byte> Identity, byte? ChannelSlot = null);
+public sealed record SendBudgetReadiness(SendReadiness Readiness, OutgoingTextBudget? Budget);
 
 public interface ISendReadinessReader
 {
+    async Task<SendBudgetReadiness> ReadBudgetAsync(ConnectionSupervisorSnapshot connection, Guid? viewedNodeId,
+        SendRecipient? recipient, CancellationToken cancellationToken = default) => new(await ReadAsync(connection, viewedNodeId, recipient, cancellationToken), null);
     Task<SendReadiness> ReadAsync(ConnectionSupervisorSnapshot connection, Guid? viewedNodeId,
         SendRecipient? recipient, CancellationToken cancellationToken = default);
 }
 
 /// <summary>Uses committed node-scoped directory data. It never sends commands or reads the session event channel.</summary>
-public sealed class SendReadinessReader(IDirectoryStore directories, IConversationDirectoryReader directory) : ISendReadinessReader
+public sealed class SendReadinessReader(IDirectoryStore directories, IConversationDirectoryReader directory, IMessageService? messages = null) : ISendReadinessReader
 {
+    public async Task<SendBudgetReadiness> ReadBudgetAsync(ConnectionSupervisorSnapshot connection, Guid? viewedNodeId,
+        SendRecipient? recipient, CancellationToken cancellationToken = default)
+    {
+        var readiness = await ReadAsync(connection, viewedNodeId, recipient, cancellationToken).ConfigureAwait(false);
+        if (readiness != SendReadiness.Ready || messages is null) return new(readiness, null);
+        OutgoingRecipient target;
+        if (recipient!.Kind == ConversationKind.Contact) target = new(ConversationKind.Contact, recipient.Identity.ToArray());
+        else
+        {
+            var candidates = await messages.GetChannelTargetsAsync(viewedNodeId!.Value, recipient.Identity, cancellationToken).ConfigureAwait(false);
+            var selected = recipient.ChannelSlot is { } slot ? candidates.SingleOrDefault(c => c.Slot == slot) : candidates.Count == 1 ? candidates[0] : null;
+            if (selected is null) return new(SendReadiness.StaleBinding, null);
+            target = selected;
+        }
+        var budget = await messages.GetTextBudgetAsync(viewedNodeId!.Value, target, cancellationToken).ConfigureAwait(false);
+        return budget.SessionId == connection.SessionId && budget.Generation == connection.Generation
+            ? new(budget.ScopeSupport == RegionSupport.Unsupported ? SendReadiness.UnsupportedScope : SendReadiness.Ready, budget)
+            : new(SendReadiness.NotOnline, null);
+    }
+
     public static SendReadiness? CheckContext(ConnectionSupervisorSnapshot connection, Guid? viewedNodeId, SendRecipient? recipient)
     {
         if (connection.State == ConnectionSupervisorState.Offline) return SendReadiness.Offline;

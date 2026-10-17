@@ -64,6 +64,7 @@ public sealed class MessengerEndToEndTests
 
         firstClient.FailConnection();
         await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting, generation: 1);
+        await delay.WaitForCountAsync(1);
         Assert.Single(delay.Requests);
         delay.Complete(0);
         await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 2);
@@ -73,6 +74,7 @@ public sealed class MessengerEndToEndTests
 
         secondClient.FailConnection();
         await WaitForStateAsync(supervisor, ConnectionSupervisorState.RetryWaiting, generation: 2);
+        await delay.WaitForCountAsync(2);
         Assert.Equal(2, delay.Requests.Count);
         delay.Complete(1);
         await WaitForStateAsync(supervisor, ConnectionSupervisorState.Online, generation: 3);
@@ -378,16 +380,22 @@ public sealed class MessengerEndToEndTests
 
     private sealed class ControlledReconnectDelay : IReconnectDelay
     {
-        public List<TaskCompletionSource> Requests { get; } = [];
+        public System.Collections.Concurrent.ConcurrentQueue<TaskCompletionSource> Requests { get; } = new();
 
         public Task DelayAsync(TimeSpan delay, CancellationToken cancellationToken)
         {
             var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-            Requests.Add(completion);
+            Requests.Enqueue(completion);
             return completion.Task.WaitAsync(cancellationToken);
         }
 
-        public void Complete(int index) => Requests[index].TrySetResult();
+        public void Complete(int index) => Requests.ElementAt(index).TrySetResult();
+        public async Task WaitForCountAsync(int count)
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(CancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(3));
+            while (Requests.Count < count) await Task.Delay(5, timeout.Token);
+        }
     }
 
     private sealed class ZeroJitter : IReconnectJitter

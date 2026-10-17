@@ -26,6 +26,8 @@ public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State)
 
 public interface IMessageService
 {
+    Task<OutgoingTextBudget> GetTextBudgetAsync(Guid nodeId, OutgoingRecipient recipient, CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException();
     int? GetTextByteLimit(Guid nodeId, bool isChannel) => null;
     Task<PrivateSendOutcome> SendPrivateAsNewAsync(PrivateResendRequest request, CancellationToken cancellationToken = default) =>
         throw new NotSupportedException();
@@ -42,7 +44,7 @@ public interface IMessageService
 }
 
 /// <summary>Durable admission; configured private jobs and channel commands remain owned by their captured session.</summary>
-public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMessageStore messages,
+public sealed partial class MessageService(ISessionCommandGateway gateway, IOutgoingMessageStore messages,
     IDirectoryStore directories, IConversationDirectoryReader directory, IDraftBuffer drafts,
     IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations,
     PrivateDeliveryCoordinator? privateDeliveries = null, IRegionStore? regions = null) : IMessageService
@@ -132,21 +134,21 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
             if (parent.Owner.SessionId != request.SessionId || parent.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
             reservation = privateDeliveries!.Reserve(parent);
-            var processed = processor.Process(capture.Text, new(false, parent.Owner.SenderName, parent.MaximumTextBytes), request.Options);
-            if (!processed.Validation.IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
-                throw new ArgumentException("Message text is empty or invalid.");
             return await parent.RunAsync(async (owned, token) =>
             {
                 await owned.ValidateRecipientAsync().ConfigureAwait(false);
+                var scope = regions is null ? null : await owned.ResolveDefaultScopeAsync(owned.MaximumTextBytes).ConfigureAwait(false);
+                var budget = scope?.MaximumTextBytes ?? owned.MaximumTextBytes;
+                var processed = processor.Process(capture.Text, new(false, owned.Owner.SenderName, budget), request.Options);
+                if (!processed.Validation.IsValid || !MeshCoreSharp.TextMessageValidator.Validate(processed.TransmissionText, budget).IsValid || string.IsNullOrWhiteSpace(processed.TransmissionText))
+                    throw new ArgumentException("Message text is empty or invalid.");
                 if (privateResendSourceId is null) await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
                 var draft = privateResendSourceId is null ? await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false) : null;
                 var conversation = capture.Target.ConversationId ?? draft?.ConversationId
                     ?? throw new InvalidOperationException("The conversation has not been materialized.");
-                var scope = regions is null ? null : await owned.ResolveDefaultScopeAsync(
-                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes).ConfigureAwait(false);
                 var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                     conversation, recipient, processed.OriginalText, processed.TransmissionText,
-                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow(), privateResendSourceId) { Scope = scope }, token).ConfigureAwait(false);
+                    budget, timeProvider.GetUtcNow(), privateResendSourceId) { Scope = scope }, token).ConfigureAwait(false);
                 // Register the complete job before any user callback or return to the UI.
                 try { privateDeliveries.Start(owned, prepared, policy, reservation!, activity!); }
                 catch
@@ -195,13 +197,9 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 ? new ChannelCommandTarget(recipient) : new ContactCommandTarget(recipient.Identity), cancellationToken);
             if (lease.Owner.SessionId != request.SessionId || lease.Owner.Generation != request.Generation)
                 throw new InvalidOperationException("The selected session has changed.");
-            var processed = repeat is null ? processor.Process(capture.Text, new(isChannel, lease.Owner.SenderName, lease.MaximumTextBytes), request.Options) : null;
-            var transmission = repeat?.TransmissionText ?? processed!.TransmissionText;
-            var budget = lease.MaximumTextBytes;
-            if (!(processed?.Validation.IsValid ?? MeshCoreSharp.TextMessageValidator.Validate(transmission, budget).IsValid) || string.IsNullOrWhiteSpace(transmission))
-                throw new ArgumentException("Message text is empty or invalid.");
             return await lease.RunAsync(async (owned, token) =>
             {
+                var budget = owned.MaximumTextBytes;
                 ResolvedRegionScope? scope = null;
                 if (isChannel && regions is not null)
                 {
@@ -213,10 +211,16 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                         if (!original.CanReplayExactly) throw new RegionReplayUnavailableException();
                         scope = new(request.NodeId, owned.Owner.SessionId, owned.Owner.Generation, original.RequestedMode,
                             original.PolicyRevision, original.State, original.Key, original.Name, budget);
+                        scope = await owned.RefreshCapturedBudgetAsync(scope).ConfigureAwait(false);
                     }
                     else scope = await owned.ResolveChannelScopeAsync(regions, directories, budget).ConfigureAwait(false);
                 }
                 else if (regions is not null) scope = await owned.ResolveDefaultScopeAsync(budget).ConfigureAwait(false);
+                budget = scope?.MaximumTextBytes ?? budget;
+                var processed = repeat is null ? processor.Process(capture.Text, new(isChannel, owned.Owner.SenderName, budget), request.Options) : null;
+                var transmission = repeat?.TransmissionText ?? processed!.TransmissionText;
+                if (processed?.Validation.IsValid == false || !MeshCoreSharp.TextMessageValidator.Validate(transmission, budget).IsValid || string.IsNullOrWhiteSpace(transmission))
+                    throw new ArgumentException("Message text is empty or invalid.");
                 // A not-yet-materialized directory conversation is created by the local draft store.
                 PreparedOutgoingMessage prepared;
                 if (repeat is not null && !asNew)
@@ -230,7 +234,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                         ?? throw new InvalidOperationException("The conversation has not been materialized.");
                     prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                         conversation, recipient, repeat?.OriginalText ?? processed!.OriginalText, transmission,
-                        processed?.Validation.MaxUtf8Bytes ?? budget, timeProvider.GetUtcNow()) { Scope = scope }, token).ConfigureAwait(false);
+                        budget, timeProvider.GetUtcNow()) { Scope = scope }, token).ConfigureAwait(false);
                 }
                 await owned.BindOutgoingAsync(prepared.MessageId, prepared.Attempt.Id).ConfigureAwait(false);
                 if (repeat is null && await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)

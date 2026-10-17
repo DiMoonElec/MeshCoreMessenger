@@ -69,13 +69,17 @@ internal sealed class FakeMessageCommitNotifications : IMessageCommitNotificatio
 
 internal sealed class ImmediateUiDispatcher : IUiDispatcher
 {
+    private readonly object _gate = new();
     public int Calls { get; private set; }
 
     public Task InvokeAsync(Action action, CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        Calls++;
-        action();
+        lock (_gate)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Calls++;
+            action(); // Match the real UI dispatcher: callbacks cannot mutate collections concurrently.
+        }
         return Task.CompletedTask;
     }
 }

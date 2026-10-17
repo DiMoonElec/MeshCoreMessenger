@@ -163,6 +163,15 @@ internal sealed class SessionCommandScope(
             return transport is { } limit ? Math.Min(protocol, Math.Max(0, limit)) : protocol;
         }
     }
+    internal int GetTextByteLimit(bool isChannel, FloodScopeSelection selection)
+    {
+        lock (Gate)
+        {
+            EnsureOpen();
+            return client.GetTextBudget(isChannel ? TextMessageKind.Channel : TextMessageKind.Private, selection)?.MaximumTextBytes
+                ?? GetTextByteLimit(isChannel);
+        }
+    }
     internal DateTimeOffset? EstimateAcknowledgementDeadline(uint suggested) => client.GetAcknowledgementWaitDuration(suggested) is { } wait
         ? TimeProvider.GetUtcNow().Add(wait) : null;
 
@@ -184,7 +193,11 @@ internal sealed class SessionCommandScope(
     }
 
     internal Task<T> Invoke<T>(SessionCommandLease lease, Func<ICompanionClient, CancellationToken, Task<T>> call, bool sending = false)
-        => sending ? WithRegionStateAsync(lease, () => InvokeCore(lease, call, true)) : InvokeCore(lease, call, false);
+        => sending ? WithRegionStateAsync(lease, async () =>
+        {
+            await ValidateSendTargetAsync(lease).ConfigureAwait(false);
+            return await InvokeCore(lease, call, true).ConfigureAwait(false);
+        }) : InvokeCore(lease, call, false);
 
     private Task<T> InvokeCore<T>(SessionCommandLease lease, Func<ICompanionClient, CancellationToken, Task<T>> call, bool sending)
     {
@@ -193,6 +206,7 @@ internal sealed class SessionCommandScope(
             EnsureOpen();
             lease.EnsureUsable();
             lease.Token.ThrowIfCancellationRequested();
+            if (sending) lease.ValidateCapturedTextBudget();
             lease.MarkInvoked(sending);
             // Invocation and closing admission share this lock. No async result/ACK is awaited here.
             return call(client, lease.Token);

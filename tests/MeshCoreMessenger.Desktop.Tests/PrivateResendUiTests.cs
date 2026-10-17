@@ -29,12 +29,18 @@ public sealed partial class UiWorkspaceIntegrationTests
         var count = history.Messages.Count;
         workspace.Composer.Text = "Черновик оставить";
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously); sender.Gate = release.Task;
-        source.RequestSendAsNew(); var command = (IAsyncRelayCommand)source.SendAsNewCommand!;
-        var task = command.ExecutionTask!;
-        await UntilAsync(() => sender.Calls == 2);
-        Assert.False(source.CanSendAsNew); source.RequestSendAsNew(); Assert.Equal(2, sender.Calls);
-        w.Root.Shell.SelectSection(ShellSection.PublicChats); w.Root.Chats.Public.Composer.Text = "Другой черновик";
-        release.SetResult(); await task;
+        Task task = Task.CompletedTask;
+        try
+        {
+            await UntilAsync(() => source.CanSendAsNew);
+            source.RequestSendAsNew(); var command = (IAsyncRelayCommand)source.SendAsNewCommand!;
+            task = command.ExecutionTask!;
+            await UntilAsync(() => sender.Calls == 2);
+            Assert.False(source.CanSendAsNew); source.RequestSendAsNew(); Assert.Equal(2, sender.Calls);
+            w.Root.Shell.SelectSection(ShellSection.PublicChats); w.Root.Chats.Public.Composer.Text = "Другой черновик";
+        }
+        finally { release.TrySetResult(); }
+        await task;
         Assert.DoesNotContain("Не удалось", workspace.Composer.StatusLine);
         Assert.Null(w.Root.ErrorMessage);
         Assert.Equal(2, (await w.Storage.History.GetMessagesAsync(w.A.NodeId, source.ConversationId, null, 20, Token)).Count(m => m.Text == source.Body));

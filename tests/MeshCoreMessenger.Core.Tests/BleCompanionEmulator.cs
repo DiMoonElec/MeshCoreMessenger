@@ -29,12 +29,12 @@ internal sealed class BleCompanionEmulator : IBleGattOpenPlatform, IBleGattSessi
         Transport = new(new() { DeviceId = "same-endpoint", ReceiveQueueCapacity = capacity }, this, TimeProvider.System);
     }
     public BleGattCapabilities Capabilities { get; } = new(true, true, true, true, true);
-    public ushort MaxPduSize => 176;
+    public ushort MaxPduSize { get; private set; } = 176;
     public bool IsLinkConnected { get; private set; } = true;
     public event Action<ReadOnlyMemory<byte>>? NotificationReceived;
     public event Action<Exception?>? Disconnected;
-    // This emulator keeps the negotiated MTU fixed.
-    public event Action<ushort>? MaxPduSizeChanged { add { } remove { } }
+    public event Action<ushort>? MaxPduSizeChanged;
+    internal void ChangeMtu(ushort mtu) { MaxPduSize = mtu; MaxPduSizeChanged?.Invoke(mtu); }
     public async Task<IBleGattConnection?> OpenAsync(string deviceId, CancellationToken cancellationToken)
     {
         Opening.TrySetResult();

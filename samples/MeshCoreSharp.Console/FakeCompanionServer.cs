@@ -14,6 +14,8 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     public byte[] DefaultFloodScopeResponse { get; set; } = [(byte)PacketType.DefaultFloodScope];
     public byte FirmwareProtocolVersion { get; set; } = 10;
+    public string SelfName { get; set; } = "fake-companion";
+    public Func<Task>? BeforeDefaultScopeResponse { get; set; }
     public bool RejectTemporaryScopeSet { get; set; }
     public ConcurrentQueue<byte[]> TemporaryScopeCommands { get; } = new();
     private byte[]? _temporaryScopeKey;
@@ -153,6 +155,12 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 continue;
             }
 
+            if (type == CommandType.GetDefaultFloodScope && BeforeDefaultScopeResponse is { } beforeDefault)
+            {
+                await beforeDefault();
+                await WriteFrameAsync(stream, 0x3E, DefaultFloodScopeResponse.ToArray());
+                continue;
+            }
             if (type == CommandType.SetDefaultFloodScope)
             {
                 if (command.Length is not (1 or 48)) throw new InvalidDataException("Invalid default scope command.");
@@ -263,9 +271,9 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return frame;
     }
 
-    private static byte[] BuildSelfInfo()
+    private byte[] BuildSelfInfo()
     {
-        var name = Encoding.UTF8.GetBytes("fake-companion");
+        var name = Encoding.UTF8.GetBytes(SelfName);
         var frame = new byte[58 + name.Length];
         frame[0] = (byte)PacketType.SelfInfo;
         frame[1] = 1; // chat

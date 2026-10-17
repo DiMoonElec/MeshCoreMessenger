@@ -34,7 +34,17 @@ public sealed partial class SessionCommandLease
         return WireScope(captured);
     }
 
-    internal Task<ResolvedRegionScope> ResolveDefaultScopeAsync(int budget) => _scope.WithRegionStateAsync(this, () =>
+    private ResolvedRegionScope CompleteScopeCapture(ResolvedRegionScope scope, Action<long>? revisionCaptured = null)
+    {
+        var limit = _scope.GetTextByteLimit(Target is ChannelCommandTarget, WireScope(scope));
+        revisionCaptured?.Invoke(_scope.RegionSnapshot?.Revision ?? 0);
+        return new(scope.NodeId, scope.SessionId, scope.Generation, scope.RequestedMode, scope.PolicyRevision, scope.State, scope.Key, scope.Name, limit);
+    }
+
+    internal Task<ResolvedRegionScope> RefreshCapturedBudgetAsync(ResolvedRegionScope scope, Action<long>? revisionCaptured = null) =>
+        _scope.WithRegionStateAsync(this, () => Task.FromResult(CompleteScopeCapture(scope, revisionCaptured)));
+
+    internal Task<ResolvedRegionScope> ResolveDefaultScopeAsync(int budget, Action<long>? revisionCaptured = null) => _scope.WithRegionStateAsync(this, () =>
     {
         var snapshot = _scope.RegionSnapshot;
         // Firmware without temporary scope cannot promise a reproducible region over retries.
@@ -42,11 +52,11 @@ public sealed partial class SessionCommandLease
             snapshot?.IsCurrent(Owner.SessionId, Owner.Generation) == true ? snapshot.Value : NodeFloodScope.Unknown;
         var state = value.State == NodeFloodScopeState.KnownEmpty || value.Key?.IsEmpty == true ? StoredRegionScopeState.KnownUnscoped :
             value.State == NodeFloodScopeState.Configured ? StoredRegionScopeState.KnownScoped : StoredRegionScopeState.Unknown;
-        return Task.FromResult(new ResolvedRegionScope(Owner.NodeId, Owner.SessionId, Owner.Generation, FloodScopeMode.InheritDefault,
-            snapshot?.Revision ?? 0, state, state == StoredRegionScopeState.KnownScoped ? value.Key : null, value.Name, budget));
+        return Task.FromResult(CompleteScopeCapture(new(Owner.NodeId, Owner.SessionId, Owner.Generation, FloodScopeMode.InheritDefault,
+            snapshot?.Revision ?? 0, state, state == StoredRegionScopeState.KnownScoped ? value.Key : null, value.Name, budget), revisionCaptured));
     });
 
-    internal async Task<ResolvedRegionScope> ResolveChannelScopeAsync(IRegionReader regions, IDirectoryStore directories, int budget)
+    internal async Task<ResolvedRegionScope> ResolveChannelScopeAsync(IRegionReader regions, IDirectoryStore directories, int budget, Action<long>? revisionCaptured = null)
     {
         if (Target is not ChannelCommandTarget channel) throw new InvalidOperationException("Channel scope requires a binding.");
         var binding = await directories.GetActiveChannelBindingAsync(Owner.NodeId, channel.Recipient.Slot!.Value, Token).ConfigureAwait(false);
@@ -65,9 +75,9 @@ public sealed partial class SessionCommandLease
                 mode == FloodScopeMode.ForceUnscoped || value.State == NodeFloodScopeState.KnownEmpty || value.Key?.IsEmpty == true
                     ? StoredRegionScopeState.KnownUnscoped : value.State == NodeFloodScopeState.Configured
                         ? StoredRegionScopeState.KnownScoped : StoredRegionScopeState.Unknown;
-            return Task.FromResult(new ResolvedRegionScope(Owner.NodeId, Owner.SessionId, Owner.Generation, mode, preference.Revision,
+            return Task.FromResult(CompleteScopeCapture(new(Owner.NodeId, Owner.SessionId, Owner.Generation, mode, preference.Revision,
                 state, state == StoredRegionScopeState.KnownScoped ? definition?.Key ?? value.Key : null,
-                mode == FloodScopeMode.ExplicitRegion ? definition!.Name : mode == FloodScopeMode.InheritDefault ? value.Name : null, budget));
+                mode == FloodScopeMode.ExplicitRegion ? definition!.Name : mode == FloodScopeMode.InheritDefault ? value.Name : null, budget), revisionCaptured));
         }).ConfigureAwait(false);
     }
 
