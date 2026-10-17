@@ -55,6 +55,8 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     public ConcurrentDictionary<byte, byte[]> RepeaterContacts { get; } = new();
     public ConcurrentDictionary<byte, string> RepeaterRegionCsv { get; } = new();
     public HashSet<byte> NeighborRepeaters { get; } = [];
+    public int NeighborScanCount { get; private set; }
+    public Action<int>? BeforeNeighborScan { get; set; }
     public HashSet<byte> SilentRegionRepeaters { get; } = [];
     public ConcurrentQueue<byte[]> RegionRequests { get; } = new();
     public ConcurrentQueue<byte[]> ContactUpdates { get; } = new();
@@ -87,6 +89,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         }
         if (type == CommandType.SendControlData)
         {
+            BeforeNeighborScan?.Invoke(++NeighborScanCount);
             if (command.Length is not (7 or 11) || command[1] != 0x80 || command[2] != 4) throw new InvalidDataException("Invalid discovery command.");
             var tag = BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3));
             await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]);

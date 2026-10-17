@@ -16,7 +16,7 @@ internal static class RegionMeshProbe
     }
     internal sealed record Result(int Neighbors, int Responses, int Unanswered, int RestoreConflicts);
     internal static async Task<Result> RunAsync(IMeshCoreTransport transport, Timing timing, Action<string> log, CancellationToken token,
-        byte[]? previouslyObservedZeroHopTarget = null)
+        byte[]? previouslyObservedZeroHopTarget = null, RegionCatalogTestCapture? capture = null)
     {
         await using var client = new MeshCoreClient(transport, new()
         {
@@ -32,8 +32,11 @@ internal static class RegionMeshProbe
                 log($"binary tag={binary.Tag:X8} length={binary.RawFrame.Length} payloadHex={Convert.ToHexString(binary.GetPayload())}");
         };
         client.BackgroundError += (_, e) => log($"background {e.Exception.GetType().Name}: {e.Exception.Message}");
-        log("OPT-IN RF: 3 discovery rounds (or explicit previously observed neighbor), <=5 zero-hop targets, <=3 queries/target; temporary route preparation and implicit contact creation allowed. No messages/drain/default/channel writes.");
+        log(capture is null
+            ? "OPT-IN RF: 3 discovery rounds (or explicit previously observed neighbor), <=5 zero-hop targets, <=3 queries/target; temporary route preparation and implicit contact creation allowed. No messages/drain/default/channel writes."
+            : "OPT-IN RF CATALOG: <=3 discovery rounds until first success, ALL discovered full-key zero-hop targets, <=3 queries/target; temporary route preparation and implicit contact creation allowed. No messages/drain/default/channel writes.");
         await client.ConnectAsync(token); var self = await client.StartAsync(token); var info = await client.GetDeviceInfoAsync(token);
+        if (capture is not null) { capture.NodePublicKey = Convert.ToHexString(self.PublicKey.Span); capture.NodeName = self.Name; }
         log($"node={self.Name} key={Convert.ToHexString(self.PublicKey.Span)} firmware={info.SemanticVersion} protocol={info.FirmwareProtocolVersion} model={info.Model}");
         var defaultBefore = await client.GetDefaultFloodScopeAsync(token); log($"default={defaultBefore.State} name={defaultBefore.Name}");
         var contacts = await client.GetContactsAsync(cancellationToken: token); log($"contacts={contacts.Count}");
@@ -43,14 +46,16 @@ internal static class RegionMeshProbe
             if (round > 1) await Pause(timing, token);
             var scan = await client.DiscoverRepeaterNeighborsAsync(new() { CollectionWindow = timing.ScanWindow }, token);
             log($"scan round={round} tag={scan.Tag:X8} replies={scan.Neighbors.Count} capacity={scan.CapacityReached}");
+            capture?.Scans.Add(new(round, scan.Tag, scan.Neighbors.Count, scan.CapacityReached));
             foreach (var neighbor in scan.Neighbors)
             {
                 var key = Convert.ToHexString(neighbor.GetKeyBytes());
                 log($"neighbor key={key} full={neighbor.HasFullPublicKey} path={neighbor.PathDescriptor:X2} snr={neighbor.ReceivedSnr} inboundSnr={neighbor.InboundSnr} rssi={neighbor.ReceivedRssi}");
                 if (neighbor.HasFullPublicKey && neighbor.PathDescriptor == 0) neighbors[key] = neighbor;
             }
+            if (capture is not null && neighbors.Count > 0) break;
         }
-        var targets = neighbors.Values.OrderByDescending(n => n.ReceivedSnr).Take(5).Select(n => n.GetKeyBytes()).ToArray();
+        var targets = neighbors.Values.OrderByDescending(n => n.ReceivedSnr).Take(capture is null ? 5 : int.MaxValue).Select(n => n.GetKeyBytes()).ToArray();
         if (previouslyObservedZeroHopTarget is not null)
         {
             if (previouslyObservedZeroHopTarget.Length != ProtocolLimits.PublicKeySize) throw new ArgumentException("A full target key is required.");
@@ -58,22 +63,26 @@ internal static class RegionMeshProbe
             log($"explicit previously-observed zero-hop target={Convert.ToHexString(previouslyObservedZeroHopTarget)}; no fresh neighbor scan, current reachability unverified");
         }
         var responses = 0; var unanswered = 0; var conflicts = 0;
+        if (capture is not null) foreach (var key in targets) capture.Repeaters.Add(new() { PublicKey = Convert.ToHexString(key) });
         foreach (var key in targets)
         {
             token.ThrowIfCancellationRequested();
             var hex = Convert.ToHexString(key);
+            var captured = capture?.Repeaters.Single(r => r.PublicKey == hex);
             Contact? original = null; Contact? prepared = null; var preparedVersion = 0;
             var reply = false;
             try
             {
                 original = await ReadContact(client, key, token);
+                if (captured is not null) captured.Name = original?.Name;
                 if (original is not null && original.AdvertisementType != AdvertisementType.Repeater)
-                { log($"skip key={hex}: current contact is not a repeater"); continue; }
+                { if (captured is not null) captured.Status = "NotRepeater"; log($"skip key={hex}: current contact is not a repeater"); continue; }
                 // Fresh zero-hop observation is the evidence for a direct reply path. Preserve full config.
                 if (original is not null && original.OutPathLength != 0)
                 {
                     await client.FlushEventsAsync(token); var version = observations.GetValueOrDefault(hex);
                     log($"prepare key={hex} name={original.Name} oldPath={original.OutPathLength:X2}");
+                    if (captured is not null) captured.Restoration = "Unverified";
                     await client.AddOrUpdateContactAsync(ContactConfiguration.FromContact(original) with { OutPathLength = 0 }, token);
                     var proof = await client.GetContactAsync(key, token); await client.FlushEventsAsync(token);
                     if (!SameConfiguration(proof, original with { OutPathLength = 0 }) || observations.GetValueOrDefault(hex) != version)
@@ -89,19 +98,23 @@ internal static class RegionMeshProbe
                     {
                         var current = await client.GetContactAsync(key, token); await client.FlushEventsAsync(token);
                         if (!SameSnapshot(current, prepared) || observations.GetValueOrDefault(hex) != preparedVersion)
-                        { log($"stop target={hex}: contact changed during retries"); break; }
+                        { if (captured is not null) captured.Status = "ContactChanged"; log($"stop target={hex}: contact changed during retries"); break; }
                     }
                     log($"request key={hex} attempt={attempt}/3 timeoutSeconds={timing.ReplyTimeout.TotalSeconds}");
+                    if (captured is not null) captured.Attempts = attempt;
                     try
                     {
                         var result = await client.RequestRegionsAsync(key, ReplyPath.ZeroHop, timing.ReplyTimeout, token);
                         log($"regions key={hex} attempt={attempt} tag={result.Tag:X8} clock={result.RemoteClock} potentiallyIncomplete=true names={JsonSerializer.Serialize(result.Names)}");
+                        if (captured is not null) { captured.Status = "Success"; captured.Error = null; captured.Regions = result.Names.ToArray(); captured.Tag = result.Tag; captured.RemoteClock = result.RemoteClock; }
                         reply = true; responses++; break;
                     }
                     catch (MeshCoreTimeoutException) when (client.IsStarted)
-                    { log($"no response key={hex} attempt={attempt}; not evidence of absent regions"); }
+                    { if (captured is not null) captured.Status = "Timeout"; log($"no response key={hex} attempt={attempt}; not evidence of absent regions"); }
+                    catch (MeshCoreProtocolException error) when (capture is not null && client.IsStarted)
+                    { captured!.Status = "Malformed"; captured.Error = error.Message; log($"malformed reply key={hex} attempt={attempt}: {error.Message}"); }
                     catch (MeshCoreCommandException error)
-                    { log($"rejected key={hex} code={error.ErrorCode}; no retry"); break; }
+                    { if (captured is not null) { captured.Status = "Rejected"; captured.Error = error.ErrorCode.ToString(); } log($"rejected key={hex} code={error.ErrorCode}; no retry"); break; }
                 }
                 if (!reply) unanswered++;
                 if (original is null)
@@ -109,6 +122,17 @@ internal static class RegionMeshProbe
                     var added = await ReadContact(client, key, token);
                     log($"implicit contact key={hex} present={added is not null}; retained");
                 }
+            }
+            catch (Exception error) when (capture is not null && client.IsStarted && error is MeshCoreProtocolException)
+            {
+                captured!.Status = "Malformed"; captured.Error = error.Message;
+                log($"invalid reply key={hex}: {error.Message}; continuing with remaining repeaters");
+            }
+            catch (Exception error) when (capture is not null)
+            {
+                captured!.Status = error is OperationCanceledException ? "Cancelled" : "Failed";
+                captured.Error = $"{error.GetType().Name}: {error.Message}";
+                throw;
             }
             finally
             {
@@ -118,13 +142,14 @@ internal static class RegionMeshProbe
                     if (!client.IsStarted) throw new InvalidOperationException($"Connection lost; route restoration unverified for {hex}.");
                     var current = await client.GetContactAsync(key, cleanup.Token); await client.FlushEventsAsync(cleanup.Token);
                     if (!SameSnapshot(current, prepared) || observations.GetValueOrDefault(hex) != preparedVersion)
-                    { conflicts++; log($"restore CONFLICT key={hex}; newer contact preserved"); }
+                    { if (captured is not null) captured.Restoration = "Conflict"; conflicts++; log($"restore CONFLICT key={hex}; newer contact preserved"); }
                     else
                     {
                         await client.AddOrUpdateContactAsync(ContactConfiguration.FromContact(original!), cleanup.Token);
                         var restored = await client.GetContactAsync(key, cleanup.Token);
                         if (!SameConfiguration(restored, original!)) throw new InvalidOperationException($"Restore readback mismatch for {hex}.");
                         log($"restore verified key={hex} path={restored.OutPathLength:X2}");
+                        if (captured is not null) captured.Restoration = "Verified";
                     }
                 }
             }
@@ -132,7 +157,7 @@ internal static class RegionMeshProbe
         var defaultAfter = await client.GetDefaultFloodScopeAsync(token);
         if (defaultAfter.State != defaultBefore.State || defaultAfter.Name != defaultBefore.Name || !Equals(defaultAfter.Key, defaultBefore.Key))
             throw new InvalidOperationException("Default changed externally during probe; probe issued no default writes.");
-        log($"summary zeroHopNeighbors={neighbors.Count} omitted={Math.Max(0, neighbors.Count - 5)} responses={responses} unanswered={unanswered} restoreConflicts={conflicts} defaultUnchanged=true");
+        log($"summary zeroHopNeighbors={neighbors.Count} omitted={(capture is null ? Math.Max(0, neighbors.Count - 5) : 0)} responses={responses} unanswered={unanswered} restoreConflicts={conflicts} defaultUnchanged=true");
         await client.DisconnectAsync(token); await client.FlushEventsAsync(token);
         return new(neighbors.Count, responses, unanswered, conflicts);
     }

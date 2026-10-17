@@ -8,6 +8,7 @@ checkpoints описывают результаты на свою дату, а �
 ## Точки входа
 
 - [REGION — внедрение регионов](messenger/plan/stage-region.md) — порядок REGION1–REGION34 и отдельные задания;
+- [Специализированный region catalog test](testing/region-catalog-specialized-test.md) — запуск только по явному запросу пользователя; поиск/retries всех репитеров и JSON для агента, не часть общего test runner;
   [общие контракты](messenger/plan/region-design.md) — читать только разделы своего шага;
   [поведение ноды и wire](library/protocol/regions.md) — источники, хранение, discovery и scope.
 

@@ -6,6 +6,20 @@ using MeshCoreSharp.Transport.Tcp;
 using MeshCoreSharp.Transport.Ble;
 using MeshCoreSharp.Exceptions;
 
+if (args.Length == 1 && args[0] == "--region-catalog-self-test")
+    return await RegionCatalogTest.SelfTestAsync();
+
+if (args.Length >= 1 && args[0] == "--ble-region-catalog-test")
+{
+    if (args.Length != 3 || string.IsNullOrWhiteSpace(args[1]) || string.IsNullOrWhiteSpace(args[2]))
+    { Console.Error.WriteLine("Usage: --ble-region-catalog-test <opaque-device-id> <new-result.json>"); return 2; }
+#if WINDOWS
+    return await WindowsBleProbe.RunCatalogTestAsync(args[1], args[2]);
+#else
+    Console.Error.WriteLine("BLE region catalog test requires the Windows target."); return 1;
+#endif
+}
+
 if (args.Length == 1 && args[0] == "--region-probe-self-test")
     return await RegionMeshProbe.SelfTestAsync();
 
@@ -145,6 +159,7 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-drain-probe <opaque-device-id> <new-local-capture.jsonl>");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-region-probe <opaque-device-id> [previously-observed-zero-hop-full-key-hex]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --region-probe-self-test");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-region-catalog-test <opaque-device-id> <new-result.json> (explicit opt-in only)");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");
