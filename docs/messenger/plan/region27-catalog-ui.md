@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: реализован17.10.2026; native/theme/keyboard приёмка остаётся REGION31.**
 
 **Цель:** Реализовать согласованные действия локального каталога.
 
@@ -48,4 +48,4 @@ region-gui-decisions.md (создаётся REGION26); REGION15 service contract
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION28](region28-selection-ui.md).
+Карточка локального каталога Settings использует RegionService: public/import, rename/archive/delete, node context и post-commit reload. Приватный ввод очищается при смене ноды/успешном импорте, не логируется. Referenced delete показывает пояснение Core отказа. RegionUiTests+AppBootstrap8/8; изолированная Release build0 warnings/errors. Обычная Release папка заблокирована открытым пользовательским приложением; оно не закрывалось. Ручная визуальная приёмка остаётся REGION31. Далее REGION28.

@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels"
+             xmlns:settings="using:MeshCoreMessenger.Desktop.Views.Settings"
              x:Class="MeshCoreMessenger.Desktop.Views.Settings.ApplicationSettingsView"
              x:DataType="vm:MainWindowViewModel">
   <UserControl.Styles>
@@ -9,6 +10,7 @@
   <ScrollViewer Classes="application-settings">
     <StackPanel Classes="settings-column">
       <TextBlock Classes="settings-heading" Text="Настройки" />
+      <settings:RegionSettingsView DataContext="{Binding Regions}" />
       <Border Classes="settings-card">
         <StackPanel Classes="settings-fields">
           <TextBlock Classes="settings-heading" Text="Оформление" />

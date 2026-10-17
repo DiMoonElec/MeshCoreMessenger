@@ -75,7 +75,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         IOutgoingTextProcessor? textProcessor = null,
         ISendReadinessReader? sendReadiness = null,
         IMessageService? messageService = null, IOutgoingMessageStore? outgoingMessages = null, IHistoryClearService? historyClear = null, IContactRouteService? contactRoutes = null,
-        IDirectoryStore? directoryUpdates = null, IContactDeliveryHistoryReader? contactDeliveries = null, NotificationSettingsViewModel? notifications = null)
+        IDirectoryStore? directoryUpdates = null, IContactDeliveryHistoryReader? contactDeliveries = null, NotificationSettingsViewModel? notifications = null,
+        IRegionService? regions = null)
     {
         Notifications = notifications;
         _outgoingMessages = outgoingMessages;
@@ -90,6 +91,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         _commitNotifications = commitNotifications;
         _dispatcher = dispatcher;
         _logger = logger;
+        Regions = new(regions, dispatcher, Track);
         _connectionState = supervisor.Snapshot.State;
         Devices = new DevicesWorkspaceViewModel(directory, dispatcher, searchDelay, logger);
         Chats = new ChatWorkspacesViewModel(tab => new ConversationNavigationViewModel(
@@ -155,6 +157,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     public ModalHostViewModel Modal { get; } = new();
     public NavigationShellViewModel Shell { get; } = new();
     public DevicesWorkspaceViewModel Devices { get; }
+    public RegionSettingsViewModel Regions { get; }
     public ChatWorkspacesViewModel Chats { get; }
     public bool IsChatWorkspaceVisible => Shell.IsChatSelected && Navigation.SelectedTab.Tab ==
         (Shell.SelectedItem.Section == ShellSection.PublicChats ? MessengerNavigationTab.Channels : MessengerNavigationTab.Personal);
@@ -464,7 +467,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
                     dispatchResult: false);
                 Status = Navigation.Status;
             }
-            await Task.WhenAll(_composerContexts.Select(context => context.InitializeAsync()));
+            await Task.WhenAll(_composerContexts.Select(context => context.InitializeAsync()).Append(Regions.InitializeAsync()));
         }
         catch (OperationCanceledException)
         {
@@ -519,6 +522,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
         }
 
         Notifications?.Stop();
+        Regions.Dispose();
         if (Modal.IsOpen) await _dispatcher.InvokeAsync(() => Modal.Close(ModalCloseReason.Shutdown));
         if (_outgoingMessages is not null) _outgoingMessages.MessageCommitted -= OnOutgoingCommitted;
         if (_directoryUpdates is not null) _directoryUpdates.ContactRouteCommitted -= OnContactRouteCommitted;
@@ -999,6 +1003,7 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
     {
         var version = Interlocked.Increment(ref _viewContextVersion);
         ViewedNode = node;
+        Regions.SetNode(node?.Id, node?.HeaderLabel);
         Devices.SetNode(node?.Id, node?.HeaderLabel);
         Chats.SetNode(node);
         ErrorMessage = null;

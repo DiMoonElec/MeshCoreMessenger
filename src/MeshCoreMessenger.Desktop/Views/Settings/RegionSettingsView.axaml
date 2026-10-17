@@ -1,0 +1,36 @@
+<UserControl xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:MeshCoreMessenger.Desktop.ViewModels" xmlns:domain="using:MeshCoreMessenger.Core.Domain"
+             x:Class="MeshCoreMessenger.Desktop.Views.Settings.RegionSettingsView" x:DataType="vm:RegionSettingsViewModel">
+  <StackPanel Spacing="16">
+    <Border Classes="settings-card">
+      <StackPanel Classes="settings-fields">
+        <TextBlock Classes="settings-heading" Text="Регионы" />
+        <TextBlock Text="{Binding NodeLabel}" TextWrapping="Wrap" />
+        <TextBlock Classes="settings-hint" Text="Локальный каталог текущей ноды. Добавление региона не меняет настройки устройства." TextWrapping="Wrap" />
+        <ComboBox ItemsSource="{Binding Catalog}" SelectedItem="{Binding Selected, Mode=TwoWay}" PlaceholderText="Выберите запись каталога" AutomationProperties.Name="Каталог регионов">
+          <ComboBox.ItemTemplate><DataTemplate x:DataType="domain:RegionCatalogEntry">
+            <StackPanel><TextBlock Text="{Binding Label}" /><TextBlock Text="{Binding ProtocolName}" Opacity="0.65" /><TextBlock Text="В архиве" IsVisible="{Binding Archived}" /></StackPanel>
+          </DataTemplate></ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBox Text="{Binding Label, Mode=TwoWay}" PlaceholderText="Название в каталоге" AutomationProperties.Name="Название региона" />
+        <TextBox Text="{Binding ProtocolName, Mode=TwoWay}" PlaceholderText="Протокольное имя, например ru-ros" AutomationProperties.Name="Протокольное имя региона" />
+        <Button Content="Добавить публичный регион" Command="{Binding AddPublicCommand}" />
+        <Expander Header="Импортировать приватный регион" HorizontalContentAlignment="Stretch">
+          <StackPanel Spacing="8">
+            <TextBlock Text="Для имени $… нужен исходный ключ. Из имени он не вычисляется." TextWrapping="Wrap" />
+            <TextBox Text="{Binding KeyHex, Mode=TwoWay}" PasswordChar="●" PlaceholderText="Ключ: 32 hex-символа" AutomationProperties.Name="Ключ приватного региона" />
+            <Button Content="Импортировать" Command="{Binding ImportCommand}" />
+          </StackPanel>
+        </Expander>
+        <WrapPanel Orientation="Horizontal">
+          <Button Content="Переименовать" Command="{Binding RenameCommand}" Margin="0,0,8,8" />
+          <Button Content="Архив / восстановить" Command="{Binding ArchiveCommand}" Margin="0,0,8,8" />
+          <Button Content="Удалить" Command="{Binding DeleteCommand}" Margin="0,0,8,8" />
+        </WrapPanel>
+        <ProgressBar IsIndeterminate="True" IsVisible="{Binding IsBusy}" />
+        <TextBlock Classes="settings-error" Text="{Binding Error}" IsVisible="{Binding HasError}" TextWrapping="Wrap" />
+        <Button Content="Обновить каталог" Command="{Binding RefreshCommand}" />
+      </StackPanel>
+    </Border>
+  </StackPanel>
+</UserControl>
