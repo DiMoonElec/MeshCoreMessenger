@@ -25,6 +25,7 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
     private bool _sendingCommitted;
     private StoredOutgoingMessage? _message;
     private OutgoingAttemptSnapshot? _attempt;
+    private ResolvedRegionScope? _resolvedScope;
     private SendAttemptState _plannedState;
     private AckExpectation _expectation;
     private DateTimeOffset _lastUtc;
@@ -92,6 +93,8 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
             message = message with { SessionId = Owner.SessionId, Recipient = channel.Recipient };
         if (attempt is null || attempt.SessionId != Owner.SessionId || message.SessionId != Owner.SessionId || attempt.State != SendAttemptState.Prepared || !Matches(message.Recipient))
             throw new InvalidOperationException("Prepared attempt belongs to another session/recipient or has already started.");
+        var resolvedScope = Target is ChannelCommandTarget
+            ? await _scope.Messages.GetAttemptScopeAsync(Owner.NodeId, attemptId, Token).ConfigureAwait(false) : null;
         lock (_scope.Gate)
         {
             _scope.EnsureOpen();
@@ -100,6 +103,7 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
             _scope.ClaimAttempt(attemptId);
             _message = message;
             _attempt = attempt;
+            _resolvedScope = resolvedScope;
             _plannedState = attempt.State;
             _lastUtc = attempt.StartedUtc;
         }
@@ -180,7 +184,9 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
         if (Target is not ChannelCommandTarget channel) throw new InvalidOperationException("Channel sending requires a binding target.");
         await ValidateTextSendAsync().ConfigureAwait(false);
         return await _scope.Invoke(this, (client, token) => timestamp is { } wireTimestamp
-            ? client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, wireTimestamp, token)
+            ? _resolvedScope is { State: not StoredRegionScopeState.LegacyUnknown } captured
+                ? client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, wireTimestamp, ScopeForSend(captured), token)
+                : client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, wireTimestamp, token)
             : client.SendChannelTextAsync(channel.Recipient.Slot!.Value, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 

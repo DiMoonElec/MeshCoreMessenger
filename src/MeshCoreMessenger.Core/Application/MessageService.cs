@@ -19,7 +19,10 @@ public sealed record PrivateResendRequest(Guid NodeId, Guid SessionId, long Gene
     OutgoingTextOptions Options, PrivateRetryPolicy? RetryPolicy = null);
 public sealed record ChannelRepeatRequest(Guid NodeId, Guid SessionId, long Generation,
     Guid MessageId, int ExpectedAttemptNumber, OutgoingRecipient Recipient);
-public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State);
+public sealed record ChannelSendOutcome(Guid MessageId, SendAttemptState State)
+{
+    public Exception? ScopeCleanupError { get; init; }
+}
 
 public interface IMessageService
 {
@@ -42,7 +45,7 @@ public interface IMessageService
 public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMessageStore messages,
     IDirectoryStore directories, IConversationDirectoryReader directory, IDraftBuffer drafts,
     IOutgoingTextProcessor processor, TimeProvider timeProvider, IDraftStore draftStore, ConversationOperationGuard operations,
-    PrivateDeliveryCoordinator? privateDeliveries = null) : IMessageService
+    PrivateDeliveryCoordinator? privateDeliveries = null, IRegionStore? regions = null) : IMessageService
 {
     private readonly SemaphoreSlim _singleFlight = new(1, 1);
     private long _lastChannelTimestamp;
@@ -197,11 +200,25 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 throw new ArgumentException("Message text is empty or invalid.");
             return await lease.RunAsync(async (owned, token) =>
             {
+                ResolvedRegionScope? scope = null;
+                if (isChannel && regions is not null)
+                {
+                    await owned.ValidateRecipientAsync().ConfigureAwait(false);
+                    if (repeat is not null && !asNew)
+                    {
+                        var sourceAttempts = await messages.GetAttemptsAsync(request.NodeId, repeat.MessageId, token).ConfigureAwait(false);
+                        var original = await messages.GetAttemptScopeAsync(request.NodeId, sourceAttempts[0].Id, token).ConfigureAwait(false);
+                        if (!original.CanReplayExactly) throw new RegionReplayUnavailableException();
+                        scope = new(request.NodeId, owned.Owner.SessionId, owned.Owner.Generation, original.RequestedMode,
+                            original.PolicyRevision, original.State, original.Key, original.Name, budget);
+                    }
+                    else scope = await owned.ResolveChannelScopeAsync(regions, directories, budget).ConfigureAwait(false);
+                }
                 // A not-yet-materialized directory conversation is created by the local draft store.
                 PreparedOutgoingMessage prepared;
                 if (repeat is not null && !asNew)
                     prepared = await messages.PrepareChannelRepeatAsync(new(request.NodeId, repeat.MessageId, owned.Owner.SessionId,
-                        recipient, expectedAttemptNumber, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                        recipient, expectedAttemptNumber, timeProvider.GetUtcNow()) { Scope = scope }, token).ConfigureAwait(false);
                 else
                 {
                     if (repeat is null) await drafts.FlushAsync(capture.Target, token).ConfigureAwait(false);
@@ -210,7 +227,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                         ?? throw new InvalidOperationException("The conversation has not been materialized.");
                     prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                         conversation, recipient, repeat?.OriginalText ?? processed!.OriginalText, transmission,
-                        processed?.Validation.MaxUtf8Bytes ?? budget, timeProvider.GetUtcNow()), token).ConfigureAwait(false);
+                        processed?.Validation.MaxUtf8Bytes ?? budget, timeProvider.GetUtcNow()) { Scope = scope }, token).ConfigureAwait(false);
                 }
                 await owned.BindOutgoingAsync(prepared.MessageId, prepared.Attempt.Id).ConfigureAwait(false);
                 if (repeat is null && await drafts.ClearTransferredAsync(capture, token).ConfigureAwait(false) && transferred is not null)
@@ -246,7 +263,8 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 catch (OutgoingPersistenceException) { throw; }
                 catch (Exception error)
                 {
-                    var state = !owned.WasInvoked || error is MeshCoreCommandException ? SendAttemptState.Failed : SendAttemptState.Unknown;
+                    var state = !owned.WasInvoked || error is MeshCoreCommandException or NotSupportedException or ArgumentException or
+                        MeshCoreException { TextSendWasInvoked: false } or MeshCoreTextSendCanceledException ? SendAttemptState.Failed : SendAttemptState.Unknown;
                     if (!await owned.TransitionAsync(SendAttemptState.Sending, state, errorCode: error.GetType().Name).ConfigureAwait(false))
                         throw new InvalidOperationException("Outgoing status changed before the result was committed.", error);
                     return new ChannelSendOutcome(prepared.MessageId, state);
@@ -260,7 +278,8 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 }
                 if (!await owned.TransitionAsync(SendAttemptState.Sending, SendAttemptState.Accepted,
                     tag == 0 ? AckExpectation.NotExpected : AckExpectation.Expected,
-                    privateResult?.Timestamp ?? channelResult!.Timestamp, expectedAck).ConfigureAwait(false))
+                    privateResult?.Timestamp ?? channelResult!.Timestamp, expectedAck,
+                    errorCode: channelResult?.ScopeCleanupError is not null ? "ScopeCleanupFailed" : null).ConfigureAwait(false))
                     throw new InvalidOperationException("Outgoing status changed before acceptance was committed.");
                 if (privateResult is not null && tag != 0)
                 {
@@ -269,7 +288,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                     _ = owned.ObserveAsync((observer, observerToken) => RecordDeliveryAsync(observer, privateResult, observerToken));
                     observing = true;
                 }
-                return new ChannelSendOutcome(prepared.MessageId, SendAttemptState.Accepted);
+                return new ChannelSendOutcome(prepared.MessageId, SendAttemptState.Accepted) { ScopeCleanupError = channelResult?.ScopeCleanupError };
             }).ConfigureAwait(false);
         }
         finally

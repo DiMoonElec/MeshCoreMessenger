@@ -480,6 +480,23 @@ public sealed partial class SessionCommandGatewayTests
 
     private sealed class Client(byte[] contactKey, byte[] secret) : ICompanionClient
     {
+        public NodeFloodScope DefaultScope { get; set; } = NodeFloodScope.KnownEmpty;
+        public Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default) => Task.FromResult(DefaultScope);
+        public Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default)
+        { DefaultScope = NodeFloodScope.FromPreferences(definition.Name, definition.Key); return Task.CompletedTask; }
+        public Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default)
+        { DefaultScope = NodeFloodScope.KnownEmpty; return Task.CompletedTask; }
+        public byte ProtocolVersion { get; set; } = 14;
+        public Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeviceInfo(ProtocolVersion, 100, 8, null, "test", "fake", "1.18", false, 0));
+        public FloodScopeSelection? SentScope { get; private set; }
+        public Exception? CleanupError { get; set; }
+        public async Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, FloodScopeSelection scope, CancellationToken cancellationToken = default)
+        {
+            SentScope = scope;
+            if (scope.Mode == FloodScopeMode.ForceUnscoped && ProtocolVersion < 12 || scope.Mode == FloodScopeMode.ExplicitRegion && ProtocolVersion < 8)
+                throw new NotSupportedException();
+            return (await SendChannelTextAsync(slot, text, timestamp, cancellationToken)) with { ScopeCleanupError = CleanupError };
+        }
         public int? TransportTextLimit { get; set; }
         public int? GetTransportTextByteLimit(bool isChannel, string? senderName) => TransportTextLimit;
         public MeshCoreConnectionState State { get; private set; }

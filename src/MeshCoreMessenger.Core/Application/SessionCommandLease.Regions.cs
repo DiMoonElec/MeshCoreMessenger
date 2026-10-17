@@ -7,6 +7,58 @@ namespace MeshCoreMessenger.Core.Application;
 
 public sealed partial class SessionCommandLease
 {
+    internal static FloodScopeSelection WireScope(ResolvedRegionScope scope) => scope.State switch
+    {
+        StoredRegionScopeState.KnownScoped => FloodScopeSelection.ExplicitRegion(scope.Key!),
+        StoredRegionScopeState.KnownUnscoped => FloodScopeSelection.ForceUnscoped,
+        _ when scope.RequestedMode == FloodScopeMode.InheritDefault => FloodScopeSelection.InheritDefault,
+        _ => throw new InvalidOperationException("An explicit scope requires a complete immutable capture."),
+    };
+
+    private FloodScopeSelection ScopeForSend(ResolvedRegionScope captured)
+    {
+        var capabilities = _scope.Capabilities;
+        if (captured.RequestedMode == FloodScopeMode.InheritDefault &&
+            (captured.State == StoredRegionScopeState.KnownUnscoped && capabilities?.ForceUnscoped == RegionSupport.Unsupported ||
+             captured.State == StoredRegionScopeState.KnownScoped && capabilities?.TemporaryScope == RegionSupport.Unsupported))
+        {
+            // Older firmware cannot pin every scope. Inherit remains safe only while the
+            // observed default is still identical, under the gate shared with default writes.
+            var current = _scope.RegionSnapshot;
+            if (current?.IsCurrent(Owner.SessionId, Owner.Generation) == true &&
+                (captured.State == StoredRegionScopeState.KnownUnscoped && (current.Value.State == NodeFloodScopeState.KnownEmpty || current.Value.Key?.IsEmpty == true) ||
+                 captured.State == StoredRegionScopeState.KnownScoped && Equals(captured.Key, current.Value.Key)))
+                return FloodScopeSelection.InheritDefault;
+            throw new NotSupportedException("This firmware cannot reproduce the captured scope after its default changed.");
+        }
+        return WireScope(captured);
+    }
+
+    internal async Task<ResolvedRegionScope> ResolveChannelScopeAsync(IRegionReader regions, IDirectoryStore directories, int budget)
+    {
+        if (Target is not ChannelCommandTarget channel) throw new InvalidOperationException("Channel scope requires a binding.");
+        var binding = await directories.GetActiveChannelBindingAsync(Owner.NodeId, channel.Recipient.Slot!.Value, Token).ConfigureAwait(false);
+        if (binding is null || binding.Id != channel.Recipient.ChannelBindingId || binding.Generation != channel.Recipient.BindingGeneration)
+            throw new InvalidOperationException("Channel binding changed before scope capture.");
+        var preference = await regions.GetChannelPreferenceAsync(Owner.NodeId, binding.ChannelId, Token).ConfigureAwait(false);
+        var definition = preference.RegionId is { } id
+            ? (await regions.GetRegionAsync(Owner.NodeId, id, Token).ConfigureAwait(false))?.Definition
+                ?? throw new InvalidOperationException("Assigned region no longer exists.") : null;
+        return await _scope.WithRegionStateAsync(this, () =>
+        {
+            var mode = preference.Mode;
+            var snapshot = _scope.RegionSnapshot;
+            var value = snapshot?.IsCurrent(Owner.SessionId, Owner.Generation) == true ? snapshot.Value : NodeFloodScope.Unknown;
+            var state = mode == FloodScopeMode.ExplicitRegion ? StoredRegionScopeState.KnownScoped :
+                mode == FloodScopeMode.ForceUnscoped || value.State == NodeFloodScopeState.KnownEmpty || value.Key?.IsEmpty == true
+                    ? StoredRegionScopeState.KnownUnscoped : value.State == NodeFloodScopeState.Configured
+                        ? StoredRegionScopeState.KnownScoped : StoredRegionScopeState.Unknown;
+            return Task.FromResult(new ResolvedRegionScope(Owner.NodeId, Owner.SessionId, Owner.Generation, mode, preference.Revision,
+                state, state == StoredRegionScopeState.KnownScoped ? definition?.Key ?? value.Key : null,
+                mode == FloodScopeMode.ExplicitRegion ? definition!.Name : mode == FloodScopeMode.InheritDefault ? value.Name : null, budget));
+        }).ConfigureAwait(false);
+    }
+
     internal Task<RegionDefaultChangeResult> ChangeNodeDefaultAsync(RegionDefinition? definition, IRegionStore store, TimeProvider clock) =>
         OwnAsync(() => _scope.WithRegionStateAsync(this, async () =>
         {

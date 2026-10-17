@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Подключение channel preference к существующему MessageService.
 
@@ -41,11 +41,19 @@ region-design.md: «Отправки, история, повторы и лими
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION20](region20-private-application.md).
+MessageService разрешает node-scoped channel preference и default под session region gate до durable preparation. Сохранённый effective scope передаётся typed library overload; изменение назначения/default после capture не переписывает admitted попытку. Дубли слотов используют одно предпочтение существующего ChannelId; binding generation не меняется.
+
+Exact repeat читает первый immutable attempt scope и сохраняет прежний effective key/unscoped; send-as-new разрешает текущую политику. LegacyUnknown/Unknown exact repeat отказывается с RegionReplayUnavailableException и указанием действия send-as-new. На старой прошивке inherited KnownEmpty использует InheritDefault только при неизменившемся текущем default под gate; явно выбранный unsupported режим не подменяется.
+
+Библиотека сохраняет тип исходной MeshCoreException, добавляя typed evidence TextSendWasInvoked=false при сбое до SEND; cancellation до SEND имеет отдельный subtype OperationCanceledException. Core отличает такие ошибки от возможной передачи. Accepted SEND + RESET failure остаётся Accepted с ScopeCleanupFailed в истории и отдельным ScopeCleanupError в результате, без retry.
+
+Проверки: полный Core509/509 до дополнительного legacy compatibility case; финальный targeted7/7. Библиотека227/227, включая SET timeout→no SEND evidence; Release solution build0 warnings/errors. Покрыты A/B, duplicate slots, preference/default change после capture, exact repeat/as-new, отказ до SEND и accepted+cleanup failure. Нативная GUI/аппаратная приёмка остаётся REGION31–33; scope-aware composer budget — REGION21.
+
+Следующий шаг — [REGION20](region20-private-application.md).

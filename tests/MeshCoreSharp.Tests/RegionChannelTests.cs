@@ -12,8 +12,19 @@ internal static class RegionChannelTests
         ("REGION4 old firmware retains legacy sends and rejects explicit scope", OldFirmware),
         ("REGION4 unsupported SET never silently downgrades explicit region", Unsupported),
         ("REGION4 safe reads and push continue during scope operation", SafeRead),
+        ("REGION19 scope SET timeout proves that text SEND was not invoked", BeforeSendEvidence),
     ];
     internal static void Check(bool condition) { if (!condition) throw new Exception("Region channel regression"); }
+    private static async Task BeforeSendEvidence()
+    {
+        var transport = new TestTransport();
+        await using var client = new MeshCoreClient(transport, new MeshCoreClientOptions { AutoReceiveMessages = false, CommandTimeout = TimeSpan.FromMilliseconds(150) });
+        await Start(client, transport);
+        var send = client.SendChannelTextAsync(0, "text", 1, FloodScopeSelection.ForceUnscoped);
+        Check((await Sent(transport))[0] == 54);
+        var error = await Throws<MeshCoreTimeoutException>(async () => await send);
+        Check(error.TextSendWasInvoked == false && !transport.Sent.Reader.TryRead(out _));
+    }
     internal static async Task<T> Throws<T>(Func<Task> action) where T : Exception
     {
         try { await action(); } catch (T error) { return error; }

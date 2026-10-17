@@ -657,34 +657,42 @@ public sealed class MeshCoreClient : IAsyncDisposable
             DateTimeOffset.UtcNow, effective == EffectiveFloodScope.Unknown ? "Default or temporary-scope support is unconfirmed in this session." : null));
     }
 
-    private Task<ScopeOperationResult<T>> RunScopeSendAsync<T>(FloodScopeSelection scope,
+    private async Task<ScopeOperationResult<T>> RunScopeSendAsync<T>(FloodScopeSelection scope,
         Func<CancellationToken, bool, Task<T>> send, CancellationToken token)
     {
         var coordinator = _scopeOperations!;
-        return coordinator.WithGateAsync(async ct =>
+        var sendInvoked = false;
+        Task<T> Send(CancellationToken ct, bool guarded) { sendInvoked = true; return send(ct, guarded); }
+        try
         {
-            if (scope.Mode != FloodScopeMode.InheritDefault && _firmwareProtocolVersion is null)
-                await GetDeviceInfoAsync(ct).ConfigureAwait(false);
-            ct.ThrowIfCancellationRequested();
-            var supported = _firmwareProtocolVersion >= 8 && !_temporaryScopeUnsupported;
-            if (scope.Mode != FloodScopeMode.InheritDefault &&
-                (!supported || scope.Mode == FloodScopeMode.ForceUnscoped && _firmwareProtocolVersion < 12))
-                throw new NotSupportedException("The requested flood policy is unsupported by this session.");
-            if (!supported) return new ScopeOperationResult<T>(await send(ct, false).ConfigureAwait(false), null);
-            try
+            return await coordinator.WithGateAsync(async ct =>
             {
-                return await coordinator.ExecuteUnderGateAsync(scope, inner => send(inner, true), ct).ConfigureAwait(false);
-            }
-            catch (MeshCoreCommandException error) when (error.Command == CommandType.SetFloodScopeKey &&
-                error.ErrorCode == MeshCoreErrorCode.UnsupportedCommand)
-            {
+                if (scope.Mode != FloodScopeMode.InheritDefault && _firmwareProtocolVersion is null)
+                    await GetDeviceInfoAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
-                _temporaryScopeUnsupported = true;
-                if (scope.Mode != FloodScopeMode.InheritDefault)
-                    throw new NotSupportedException("Firmware rejected temporary flood scope.", error);
-                return new ScopeOperationResult<T>(await send(ct, false).ConfigureAwait(false), null);
-            }
-        }, token);
+                var supported = _firmwareProtocolVersion >= 8 && !_temporaryScopeUnsupported;
+                if (scope.Mode != FloodScopeMode.InheritDefault &&
+                    (!supported || scope.Mode == FloodScopeMode.ForceUnscoped && _firmwareProtocolVersion < 12))
+                    throw new NotSupportedException("The requested flood policy is unsupported by this session.");
+                if (!supported) return new ScopeOperationResult<T>(await Send(ct, false).ConfigureAwait(false), null);
+                try
+                {
+                    return await coordinator.ExecuteUnderGateAsync(scope, inner => Send(inner, true), ct).ConfigureAwait(false);
+                }
+                catch (MeshCoreCommandException error) when (error.Command == CommandType.SetFloodScopeKey &&
+                    error.ErrorCode == MeshCoreErrorCode.UnsupportedCommand)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    _temporaryScopeUnsupported = true;
+                    if (scope.Mode != FloodScopeMode.InheritDefault)
+                        throw new NotSupportedException("Firmware rejected temporary flood scope.", error);
+                    return new ScopeOperationResult<T>(await Send(ct, false).ConfigureAwait(false), null);
+                }
+            }, token).ConfigureAwait(false);
+        }
+        catch (MeshCoreException error) when (!sendInvoked) { error.TextSendWasInvoked = false; throw; }
+        catch (OperationCanceledException error) when (!sendInvoked) { throw new MeshCoreTextSendCanceledException(error); }
+        catch (IOException error) when (!sendInvoked) { throw new MeshCoreTransportException("Text send preparation failed before SEND.", error) { TextSendWasInvoked = false }; }
     }
 
     private void ObserveMessageTimestamp(uint timestamp)
