@@ -1,3 +1,5 @@
+17.10.2026: пользователь отложил GUI до совместного обсуждения. [REGION26](region26-gui-design.md) pending; REGION27–30 не начинаются, решения компоновки не утверждены. Backend REGION25 отправлен `85f45bb`; рабочая реализация остановлена перед GUI.
+
 17.10.2026: выполнен [REGION25](region25-core-acceptance.md): wire acceptance через loopback/GATT seam → library → session/services → SQLite. Core558/558, library228/228, Desktop bootstrap6/6; Release build0 warnings/errors. Семь новых wire cases; исправлена гонка BLE overflow fixture. [Матрица и ограничения](../../testing/region-core.md). REGION24 отправлен81f0cc8; следующий REGION26 требует совместного выбора GUI. Hardware RF не выполнялся.
 
 17.10.2026: выполнен [REGION24](region24-discovery-service.md), schema10: bounded single-flight discovery, progress/cancel, selected full-key targets/consent, source aggregation и atomic retained outcomes+observations. Core550/550; final targeted10/10; Release build0 warnings/errors, bootstrap6/6. REGION23 отправленbe35ac7; следующий REGION25 (production wire acceptance). Каталог/selection не меняются автоматически, hardware RF не выполнялся.
