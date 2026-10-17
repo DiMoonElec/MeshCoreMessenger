@@ -93,8 +93,7 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
             message = message with { SessionId = Owner.SessionId, Recipient = channel.Recipient };
         if (attempt is null || attempt.SessionId != Owner.SessionId || message.SessionId != Owner.SessionId || attempt.State != SendAttemptState.Prepared || !Matches(message.Recipient))
             throw new InvalidOperationException("Prepared attempt belongs to another session/recipient or has already started.");
-        var resolvedScope = Target is ChannelCommandTarget
-            ? await _scope.Messages.GetAttemptScopeAsync(Owner.NodeId, attemptId, Token).ConfigureAwait(false) : null;
+        var resolvedScope = await _scope.Messages.GetAttemptScopeAsync(Owner.NodeId, attemptId, Token).ConfigureAwait(false);
         lock (_scope.Gate)
         {
             _scope.EnsureOpen();
@@ -164,7 +163,9 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
     {
         if (Target is not ContactCommandTarget contact) throw new InvalidOperationException("Private sending requires a contact target.");
         await ValidateTextSendAsync().ConfigureAwait(false);
-        return await _scope.Invoke(this, (client, token) => client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
+        return await _scope.Invoke(this, (client, token) => _resolvedScope is { State: not StoredRegionScopeState.LegacyUnknown } captured
+            ? client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, ScopeForSend(captured), token)
+            : client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 
     internal Task<TextMessageSendResult> SendTextAsync(uint timestamp, byte attempt) => OwnAsync(async () =>
@@ -175,8 +176,9 @@ public sealed partial class SessionCommandLease : IAsyncDisposable
         var captures = await _scope.Messages.GetPrivateAttemptCapturesAsync(Owner.NodeId, _message!.MessageId, Token).ConfigureAwait(false);
         if (captures.SingleOrDefault(item => item.AttemptId == _attempt.Id)?.WireAttempt != attempt)
             throw new InvalidOperationException("Wire attempt differs from durable preparation.");
-        return await _scope.Invoke(this, (client, token) => client.SendTextAsync(contact.PublicKey,
-            _message!.TransmissionText, timestamp, attempt, token), sending: true).ConfigureAwait(false);
+        return await _scope.Invoke(this, (client, token) => _resolvedScope is { State: not StoredRegionScopeState.LegacyUnknown } captured
+            ? client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, timestamp, attempt, ScopeForSend(captured), token)
+            : client.SendTextAsync(contact.PublicKey, _message!.TransmissionText, timestamp, attempt, token), sending: true).ConfigureAwait(false);
     }, requireAdmission: true);
 
     public Task<ChannelMessageSendResult> SendChannelTextAsync(uint? timestamp = null) => OwnAsync(async () =>

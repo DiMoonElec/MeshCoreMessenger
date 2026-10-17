@@ -530,6 +530,14 @@ public sealed class MeshCoreClient : IAsyncDisposable
         return await SendTextAsync(recipientPublicKey, text, timestamp, 0, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>Sends text once with an explicit flood policy and an automatically allocated timestamp.</summary>
+    public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> recipientPublicKey, string text,
+        FloodScopeSelection scope, CancellationToken cancellationToken = default)
+    {
+        EnsureReady();
+        return SendTextAsync(recipientPublicKey, text, NextMessageTimestamp(), 0, scope, cancellationToken);
+    }
+
     /// <summary>Sends plain text once with an application-owned wire timestamp and basic attempt (0–3).</summary>
     /// <remarks>Does not retry automatically. The cancellation token also governs Delivery.
     /// A new timestamp changes the received message identity and can produce another message at the peer.</remarks>

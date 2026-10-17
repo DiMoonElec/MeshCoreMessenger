@@ -34,6 +34,18 @@ public sealed partial class SessionCommandLease
         return WireScope(captured);
     }
 
+    internal Task<ResolvedRegionScope> ResolveDefaultScopeAsync(int budget) => _scope.WithRegionStateAsync(this, () =>
+    {
+        var snapshot = _scope.RegionSnapshot;
+        // Firmware without temporary scope cannot promise a reproducible region over retries.
+        var value = _scope.Capabilities?.TemporaryScope != RegionSupport.Unsupported &&
+            snapshot?.IsCurrent(Owner.SessionId, Owner.Generation) == true ? snapshot.Value : NodeFloodScope.Unknown;
+        var state = value.State == NodeFloodScopeState.KnownEmpty || value.Key?.IsEmpty == true ? StoredRegionScopeState.KnownUnscoped :
+            value.State == NodeFloodScopeState.Configured ? StoredRegionScopeState.KnownScoped : StoredRegionScopeState.Unknown;
+        return Task.FromResult(new ResolvedRegionScope(Owner.NodeId, Owner.SessionId, Owner.Generation, FloodScopeMode.InheritDefault,
+            snapshot?.Revision ?? 0, state, state == StoredRegionScopeState.KnownScoped ? value.Key : null, value.Name, budget));
+    });
+
     internal async Task<ResolvedRegionScope> ResolveChannelScopeAsync(IRegionReader regions, IDirectoryStore directories, int budget)
     {
         if (Target is not ChannelCommandTarget channel) throw new InvalidOperationException("Channel scope requires a binding.");

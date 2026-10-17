@@ -34,6 +34,8 @@ internal sealed class MeshCoreClientAdapter(MeshCoreClient client, MeshCoreClien
     public Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default) => client.SetDefaultFloodScopeAsync(definition, cancellationToken);
     public Task ClearDefaultFloodScopeAsync(CancellationToken cancellationToken = default) => client.ClearDefaultFloodScopeAsync(cancellationToken);
     public MessageTextBudget GetTextBudget(TextMessageKind kind, FloodScopeSelection scope) => client.GetTextBudget(kind, scope);
+    public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> publicKey, string text, FloodScopeSelection scope, CancellationToken cancellationToken = default) =>
+        client.SendTextAsync(publicKey, text, scope, cancellationToken);
     public Task<NeighborDiscoveryResult> DiscoverRepeaterNeighborsAsync(NeighborDiscoveryOptions options, CancellationToken cancellationToken = default) => client.DiscoverRepeaterNeighborsAsync(options, cancellationToken);
     public Task<RegionNamesResponse> RequestRegionsAsync(ReadOnlyMemory<byte> publicKey, ReplyPath path, TimeSpan? responseTimeout = null, CancellationToken cancellationToken = default) =>
         responseTimeout is { } timeout ? client.RequestRegionsAsync(publicKey, path, timeout, cancellationToken) : client.RequestRegionsAsync(publicKey, path, cancellationToken);

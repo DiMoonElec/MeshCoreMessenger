@@ -145,7 +145,8 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                         catch (Exception error) when (error is not OutgoingPersistenceException)
                         {
                             await attempt.TransitionAsync(SendAttemptState.Sending,
-                                !attempt.WasInvoked || error is MeshCoreCommandException ? SendAttemptState.Failed : SendAttemptState.Unknown,
+                                !attempt.WasInvoked || error is MeshCoreCommandException or NotSupportedException or ArgumentException or
+                                    MeshCoreException { TextSendWasInvoked: false } or MeshCoreTextSendCanceledException ? SendAttemptState.Failed : SendAttemptState.Unknown,
                                 errorCode: error.GetType().Name).ConfigureAwait(false);
                             return;
                         }
@@ -154,6 +155,7 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                         await attempt.TransitionAsync(SendAttemptState.Sending, SendAttemptState.Accepted,
                             sent.Accepted.ExpectedAck == 0 ? AckExpectation.NotExpected : AckExpectation.Expected,
                             sent.Timestamp, sent.Accepted.ExpectedAck == 0 ? null : tag,
+                            errorCode: sent.ScopeCleanupError is not null ? "ScopeCleanupFailed" : null,
                             modeReportedByMsgSent: sent.Accepted.IsFlood,
                             ackDeadlineUtc: sent.Accepted.ExpectedAck == 0 ? null : attempt.EstimateAcknowledgementDeadline(sent.Accepted.SuggestedTimeoutMilliseconds)).ConfigureAwait(false);
                         if (sent.Accepted.ExpectedAck == 0) return;
@@ -192,6 +194,7 @@ public sealed class PrivateDeliveryCoordinator(IOutgoingMessageStore messages, I
                             return;
                         }
                         await attempt!.TransitionAsync(SendAttemptState.Accepted, SendAttemptState.Unconfirmed).ConfigureAwait(false);
+                        if (sent.ScopeCleanupError is not null) return;
                         break;
                     }
                 }

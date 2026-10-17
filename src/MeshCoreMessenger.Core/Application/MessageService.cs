@@ -142,9 +142,11 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 var draft = privateResendSourceId is null ? await draftStore.GetAsync(capture.Target, token).ConfigureAwait(false) : null;
                 var conversation = capture.Target.ConversationId ?? draft?.ConversationId
                     ?? throw new InvalidOperationException("The conversation has not been materialized.");
+                var scope = regions is null ? null : await owned.ResolveDefaultScopeAsync(
+                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes).ConfigureAwait(false);
                 var prepared = await messages.PrepareAsync(new(Guid.NewGuid(), owned.Owner.NodeId, owned.Owner.SessionId,
                     conversation, recipient, processed.OriginalText, processed.TransmissionText,
-                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow(), privateResendSourceId), token).ConfigureAwait(false);
+                    processed.Validation.MaxUtf8Bytes ?? MeshCoreSharp.Protocol.ProtocolLimits.MaxTextBytes, timeProvider.GetUtcNow(), privateResendSourceId) { Scope = scope }, token).ConfigureAwait(false);
                 // Register the complete job before any user callback or return to the UI.
                 try { privateDeliveries.Start(owned, prepared, policy, reservation!, activity!); }
                 catch
@@ -214,6 +216,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                     }
                     else scope = await owned.ResolveChannelScopeAsync(regions, directories, budget).ConfigureAwait(false);
                 }
+                else if (regions is not null) scope = await owned.ResolveDefaultScopeAsync(budget).ConfigureAwait(false);
                 // A not-yet-materialized directory conversation is created by the local draft store.
                 PreparedOutgoingMessage prepared;
                 if (repeat is not null && !asNew)
@@ -279,7 +282,7 @@ public sealed class MessageService(ISessionCommandGateway gateway, IOutgoingMess
                 if (!await owned.TransitionAsync(SendAttemptState.Sending, SendAttemptState.Accepted,
                     tag == 0 ? AckExpectation.NotExpected : AckExpectation.Expected,
                     privateResult?.Timestamp ?? channelResult!.Timestamp, expectedAck,
-                    errorCode: channelResult?.ScopeCleanupError is not null ? "ScopeCleanupFailed" : null).ConfigureAwait(false))
+                    errorCode: (channelResult?.ScopeCleanupError ?? privateResult?.ScopeCleanupError) is not null ? "ScopeCleanupFailed" : null).ConfigureAwait(false))
                     throw new InvalidOperationException("Outgoing status changed before acceptance was committed.");
                 if (privateResult is not null && tag != 0)
                 {

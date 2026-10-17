@@ -117,6 +117,7 @@ public sealed partial class SessionCommandGatewayTests
         public required MessageIngestor Ingress { get; init; }
         public required ConnectionSupervisor Supervisor { get; init; }
         public required MessageService Sender { get; init; }
+        public required SessionCommandGateway Gateway { get; init; }
         public required ConversationOperationGuard Operations { get; init; }
         public required HistoryClearService Clear { get; init; }
         public required ContactRouteService Routes { get; init; }
@@ -124,10 +125,12 @@ public sealed partial class SessionCommandGatewayTests
         public required Guid Node { get; init; }
         public PrivateDeliveryCoordinator? Deliveries { get; init; }
         public IDurableOutgoingWrites? Writes { get; init; }
-        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000, byte initialRoute = 0xFF, bool autoRetries = false)
+        public static async Task<TcpPrivateFixture> CreateAsync(bool autoAck, int ackTimeout = 5000, byte initialRoute = 0xFF, bool autoRetries = false,
+            Action<FakeCompanionServer>? configure = null)
         {
             var server = new FakeCompanionServer { AutoAcknowledgePrivate = autoAck, UseProtocolPrivateAckTags = autoRetries };
             server.ContactRoutes[0xA1] = initialRoute;
+            configure?.Invoke(server);
             server.Start();
             var paths = new Fixture.Paths(Path.Combine(Path.GetTempPath(), "MeshCore-D6-TCP", Guid.NewGuid().ToString("N")));
             var storage = await LocalStorage.OpenAsync(paths, CancellationToken);
@@ -145,7 +148,7 @@ public sealed partial class SessionCommandGatewayTests
             var outgoing = new OutgoingAttemptWriteTracker(storage.OutgoingMessages);
             var gateway = new SessionCommandGateway(storage.Directories, storage.ConversationDirectory, storage.OutgoingMessages, outgoing, time);
             var sessions = new CompanionSessionFactory(new MeshCoreClientFactory(), storage.Nodes, storage.Sessions,
-                new SessionCompletionTracker(storage.Sessions), time);
+                new SessionCompletionTracker(storage.Sessions), time, storage.Regions);
             var attempts = new ConnectionAttemptFactory(sessions, new DirectoryService(storage.Directories, time), storage.Directories, ingress, gateway, outgoing);
             var supervisor = new ConnectionSupervisor(profiles, attempts, new ConnectionFailureClassifier(),
                 new SystemReconnectDelay(), new RandomReconnectJitter(), time, outgoing: outgoing);
@@ -157,9 +160,9 @@ public sealed partial class SessionCommandGatewayTests
             var clear = new HistoryClearService(storage.HistoryClear, operations, new(storage.ReadStates), outgoing);
             var deliveries = autoRetries ? new PrivateDeliveryCoordinator(storage.OutgoingMessages, outgoing, time, storage.Directories) : null;
             var sender = new MessageService(gateway, storage.OutgoingMessages, storage.Directories,
-                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations, deliveries);
+                storage.ConversationDirectory, drafts, new PassthroughOutgoingTextProcessor(), time, storage.Drafts, operations, deliveries, storage.Regions);
             return new() { Server = server, Paths = paths, Storage = storage, Ingress = ingress, Supervisor = supervisor,
-                Sender = sender, Deliveries = deliveries, Writes = outgoing, Operations = operations, Clear = clear, Routes = new(gateway, storage.ConversationDirectory, storage.Directories, operations, time), Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
+                Sender = sender, Gateway = gateway, Deliveries = deliveries, Writes = outgoing, Operations = operations, Clear = clear, Routes = new(gateway, storage.ConversationDirectory, storage.Directories, operations, time), Drafts = drafts, Node = supervisor.Snapshot.NodeId!.Value };
         }
         public async Task<PrivateSendOutcome> Send(string text, byte peer, long revision, PrivateRetryPolicy? policy = null, CancellationToken? callerToken = null)
         {

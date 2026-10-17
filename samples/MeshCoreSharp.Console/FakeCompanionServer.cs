@@ -13,6 +13,11 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
     private NetworkStream? _stream;
     private readonly SemaphoreSlim _writeGate = new(1, 1);
     public byte[] DefaultFloodScopeResponse { get; set; } = [(byte)PacketType.DefaultFloodScope];
+    public byte FirmwareProtocolVersion { get; set; } = 10;
+    public bool RejectTemporaryScopeSet { get; set; }
+    public ConcurrentQueue<byte[]> TemporaryScopeCommands { get; } = new();
+    private byte[]? _temporaryScopeKey;
+    private bool _forceUnscoped;
     private readonly ConcurrentQueue<byte[]> _messages = new(
     [
         BuildMessage(PacketType.ContactMessageReceivedV3, "Hello from Alice"),
@@ -26,7 +31,7 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return WriteFrameAsync(stream, 0x3E, [(byte)PacketType.MessagesWaiting]);
     }
     public sealed record PrivateTransmission(uint Timestamp, byte[] RecipientPrefix, string Text, uint ExpectedAck,
-        byte RouteDescriptor = byte.MaxValue, byte Attempt = 0);
+        byte RouteDescriptor = byte.MaxValue, byte Attempt = 0, ReadOnlyMemory<byte> ScopeKey = default);
     public ConcurrentQueue<PrivateTransmission> PrivateTransmissions { get; } = new();
     public ConcurrentDictionary<byte, byte> ContactRoutes { get; } = new(new[] { new KeyValuePair<byte, byte>(0xA1, 0xFF), new KeyValuePair<byte, byte>(0xB2, 0xFF) });
     public ConcurrentQueue<byte[]> RouteResets { get; } = new();
@@ -148,9 +153,19 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 continue;
             }
 
+            if (type == CommandType.SetDefaultFloodScope)
+            {
+                if (command.Length is not (1 or 48)) throw new InvalidDataException("Invalid default scope command.");
+                DefaultFloodScopeResponse = command.ToArray(); DefaultFloodScopeResponse[0] = (byte)PacketType.DefaultFloodScope;
+                await WriteFrameAsync(stream, 0x3E, [(byte)PacketType.Ok]);
+                continue;
+            }
+
             if (type == CommandType.SetFloodScopeKey)
             {
-                var valid = command.Length == 2 && command[1] <= 1 || command.Length == 18 && command[1] == 0;
+                TemporaryScopeCommands.Enqueue(command.ToArray());
+                var valid = !RejectTemporaryScopeSet && (command.Length == 2 && command[1] <= 1 || command.Length == 18 && command[1] == 0);
+                if (valid) { _forceUnscoped = command[1] == 1; _temporaryScopeKey = command.Length == 18 ? command.AsSpan(2).ToArray() : null; }
                 await WriteFrameAsync(stream, 0x3E, valid
                     ? [(byte)PacketType.Ok]
                     : [(byte)PacketType.Error, (byte)MeshCoreErrorCode.IllegalArgument]);
@@ -164,7 +179,8 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
                 var tag = UseProtocolPrivateAckTags ? CalculatePrivateAck(command) : PrivateAckTag(PrivateTransmissions.Count + 1);
                 var route = ContactRoutes[command[7]];
                 PrivateTransmissions.Enqueue(new(BinaryPrimitives.ReadUInt32LittleEndian(command.AsSpan(3)),
-                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag, route, command[2]));
+                    command.AsSpan(7, ProtocolLimits.MessageContactPrefixSize).ToArray(), Encoding.UTF8.GetString(command.AsSpan(13)), tag, route, command[2],
+                    _forceUnscoped ? ReadOnlyMemory<byte>.Empty : _temporaryScopeKey is { } key ? key.ToArray() : DefaultFloodScopeResponse.Length == 48 ? DefaultFloodScopeResponse.AsMemory(32, 16).ToArray() : ReadOnlyMemory<byte>.Empty));
                 if (BeforePrivateResponse is not null) await BeforePrivateResponse();
                 var sentResponse = new byte[10];
                 sentResponse[0] = (byte)PacketType.MessageSent;
@@ -273,11 +289,11 @@ internal sealed class FakeCompanionServer : IAsyncDisposable
         return frame;
     }
 
-    private static byte[] BuildDeviceInfo()
+    private byte[] BuildDeviceInfo()
     {
         var frame = new byte[82];
         frame[0] = (byte)PacketType.DeviceInfo;
-        frame[1] = 10;
+        frame[1] = FirmwareProtocolVersion;
         frame[2] = 50; // 100 contacts
         frame[3] = 8;
         BinaryPrimitives.WriteUInt32LittleEndian(frame.AsSpan(4, 4), 123456);

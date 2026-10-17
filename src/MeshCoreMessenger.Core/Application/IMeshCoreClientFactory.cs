@@ -28,6 +28,9 @@ public interface ICompanionClient : IAsyncDisposable
     Task<SelfInfo> StartAsync(CancellationToken cancellationToken = default);
     Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<DeviceInfo>(new NotSupportedException("Device info is not implemented by this adapter."));
+    Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> publicKey, string text, FloodScopeSelection scope, CancellationToken cancellationToken = default) =>
+        scope.Mode == FloodScopeMode.InheritDefault ? SendTextAsync(publicKey, text, cancellationToken) :
+            Task.FromException<TextMessageSendResult>(new NotSupportedException("Explicit scope is not implemented by this adapter."));
     Task<NodeFloodScope> GetDefaultFloodScopeAsync(CancellationToken cancellationToken = default) =>
         Task.FromException<NodeFloodScope>(new NotSupportedException("Region readback is not implemented by this adapter."));
     Task SetDefaultFloodScopeAsync(RegionDefinition definition, CancellationToken cancellationToken = default) =>

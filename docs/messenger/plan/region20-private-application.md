@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: выполнен 17.10.2026.** Задание подготовлено 16.10.2026.
 
 **Цель:** Стабильный scope существующих private retries и flood fallback.
 
@@ -41,11 +41,17 @@ region-design.md: «Отправки, история, повторы и лими
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION21](region21-application-budget.md).
+MessageService захватывает default scope до durable принятия private job. Все child attempts читают immutable scope REGION18 и передают его typed library overload, включая known→flood. Scope не меняет contact identity, retry plan, timestamp/attempt, ACK grouping, queue capacity или stop-on-delivery. Старые прошивки без temporary scope сохраняют InheritDefault с Unknown provenance, без выдуманного точного snapshot. Send-as-new захватывает текущий default.
+
+До-SEND failure evidence из REGION19 применяется и к private coordinator. Accepted + cleanup failure сохраняется отдельно как ScopeCleanupFailed; поздний ACK всё ещё подтверждает доставку, а timeout после cleanup failure не запускает повтор. ACK/Unconfirmed transitions сохраняют этот маркер. Одноразовый private send также использует typed scope overload.
+
+Loopback tests с production client/session/SQLite: scope A остаётся во всех 3 flood или 5 known→flood попытках после SET default B; late ACK прекращает job; SET refusal даёт zero text TX; protocol7 сохраняет legacy path и Unknown provenance. Отдельные fake tests проверяют отсутствие повторов и сохранность cleanup marker после ACK/timeout. Release solution build0 warnings/errors, библиотека227/227, Desktop bootstrap6/6. Полные и targeted Core результаты записаны в current-state.
+
+Аппаратных передач не выполнялось. Область automatic ACK получателя и per-contact policy не менялась. Следующий шаг — [REGION21](region21-application-budget.md).

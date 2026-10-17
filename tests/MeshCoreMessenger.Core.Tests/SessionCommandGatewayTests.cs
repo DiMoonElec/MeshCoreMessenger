@@ -490,6 +490,16 @@ public sealed partial class SessionCommandGatewayTests
         public Task<DeviceInfo> GetDeviceInfoAsync(CancellationToken cancellationToken = default) => Task.FromResult(new DeviceInfo(ProtocolVersion, 100, 8, null, "test", "fake", "1.18", false, 0));
         public FloodScopeSelection? SentScope { get; private set; }
         public Exception? CleanupError { get; set; }
+        public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> key, string text, FloodScopeSelection scope, CancellationToken cancellationToken = default)
+        {
+            SentScope = scope;
+            return SendTextAsync(key, text, cancellationToken);
+        }
+        public Task<TextMessageSendResult> SendTextAsync(ReadOnlyMemory<byte> key, string text, uint timestamp, byte attempt, FloodScopeSelection scope, CancellationToken cancellationToken = default)
+        {
+            SentScope = scope;
+            return SendTextAsync(key, text, timestamp, attempt, cancellationToken);
+        }
         public async Task<ChannelMessageSendResult> SendChannelTextAsync(byte slot, string text, uint timestamp, FloodScopeSelection scope, CancellationToken cancellationToken = default)
         {
             SentScope = scope;

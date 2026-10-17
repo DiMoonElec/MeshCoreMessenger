@@ -57,7 +57,8 @@ internal sealed partial class SqliteOutgoingMessageStore
             var completed = new[] { ack.ReceivedUtc.ToUniversalTime(), candidate.StartedUtc,
                 candidate.AcceptedUtc ?? candidate.StartedUtc, candidate.CompletedUtc ?? candidate.StartedUtc }.Max();
             using var update = Command(connection, transaction, """
-                UPDATE SendAttempts SET State=2,CompletedUtc=$utc,RoundTripMilliseconds=$rtt,ErrorCode=NULL WHERE Id=$id;
+                UPDATE SendAttempts SET State=2,CompletedUtc=$utc,RoundTripMilliseconds=$rtt,
+                    ErrorCode=CASE WHEN ErrorCode='ScopeCleanupFailed' THEN ErrorCode ELSE NULL END WHERE Id=$id;
                 """, ("$id", candidate.Id), ("$utc", completed),
                 ("$rtt", ack.RoundTripMilliseconds <= int.MaxValue ? (int?)ack.RoundTripMilliseconds : null));
             changed = update.ExecuteNonQuery() != 0;
