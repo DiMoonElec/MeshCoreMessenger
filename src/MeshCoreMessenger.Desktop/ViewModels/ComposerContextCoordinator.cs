@@ -13,6 +13,8 @@ internal sealed class ComposerContextCoordinator
     private readonly IConnectionSupervisor _supervisor;
     private readonly ISendReadinessReader? _reader;
     private readonly IMessageService? _messages;
+    private readonly IRegionService? _regions;
+    private int? _recipientBudget;
     private string? _recipientKey;
     private readonly IUiDispatcher _dispatcher;
     private readonly ILogger _logger;
@@ -24,15 +26,17 @@ internal sealed class ComposerContextCoordinator
     private bool _initialized;
 
     public ComposerContextCoordinator(ChatWorkspaceViewModel workspace, IConnectionSupervisor supervisor,
-        ISendReadinessReader? reader, IUiDispatcher dispatcher, ILogger logger, IMessageService? messages = null)
+        ISendReadinessReader? reader, IUiDispatcher dispatcher, ILogger logger, IMessageService? messages = null, IRegionService? regions = null)
     {
         _workspace = workspace;
         _supervisor = supervisor;
         _reader = reader;
         _messages = messages;
+        _regions = regions;
+        if (regions is not null) regions.Changed += OnRegionChanged;
         if (messages is not null) workspace.Composer.ConfigureSend(SendAsync);
         if (messages is not null) workspace.Composer.ConfigureTextBudgetReader(isChannel =>
-            workspace.ViewedNode is { } node ? messages.GetTextByteLimit(node.Id, isChannel) : null);
+            _recipientBudget ?? (workspace.ViewedNode is { } node ? messages.GetTextByteLimit(node.Id, isChannel) : null));
         workspace.Composer.PropertyChanged += OnComposerChanged;
         _dispatcher = dispatcher;
         _logger = logger;
@@ -71,6 +75,11 @@ internal sealed class ComposerContextCoordinator
     private void OnNavigationChanged(object? sender, PropertyChangedEventArgs args)
     {
         if (args.PropertyName == nameof(ConversationNavigationViewModel.SelectedConversation)) Refresh();
+    }
+    private void OnRegionChanged(object? sender, MeshCoreMessenger.Core.Persistence.RegionDataCommit commit)
+    {
+        if (_stopped || commit.NodeId != _workspace.ViewedNode?.Id) return;
+        lock (_gate) { if (!_stopped) Track(_dispatcher.InvokeAsync(Refresh, _stop.Token)); }
     }
     // Called by the existing root presentation publication, already on the UI dispatcher.
     public void Refresh()
@@ -111,6 +120,7 @@ internal sealed class ComposerContextCoordinator
         try
         {
             if (!IsCurrent(revision)) return;
+            _recipientBudget = null;
             connection = _supervisor.Snapshot;
             node = _workspace.ViewedNode?.Id;
             var entry = _workspace.SelectedConversation?.Entry;
@@ -132,15 +142,20 @@ internal sealed class ComposerContextCoordinator
             _workspace.Composer.Readiness = unavailable ?? SendReadiness.Checking;
             if (unavailable is not null || !readDirectory) return;
             if (connection is null || !IsCurrent(revision)) return;
-            var readiness = _reader is not null
-                ? await _reader.ReadAsync(connection, node, recipient, _stop.Token).ConfigureAwait(false)
-                : SendReadinessReader.CheckContext(connection, node, recipient) ?? SendReadiness.ReadFailed;
+            var assessment = _reader is not null
+                ? await _reader.ReadBudgetAsync(connection, node, recipient, _stop.Token).ConfigureAwait(false)
+                : new SendBudgetReadiness(SendReadinessReader.CheckContext(connection, node, recipient) ?? SendReadiness.ReadFailed, null);
+            var readiness = assessment.Readiness;
+            if (assessment.Budget is { } budget && (budget.NodeId != node || budget.SessionId != connection.SessionId || budget.Generation != connection.Generation))
+                readiness = SendReadiness.NotOnline;
             var targets = _messages is not null && recipient?.Kind == ConversationKind.Channel
                 ? await _messages.GetChannelTargetsAsync(node!.Value, recipient.Identity, _stop.Token).ConfigureAwait(false)
                 : [];
             void Apply()
             {
                 if (!IsCurrent(revision)) return;
+                _recipientBudget = assessment.Budget?.MaximumTextBytes;
+                _workspace.Composer.RefreshTextBudget();
                 _workspace.Composer.Readiness = readiness;
                 if (targets.Count > 0) _workspace.Composer.SetSendContext(node!.Value, connection.SessionId!.Value, connection.Generation, targets);
                 else if (_messages is not null && readiness == SendReadiness.Ready && recipient?.Kind == ConversationKind.Contact)
@@ -175,6 +190,7 @@ internal sealed class ComposerContextCoordinator
             pending = [.. _pending];
         }
         _workspace.Composer.StopSend();
+        if (_regions is not null) _regions.Changed -= OnRegionChanged;
         _workspace.Composer.PropertyChanged -= OnComposerChanged;
         _workspace.PropertyChanged -= OnWorkspaceChanged;
         _workspace.Navigation.PropertyChanged -= OnNavigationChanged;

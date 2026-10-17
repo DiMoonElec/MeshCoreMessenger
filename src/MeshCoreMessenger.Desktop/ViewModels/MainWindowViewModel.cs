@@ -133,8 +133,8 @@ public sealed class MainWindowViewModel : ObservableObject, IDesktopUiLifetime
             _ = Track(Modal.ShowAsync(card));
             _ = Track(card.RefreshAsync());
         };
-        _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService),
-            new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService)];
+        _composerContexts = [new(Chats.Public, supervisor, sendReadiness, dispatcher, logger, messageService, regions),
+            new(Chats.Private, supervisor, sendReadiness, dispatcher, logger, messageService, regions)];
         _channelRepeats = new(Chats.Public, supervisor, messageService, outgoingMessages, dispatcher, Track, _lifetimeCancellation.Token, logger);
         _privateResends = new(Chats.Private, supervisor, messageService, dispatcher, Track, _lifetimeCancellation.Token, logger);
         (_connectionStatus, _connectionStatusDetail) = DescribeConnection(supervisor.Snapshot);

@@ -74,10 +74,10 @@ REGION0 — завершённое исследование; выполненн�
 | ☑ | [REGION24](region24-discovery-service.md) | Полный поиск и локальные наблюдения |
 | ☑ | [REGION25](region25-core-acceptance.md) | Сквозная приёмка Core |
 | ☑ | [REGION26](region26-gui-design.md) | Совместное проектирование GUI |
-| ☐ | [REGION27](region27-catalog-ui.md) | GUI каталога регионов |
-| ☐ | [REGION28](region28-selection-ui.md) | GUI default ноды и выбора канала |
-| ☐ | [REGION29](region29-discovery-ui.md) | GUI поиска регионов |
-| ☐ | [REGION30](region30-send-ui.md) | Composer и сведения о scope отправки |
+| ☑ | [REGION27](region27-catalog-ui.md) | GUI каталога регионов |
+| ☑ | [REGION28](region28-selection-ui.md) | GUI default ноды и выбора канала |
+| ☑ | [REGION29](region29-discovery-ui.md) | GUI поиска регионов |
+| ☑ | [REGION30](region30-send-ui.md) | Composer и сведения о scope отправки |
 | ☐ | [REGION31](region31-desktop-acceptance.md) | Сквозная автоматическая приёмка Desktop |
 | ☐ | [REGION32](region32-hardware-local.md) | Аппаратная проверка default и транспортов |
 | ☐ | [REGION33](region33-hardware-mesh.md) | Аппаратная проверка discovery, ЛС и каналов |

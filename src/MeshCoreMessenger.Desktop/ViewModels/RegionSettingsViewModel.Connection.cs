@@ -28,6 +28,7 @@ public sealed partial class RegionSettingsViewModel
     public static string ScopeName(NodeRegionSnapshot? snapshot) => snapshot?.Value.State switch
     {
         NodeFloodScopeState.KnownEmpty => "без региона",
+        NodeFloodScopeState.Configured when snapshot.Value.Key?.IsEmpty == true => "без региона",
         NodeFloodScopeState.Configured => snapshot.Value.Name is { Length: > 0 } name ? name : "регион с пользовательским ключом",
         _ => "неизвестен",
     };
@@ -42,7 +43,7 @@ public sealed partial class RegionSettingsViewModel
     }
     private void OnConnectionChanged(object? sender, ConnectionSupervisorStateChangedEventArgs e)
     {
-        if (_stopped) return;
+        if (_stopped || !_initialized || _service is null) return;
         _ = _track(_dispatcher.InvokeAsync(() =>
         {
             if (_stopped) return;

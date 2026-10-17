@@ -63,6 +63,7 @@ public sealed class ComposerViewModel : ObservableObject
         _transportBudgetReader = reader;
         RefreshText();
     }
+    internal void RefreshTextBudget() => RefreshText();
     internal void SetSendContext(Guid nodeId, Guid sessionId, long generation, IReadOnlyList<OutgoingRecipient> targets)
     {
         var previousSlot = _selectedSlot;
@@ -208,6 +209,7 @@ public sealed class ComposerViewModel : ObservableObject
         SendReadiness.ChooseSlot => "Нужно выбрать слот канала",
         SendReadiness.StaleBinding => "Привязка канального слота изменилась",
         SendReadiness.Checking => "Проверка адресата…",
+        SendReadiness.UnsupportedScope => "Выбранный регион не поддерживается нодой",
         _ => "Не удалось проверить адресата",
     };
 }

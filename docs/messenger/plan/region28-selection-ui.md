@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: реализован17.10.2026; native приёмка REGION31 pending.**
+**Статус: реализован17.10.2026; native автоматическая приёмка4/4 пройдена.**
 
 **Цель:** Подключить три режима канала и online настройку default.
 
@@ -41,11 +41,13 @@ region-gui-decisions.md; REGION17 и REGION19 results.
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
 Settings содержит отдельную карточку default: local catalogue selection, explicit SET/CLEAR/readback, freshness/unsupported/unknown. Заголовок канала показывает эффективное значение; ⋯ → «Регион отправки» содержит inherit/unscoped/catalogue, CAS сохранение по stable ChannelId без изменения history/draft/slots. Startup не выполняет мутации. Регрессия offline channel menu/history/draft прошла1/1; catalogue/default/bootstrap9/9; изолированная Release build0 warnings/errors. Manual/theme/keyboard приёмка REGION31 pending. Далее REGION29 и budget wiring REGION30.
+
+Native проверки и ограничения: [region-desktop.md](../../testing/region-desktop.md). Пользовательский просмотр остаётся отдельной проверкой.

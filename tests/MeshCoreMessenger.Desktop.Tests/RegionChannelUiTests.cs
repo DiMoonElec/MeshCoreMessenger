@@ -8,6 +8,46 @@ namespace MeshCoreMessenger.Desktop.Tests;
 public sealed partial class UiWorkspaceIntegrationTests
 {
     [Fact]
+    public async Task RegionPolicyChangesRefreshComposerBudgetWithoutTrimmingOrSendingDraft()
+    {
+        await using var f = await Workspace.CreateAsync(); await f.Root.StopAsync();
+        var sender = new UiChannelSender(f);
+        var root = f.CreateRoot(sendReadiness: new RegionBudgetReader(f), messageService: sender, includeRegions: true);
+        try
+        {
+            await root.LoadAsync(Token);
+            f.Supervisor.Publish(new(ConnectionSupervisorState.Online, 1, f.ProfileId, f.A.SessionId, f.A.NodeId, null, null) { SenderName = "A" });
+            var composer = root.Chats.Public.Composer; composer.Text = new string('я', 30);
+            await UntilAsync(() => composer.ByteCounter == "60 / 100 байт" && composer.CanSend);
+            var service = new RegionService(f.Storage.Regions, TimeProvider.System);
+            var region = await service.CreatePublicAsync(f.A.NodeId, "Area", "Area", Token);
+            var selected = root.Chats.Public.SelectedConversation!;
+            var channel = (await f.Storage.ConversationDirectory.GetChannelDetailsAsync(f.A.NodeId, selected.Entry.Identity, Token))!;
+            await service.AssignChannelAsync(f.A.NodeId, channel.Id, MeshCoreSharp.Models.FloodScopeMode.ExplicitRegion, region.Id, 0, Token);
+            await UntilAsync(() => composer.ByteCounter == "60 / 50 байт" && !composer.CanSend);
+            Assert.Equal(new string('я', 30), composer.Text); Assert.Equal(0, sender.Calls);
+            await service.AssignChannelAsync(f.A.NodeId, channel.Id, MeshCoreSharp.Models.FloodScopeMode.ForceUnscoped, null, 1, Token);
+            await UntilAsync(() => composer.ByteCounter == "60 / 100 байт" && composer.CanSend);
+        }
+        finally { await root.StopAsync(); }
+    }
+    private sealed class RegionBudgetReader(Workspace workspace) : ISendReadinessReader
+    {
+        private readonly SendReadinessReader _inner = new(workspace.Storage.Directories, workspace.Storage.ConversationDirectory);
+        public Task<SendReadiness> ReadAsync(ConnectionSupervisorSnapshot connection, Guid? node, SendRecipient? recipient, CancellationToken token = default) =>
+            _inner.ReadAsync(connection, node, recipient, token);
+        public async Task<SendBudgetReadiness> ReadBudgetAsync(ConnectionSupervisorSnapshot connection, Guid? node, SendRecipient? recipient, CancellationToken token = default)
+        {
+            var readiness = await ReadAsync(connection, node, recipient, token);
+            if (readiness != SendReadiness.Ready || recipient!.Kind != ConversationKind.Channel) return new(readiness, null);
+            var channel = (await workspace.Storage.ConversationDirectory.GetChannelDetailsAsync(node!.Value, recipient.Identity, token))!;
+            var preference = await workspace.Storage.Regions.GetChannelPreferenceAsync(node.Value, channel.Id, token);
+            return new(SendReadiness.Ready, new(node.Value, connection.SessionId, connection.Generation,
+                new(ConversationKind.Channel, recipient.Identity), null, preference.Mode == MeshCoreSharp.Models.FloodScopeMode.ExplicitRegion ? 50 : 100,
+                RegionSnapshotFreshness.CurrentSession, 0, connection.SenderName));
+        }
+    }
+    [Fact]
     public async Task RegionMenuOfflinePolicyUpdatesHeaderWithoutChangingHistoryOrDraft()
     {
         await using var f = await Workspace.CreateAsync(); await f.Root.StopAsync();

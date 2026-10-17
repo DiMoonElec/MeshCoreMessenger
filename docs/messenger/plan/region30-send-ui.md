@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: не начат.** Задание подготовлено 16.10.2026.
+**Статус: реализован17.10.2026.** Scope виден в header по согласованному UX; новые history controls исключены пользователем.
 
 **Цель:** Отобразить budget и scope исходящей попытки по согласованному UX.
 
@@ -41,11 +41,13 @@ region-gui-decisions.md; REGION19/20/21 results; актуальные history/dr
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
-Ожидает выполнения. Следующий шаг после завершения — [REGION31](region31-desktop-acceptance.md).
+Composer подключён к target-aware ReadBudgetAsync, post-commit policy/default refresh и stale revision guard. Draft сохраняется при shrink budget; unsupported scope блокирует send. Header/menu/native4/4, budget/menu/stale4/4; startup regression60/60 после удаления раннего listener dispatch. Existing repeat/as-new/cleanup semantics не менялись. [Отчёт](../../testing/region-desktop.md). Следующий этап REGION31: полный Desktop прогон и фиксация native/fake результатов.
+
+Native проверки и ограничения: [region-desktop.md](../../testing/region-desktop.md). Пользовательский просмотр остаётся отдельной проверкой.

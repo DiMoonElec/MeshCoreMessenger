@@ -2,7 +2,7 @@
 
 [Stage REGION](stage-region.md) · [Общие контракты](region-design.md) · [Протокол](../../library/protocol/regions.md)
 
-**Статус: реализован17.10.2026; native приёмка REGION31 pending.**
+**Статус: реализован17.10.2026; native автоматическая приёмка4/4 пройдена.**
 
 **Цель:** Поиск, прогресс, источники и явные побочные действия.
 
@@ -41,11 +41,13 @@ region-gui-decisions.md; REGION22–24 contracts.
 автоматический результат, native просмотр и пользовательское подтверждение.
 Не объявлять всю REGION завершённой по успеху одного слоя.
 
-- [ ] Изменения в границах подэтапа выполнены.
-- [ ] Обязательные проверки выполнены; команды и фактические результаты записаны.
-- [ ] Ограничения и оставшиеся проверки указаны.
-- [ ] Статус этого файла, checklist Stage REGION и current-state обновлены.
+- [x] Изменения в границах подэтапа выполнены.
+- [x] Обязательные проверки выполнены; команды и фактические результаты записаны.
+- [x] Ограничения и оставшиеся проверки указаны.
+- [x] Статус этого файла, checklist Stage REGION и current-state обновлены.
 
 ## Результат выполнения
 
 В карточке Regions Settings добавлены explicit discovery/cancel, progress, consent на контакт/zero-hop только для текущего запуска, источники и per-target outcomes/restore. Сохранение public имени отдельно по кнопке; private переносится в форму импорта без derivation ключа. В UI автоматических радио retries нет; повторный поиск только по кнопке. Core REGION24 сохраняет свои bounds/deadline. UI stale node completion игнорируется, root lifetime ждёт принятые операции. RegionUiTests+bootstrap11/11; Release build0 warnings/errors. Нативная приёмка REGION31 pending; далее REGION30.
+
+Native проверки и ограничения: [region-desktop.md](../../testing/region-desktop.md). Пользовательский просмотр остаётся отдельной проверкой.
