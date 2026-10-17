@@ -7,6 +7,27 @@ using MeshCoreSharp.Transport.Ble;
 
 internal static class WindowsBleProbe
 {
+    internal static async Task<int> RunRegionsAsync(string deviceId, byte[]? previouslyObservedZeroHopTarget = null)
+    {
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(12));
+        ConsoleCancelEventHandler cancel = (_, e) => { e.Cancel = true; cancellation.Cancel(); };
+        Console.CancelKeyPress += cancel;
+        try
+        {
+            await using var dispatcher = new BleProbeDispatcher(); await dispatcher.Ready;
+            await using var native = new BleMeshCoreTransport(new()
+            { DeviceId = deviceId, DeviceAccessDispatcher = dispatcher, OpenTimeout = TimeSpan.FromSeconds(30) });
+            var result = await RegionMeshProbe.RunAsync(native, RegionMeshProbe.Timing.Hardware,
+                line => Console.WriteLine($"{DateTimeOffset.UtcNow:O} {line}"), cancellation.Token, previouslyObservedZeroHopTarget);
+            await native.CleanupCompletion.WaitAsync(TimeSpan.FromSeconds(30));
+            Console.WriteLine($"BLE region probe completed; responses={result.Responses}, MTU after disconnect={native.MaxPduSize}");
+            return result.Responses > 0 && result.RestoreConflicts == 0 ? 0 : 3;
+        }
+        catch (Exception error)
+        { Console.Error.WriteLine($"BLE region probe failed: {error.GetType().Name}; HRESULT=0x{error.HResult:X8}: {error.Message}"); return 1; }
+        finally { Console.CancelKeyPress -= cancel; }
+    }
+
     internal static async Task<int> RunAsync(BleProbeArguments args, string? queueCapturePath = null)
     {
         using var cancellation = new CancellationTokenSource(TimeSpan.FromMinutes(4));

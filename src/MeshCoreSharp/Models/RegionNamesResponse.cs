@@ -17,7 +17,9 @@ public sealed record RegionNamesResponse(uint Tag, uint RemoteClock, IReadOnlyLi
         if (payload.Length < sizeof(uint)) throw new MeshCoreProtocolException("Region response lacks a remote clock.");
         var clock = BinaryPrimitives.ReadUInt32LittleEndian(payload);
         var csv = payload[sizeof(uint)..];
-        if (csv.Length > 0 && csv[^1] == 0) csv = csv[..^1];
+        // Mesh encryption zero-pads the final AES block. Companion forwards the decrypted
+        // payload length, so a real response can contain multiple trailing zero bytes.
+        while (csv.Length > 0 && csv[^1] == 0) csv = csv[..^1];
         if (csv.Contains((byte)0)) throw new MeshCoreProtocolException("Region CSV contains an embedded NUL.");
         string text;
         try { text = new UTF8Encoding(false, true).GetString(csv); }

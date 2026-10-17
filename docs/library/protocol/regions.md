@@ -210,7 +210,12 @@ reply-path descriptor + reply-path bytes. Для соседа reply-path = `00`.
 
 Две фазы: MSG_SENT (`06`) с tag и suggested timeout, затем BINARY_RESPONSE:
 `8C`, reserved, tag UInt32LE, remote-clock UInt32LE, CSV имён до конца кадра.
-Remote-clock — не повторный request tag. CSV может быть пустым; имя может
+Remote-clock — не повторный request tag. CSV может быть пустым и иметь
+завершающий нулевой хвост: AES zero-padding сохраняется при
+передаче decrypted payload через Companion. На CatCore17.10.2026 наблюдалось два
+завершающих нуля; снимать весь нулевой хвост, но отвергать NUL внутри CSV.
+Подробности: [аппаратная проверка](../../testing/region-hardware-mesh.md).
+Имя может
 приходить без `#`, `*` — доступность unscoped. Не требуется пароль администратора.
 Ответ содержит разрешённые flood-регионы, не всю RegionMap, не родителей,
 не deny-правила и не ключи частных регионов. `exportNamesTo` пропускает имена,

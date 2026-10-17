@@ -58,7 +58,7 @@ internal static class RegionWireTests
     {
         var decoder = new CompanionPacketDecoder();
         foreach (var csv in new[] { "", "*", "A,#B,$private,Русь" })
-        foreach (var nul in new[] { "", "\0" })
+        foreach (var nul in Enumerable.Range(0, 16).Select(length => new string('\0', length)))
         {
             var result = RegionNamesResponse.Parse((BinaryResponsePacket)decoder.Decode(BinaryFrame(csv + nul)));
             Check(result.Tag == 0x12345678 && result.RemoteClock == 0xAABBCCDD);
@@ -68,10 +68,15 @@ internal static class RegionWireTests
             await Reject(() => RegionNamesResponse.Parse((BinaryResponsePacket)decoder.Decode(BinaryFrame("")[..length])));
         var invalid = BinaryFrame("a"); invalid[10] = 0xFF;
         await Reject(() => RegionNamesResponse.Parse((BinaryResponsePacket)decoder.Decode(invalid)));
-        foreach (var csv in new[] { "a\0b", "a,", ",a", "a,,b" })
+        foreach (var csv in new[] { "a\0b", "a\0b\0\0", "a,", ",a", "a,,b" })
             await Reject(() => RegionNamesResponse.Parse((BinaryResponsePacket)decoder.Decode(BinaryFrame(csv))));
         // Generic binary data remains binary: no CSV interpretation is imposed on unrelated request types.
         Check(((BinaryResponsePacket)decoder.Decode(invalid)).GetPayload()[4] == 0xFF);
+        // CatCore BLE, 2026-10-17: encrypted reply includes two zero padding bytes.
+        var hardware = RegionNamesResponse.Parse((BinaryResponsePacket)decoder.Decode(Convert.FromHexString(
+            "8C0001B4D26AD423D36A2A2C72752C72752D726F732C72752D726F732D726E640000")));
+        Check(hardware.Tag == 0x6AD2B401 && hardware.RemoteClock == 1792222164 &&
+            hardware.Names.SequenceEqual(new[] { "*", "ru", "ru-ros", "ru-ros-rnd" }));
     }
     private static async Task Paths()
     {

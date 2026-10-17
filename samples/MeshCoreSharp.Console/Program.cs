@@ -6,6 +6,9 @@ using MeshCoreSharp.Transport.Tcp;
 using MeshCoreSharp.Transport.Ble;
 using MeshCoreSharp.Exceptions;
 
+if (args.Length == 1 && args[0] == "--region-probe-self-test")
+    return await RegionMeshProbe.SelfTestAsync();
+
 if (args.Length >= 1 && args[0] == "--ble-drain-probe")
 {
     if (args.Length != 3 || string.IsNullOrWhiteSpace(args[1]) || args[1].StartsWith("--", StringComparison.Ordinal)
@@ -19,6 +22,24 @@ if (args.Length >= 1 && args[0] == "--ble-drain-probe")
 #else
     Console.Error.WriteLine("BLE queue probe requires the Windows target.");
     return 1;
+#endif
+}
+
+if (args.Length >= 1 && args[0] == "--ble-region-probe")
+{
+    if (args.Length is not (2 or 3) || string.IsNullOrWhiteSpace(args[1]) || args[1].StartsWith("--", StringComparison.Ordinal))
+    { Console.Error.WriteLine("Usage: --ble-region-probe <opaque-device-id> [previously-observed-zero-hop-full-key-hex]"); return 2; }
+    byte[]? target = null;
+    if (args.Length == 3)
+    {
+        try { target = Convert.FromHexString(args[2]); }
+        catch (FormatException) { Console.Error.WriteLine("Target must be a full 32-byte hexadecimal key."); return 2; }
+        if (target.Length != MeshCoreSharp.Protocol.ProtocolLimits.PublicKeySize) { Console.Error.WriteLine("Target must be a full 32-byte hexadecimal key."); return 2; }
+    }
+#if WINDOWS
+    return await WindowsBleProbe.RunRegionsAsync(args[1], target);
+#else
+    Console.Error.WriteLine("BLE region probe requires the Windows target."); return 1;
 #endif
 }
 
@@ -71,6 +92,11 @@ if (args.Length >= 1 && args[0] == "--list-ble")
         return 1;
     }
     catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { return 130; }
+    catch (Exception error)
+    {
+        Console.Error.WriteLine($"BLE discovery failed: {error.GetType().Name}; HRESULT=0x{error.HResult:X8}: {error.Message}");
+        return 1;
+    }
     finally { Console.CancelKeyPress -= cancel; }
 }
 
@@ -117,6 +143,8 @@ if (args.Length < 2 || !int.TryParse(args[1], out var port))
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-probe <opaque-device-id> [cycles=2] [--frame-limit <1..176>]");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-probe-self-test");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-drain-probe <opaque-device-id> <new-local-capture.jsonl>");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --ble-region-probe <opaque-device-id> [previously-observed-zero-hop-full-key-hex]");
+    Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --region-probe-self-test");
     Console.WriteLine();
     Console.WriteLine("Local framing/router test:");
     Console.WriteLine("  dotnet run --project samples/MeshCoreSharp.Console -- --self-test");
